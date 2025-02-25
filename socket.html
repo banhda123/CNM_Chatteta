@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Socket.IO Chat</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+  <h1>Chat Real-Time</h1>
+  <div id="chat">
+    <ul id="messages"></ul>
+    <input id="messageInput" placeholder="Nhập tin nhắn..." />
+    <button onclick="sendMessage()">Gửi</button>
+  </div>
+
+  <script>
+    // Kết nối đến server Socket.IO
+    const socket = io('http://localhost:5000');
+
+    // Lắng nghe sự kiện "receive-message" từ server
+    socket.on('receive-message', (message) => {
+      const messages = document.getElementById('messages');
+      const li = document.createElement('li');
+      li.textContent = message;
+      messages.appendChild(li);
+    });
+
+    // Hàm gửi tin nhắn
+    function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const message = input.value;
+      if (message) {
+        // Gửi tin nhắn đến server
+        socket.emit('send-message', message);
+        input.value = ''; // Xóa nội dung trong input
+      }
+    }
+  </script>
+</body>
+</html>
