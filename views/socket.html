@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Socket.IO Chat</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    #loginForm, #registerForm {
+      margin-bottom: 20px;
+    }
+    #chat {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Chat Real-Time</h1>
+  
+  <div id="auth">
+    <div id="loginForm">
+      <h2>Đăng nhập</h2>
+      <input id="username" placeholder="Tên đăng nhập" />
+      <input id="password" type="password" placeholder="Mật khẩu" />
+      <button onclick="login()">Đăng nhập</button>
+    </div>
+    
+    <div id="registerForm">
+      <h2>Đăng ký</h2>
+      <input id="regUsername" placeholder="Tên đăng nhập" />
+      <input id="regPassword" type="password" placeholder="Mật khẩu" />
+      <input id="regFullname" placeholder="Họ tên" />
+      <button onclick="register()">Đăng ký</button>
+    </div>
+  </div>
+
+  <div id="chat">
+    <h2>Chat</h2>
+    <p>Xin chào, <span id="userInfo"></span></p>
+    <button onclick="logout()">Đăng xuất</button>
+    <ul id="messages"></ul>
+    <input id="messageInput" placeholder="Nhập tin nhắn..." />
+    <button onclick="sendMessage()">Gửi</button>
+  </div>
+
+  <script>
+    // Kiểm tra đã đăng nhập chưa
+    function checkAuth() {
+      const token = localStorage.getItem('token');
+      if (token) {
+        document.getElementById('auth').style.display = 'none';
+        document.getElementById('chat').style.display = 'block';
+        document.getElementById('userInfo').textContent = localStorage.getItem('username') || 'Người dùng';
+        connectSocket();
+      } else {
+        document.getElementById('auth').style.display = 'block';
+        document.getElementById('chat').style.display = 'none';
+      }
+    }
+
+    // Kết nối Socket.IO
+    function connectSocket() {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const socket = window.socket = io('http://localhost:5000', {
+        auth: {
+          token: token
+        }
+      });
+
+      // Lắng nghe sự kiện "new-message" từ server
+      socket.on('new-message', (message) => {
+        const messages = document.getElementById('messages');
+        const li = document.createElement('li');
+        li.textContent = `${message.sender_name || message.sender_id}: ${message.content}`;
+        messages.appendChild(li);
+      });
+
+      // Tham gia vào cuộc trò chuyện khi kết nối
+      socket.on('connect', () => {
+        console.log('Đã kết nối socket');
+        socket.emit('join-conversation', 1); // Tham gia cuộc trò chuyện có ID = 1
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Mất kết nối socket');
+      });
+    }
+
+    // Đăng nhập
+    async function login() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('username', data.user.username);
+          localStorage.setItem('userId', data.user.id);
+          alert('Đăng nhập thành công!');
+          checkAuth();
+        } else {
+          alert('Đăng nhập thất bại: ' + data.message);
+        }
+      } catch (error) {
+        console.error('Lỗi đăng nhập:', error);
+        alert('Lỗi kết nối đến server');
+      }
+    }
+
+    // Đăng ký
+    async function register() {
+  const username = document.getElementById('regUsername').value;
+  const password = document.getElementById('regPassword').value;
+  const fullname = document.getElementById('regFullname').value;
+  
+  // Kiểm tra dữ liệu đầu vào trước khi gửi
+  if (!username || !password || !fullname) {
+    alert('Vui lòng điền đầy đủ thông tin đăng ký');
+    return;
+  }
+  
+  try {
+    const response = await fetch('http://localhost:5000/api/auth/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username, password, fullname })
+    });
+    
+    // Log response để kiểm tra
+    console.log('Response status:', response.status);
+    const data = await response.json();
+    console.log('Response data:', data);
+    
+    if (response.ok) {
+      alert('Đăng ký thành công! Vui lòng đăng nhập.');
+      document.getElementById('username').value = username;
+    } else {
+      alert('Đăng ký thất bại: ' + (data.message || 'Lỗi không xác định'));
+    }
+  } catch (error) {
+    console.error('Lỗi đăng ký:', error);
+    alert('Lỗi kết nối đến server. Vui lòng kiểm tra console để biết thêm chi tiết.');
+  }
+}
+
+    // Đăng xuất
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      localStorage.removeItem('userId');
+      if (window.socket) {
+        window.socket.disconnect();
+      }
+      checkAuth();
+    }
+
+    // Gửi tin nhắn
+    function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const message = input.value;
+      if (message && window.socket) {
+        // Gửi tin nhắn đến server
+        window.socket.emit('send-message', {
+          conversationId: 1, // ID cuộc trò chuyện mặc định
+          content: message,
+          type: 'text'
+        });
+        input.value = ''; // Xóa nội dung trong input
+      }
+    }
+
+    // Kiểm tra trạng thái đăng nhập khi tải trang
+    checkAuth();
+  </script>
+</body>
+</html>
