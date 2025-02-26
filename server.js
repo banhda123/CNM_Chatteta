@@ -43,6 +43,22 @@ app.use((req, res, next) => {
   next();
 });
 
+// Đảm bảo thư mục uploads tồn tại
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Cấu hình Multer để lưu file tạm thời trên server
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); // Thư mục lưu file
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}_${file.originalname}`); // Tên file
+  },
+});
+const upload = multer({ storage });
 
 // Sử dụng routes
 app.use('/api/auth', authRoutes);
@@ -53,6 +69,19 @@ app.get('/socket', (req, res) => {
   res.sendFile(path.join(__dirname, 'views/socket.html'));
 });
 
+// Route upload file (lưu file trên server)
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Không có file được tải lên' });
+    }
+    // Trả về đường dẫn file
+    res.json({ success: true, url: `http://localhost:${process.env.PORT}/uploads/${req.file.filename}` });
+  } catch (error) {
+    console.error('Lỗi khi tải lên file:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
 
 // Xử lý real-time messaging với Socket.IO
 io.on('connection', (socket) => {
@@ -71,6 +100,11 @@ io.on('connection', (socket) => {
     socket.userId = decoded.userId;
     console.log('Người dùng đã xác thực:', socket.userId);
 
+    // Join vào room của các cuộc trò chuyện
+    socket.on('join-conversation', (conversationId) => {
+      console.log(`Người dùng ${socket.userId} tham gia cuộc trò chuyện ${conversationId}`);
+      socket.join(`conversation_${conversationId}`);
+    });
 
     // Gửi tin nhắn
     socket.on('send-message', async (data) => {
