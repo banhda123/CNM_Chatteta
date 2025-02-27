@@ -84,10 +84,9 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 });
 
 // Xử lý real-time messaging với Socket.IO
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   console.log('Người dùng đã kết nối:', socket.id);
 
-  // Xác thực người dùng qua token
   const token = socket.handshake.auth.token;
   if (!token) {
     console.log('Không có token, ngắt kết nối');
@@ -95,57 +94,120 @@ io.on('connection', (socket) => {
     return;
   }
 
+  let conn;
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     socket.userId = decoded.userId;
     console.log('Người dùng đã xác thực:', socket.userId);
 
-    // Join vào room của các cuộc trò chuyện
-    socket.on('join-conversation', (conversationId) => {
-      console.log(`Người dùng ${socket.userId} tham gia cuộc trò chuyện ${conversationId}`);
-      socket.join(`conversation_${conversationId}`);
-    });
+    conn = await db.getConnection();
+    
+    // Tự động join vào các cuộc trò chuyện của user
+    const [conversations] = await conn.query(`
+      SELECT conversation_id 
+      FROM conversation_members 
+      WHERE user_id = ?
+    `, [socket.userId]);
+    
+    // Kiểm tra và join vào các cuộc trò chuyện
+    if (Array.isArray(conversations)) {
+      for (const conv of conversations) {
+        socket.join(`conversation_${conv.conversation_id}`);
+        console.log(`User ${socket.userId} joined conversation ${conv.conversation_id}`);
+      }
+    }
 
-    // Gửi tin nhắn
-    socket.on('send-message', async (data) => {
+    // Xử lý join conversation
+    socket.on('join-conversation', async (conversationId) => {
       try {
-        console.log('Nhận tin nhắn:', data);
-        const conn = await db.getConnection();
-        const [result] = await conn.query(
-          'INSERT INTO messages (conversation_id, sender_id, content, type, file_url) VALUES (?, ?, ?, ?, ?)',
-          [data.conversationId, socket.userId, data.content, data.type || 'text', data.fileUrl || null]
-        );
+        // Kiểm tra quyền truy cập
+        const [membership] = await conn.query(`
+          SELECT * FROM conversation_members 
+          WHERE conversation_id = ? AND user_id = ?
+        `, [conversationId, socket.userId]);
 
-        // Lấy thông tin người gửi
-        const [users] = await conn.query(
-          'SELECT username, avatar FROM users WHERE id = ?',
-          [socket.userId]
-        );
+        if (!membership || membership.length === 0) {
+          socket.emit('error', { message: 'Không có quyền truy cập cuộc trò chuyện này' });
+          return;
+        }
 
-        const message = {
-          id: result.insertId,
-          ...data,
-          sender_id: socket.userId,
-          sender_name: users[0].username,
-          sender_avatar: users[0].avatar,
-          created_at: new Date()
-        };
+        socket.join(`conversation_${conversationId}`);
+        console.log(`User ${socket.userId} joined conversation ${conversationId}`);
 
-        io.to(`conversation_${data.conversationId}`).emit('new-message', message);
-        conn.release();
+        // Lấy tin nhắn cũ
+        const [messages] = await conn.query(`
+          SELECT m.*, u.username as sender_name 
+          FROM messages m
+          JOIN users u ON m.sender_id = u.id
+          WHERE m.conversation_id = ?
+          ORDER BY m.created_at ASC
+          LIMIT 50
+        `, [conversationId]);
+
+        socket.emit('load-messages', messages);
       } catch (error) {
-        console.error('Lỗi khi gửi tin nhắn:', error);
+        console.error('Lỗi khi join conversation:', error);
+        socket.emit('error', { message: 'Không thể tham gia cuộc trò chuyện' });
       }
     });
 
-    socket.on('disconnect', () => {
-      console.log('Người dùng đã ngắt kết nối:', socket.id);
-    });
+    // Xử lý gửi tin nhắn
+    // Xử lý gửi tin nhắn
+// Xử lý gửi tin nhắn
+socket.on('send-message', async (data) => {
+  try {
+    console.log('Nhận tin nhắn:', data);
+
+    // Kiểm tra quyền gửi tin nhắn
+    const membershipResult = await conn.query(`
+      SELECT * FROM conversation_members 
+      WHERE conversation_id = ? AND user_id = ?
+    `, [data.conversationId, socket.userId]);
+
+    if (!membershipResult || membershipResult.length === 0) {
+      socket.emit('error', { message: 'Không có quyền gửi tin nhắn trong cuộc trò chuyện này' });
+      return;
+    }
+
+    // Lưu tin nhắn
+    const result = await conn.query(`
+      INSERT INTO messages (conversation_id, sender_id, content, type) 
+      VALUES (?, ?, ?, ?)
+    `, [data.conversationId, socket.userId, data.content, 'text']);
+
+    // Lấy thông tin người gửi
+    const senderResult = await conn.query(`
+      SELECT username FROM users WHERE id = ?
+    `, [socket.userId]);
+
+    const newMessage = {
+      id: Number(result.insertId), // Chuyển BigInt sang Number
+      conversation_id: Number(data.conversationId),
+      sender_id: Number(socket.userId),
+      sender_name: senderResult[0].username,
+      content: data.content,
+      type: 'text',
+      created_at: new Date().toISOString() // Chuyển Date sang string
+    };
+
+    console.log('Gửi tin nhắn mới:', newMessage);
+    io.to(`conversation_${data.conversationId}`).emit('new-message', newMessage);
 
   } catch (error) {
-    console.error('Lỗi xác thực token:', error);
+    console.error('Lỗi khi gửi tin nhắn:', error);
+    socket.emit('error', { message: 'Không thể gửi tin nhắn' });
+  }
+});
+
+  } catch (error) {
+    console.error('Lỗi xác thực:', error);
     socket.disconnect();
   }
+
+  socket.on('disconnect', () => {
+    console.log('Người dùng ngắt kết nối:', socket.id);
+    if (conn) conn.release();
+  });
 });
 
 // Phục vụ file tĩnh từ thư mục uploads
