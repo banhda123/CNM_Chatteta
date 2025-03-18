@@ -58,7 +58,10 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}_${file.originalname}`); // Tên file
   },
 });
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 } // Giới hạn 20MB
+});
 
 // Sử dụng routes
 app.use('/api/auth', authRoutes);

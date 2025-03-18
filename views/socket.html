@@ -161,6 +161,7 @@
       border-radius: 0 0 8px 8px;
       display: flex;
       gap: 10px;
+      align-items: center;
     }
 
     .chat-input input {
@@ -171,6 +172,60 @@
       content: "";
       clear: both;
       display: table;
+    }
+    
+    .message-image {
+      max-width: 300px;
+      max-height: 300px;
+      border-radius: 10px;
+      margin-top: 5px;
+      object-fit: contain;
+    }
+    
+    .emoji-picker {
+      position: absolute;
+      bottom: 70px;
+      right: 20px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      padding: 10px;
+      display: none;
+      z-index: 100;
+      width: 250px;
+      height: 200px;
+      overflow-y: auto;
+    }
+    
+    .emoji-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 5px;
+    }
+    
+    .emoji-item {
+      font-size: 24px;
+      cursor: pointer;
+      text-align: center;
+      padding: 5px;
+      border-radius: 4px;
+    }
+    
+    .emoji-item:hover {
+      background-color: #f0f2f5;
+    }
+    
+    .attachment-btn, .emoji-btn {
+      background: none;
+      border: none;
+      color: #0084ff;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 5px 10px;
+    }
+    
+    .file-input {
+      display: none;
     }
   </style>
 </head>
@@ -212,8 +267,15 @@
       </div>
       
       <div class="chat-input">
+        <button class="emoji-btn" onclick="toggleEmojiPicker()">😊</button>
+        <label for="fileInput" class="attachment-btn">📎</label>
+        <input type="file" id="fileInput" class="file-input" accept="image/*" onchange="handleFileSelect(event)" />
         <input id="messageInput" placeholder="Nhập tin nhắn..." onkeypress="handleKeyPress(event)"/>
         <button onclick="sendMessage()">Gửi</button>
+        
+        <div id="emojiPicker" class="emoji-picker">
+          <div class="emoji-grid" id="emojiGrid"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -298,7 +360,27 @@
     
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
-    contentDiv.textContent = message.content;
+    
+    // Xử lý hiển thị tin nhắn theo loại
+    if (message.type === 'image') {
+      // Hiển thị ảnh
+      const img = document.createElement('img');
+      img.src = message.content;
+      img.className = 'message-image';
+      img.alt = 'Hình ảnh';
+      img.onerror = () => {
+        img.src = 'https://via.placeholder.com/200x150?text=Lỗi+tải+ảnh';
+      };
+      contentDiv.appendChild(img);
+    } else if (message.type === 'emoji') {
+      // Hiển thị emoji
+      contentDiv.textContent = message.content;
+      contentDiv.style.fontSize = '24px';
+    } else {
+      // Hiển thị tin nhắn văn bản thông thường
+      contentDiv.textContent = message.content;
+    }
+    
     li.appendChild(contentDiv);
     
     const timeDiv = document.createElement('div');
@@ -336,11 +418,22 @@
     }
   });
 
+    // Biến lưu trữ file ảnh đã chọn
+    let selectedFile = null;
+    
     // Gửi tin nhắn
     function sendMessage() {
       const input = document.getElementById('messageInput');
       const message = input.value.trim();
       
+      // Nếu có file ảnh được chọn, ưu tiên gửi ảnh
+      if (selectedFile && window.socket) {
+        uploadAndSendImage(selectedFile);
+        selectedFile = null;
+        return;
+      }
+      
+      // Nếu không có ảnh, gửi tin nhắn văn bản
       if (message && window.socket) {
         window.socket.emit('send-message', {
           conversationId: 1,
@@ -348,6 +441,116 @@
           type: 'text'
         });
         input.value = '';
+      }
+    }
+    
+    // Xử lý khi chọn file
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      // Kiểm tra xem file có phải là ảnh không
+      if (!file.type.startsWith('image/')) {
+        alert('Vui lòng chọn file ảnh');
+        return;
+      }
+      
+      // Lưu file đã chọn
+      selectedFile = file;
+      
+      // Thông báo cho người dùng biết đã chọn ảnh
+      const input = document.getElementById('messageInput');
+      input.placeholder = `Đã chọn ảnh: ${file.name}. Nhấn Gửi để gửi ảnh.`;
+    }
+    
+    // Upload và gửi ảnh
+    async function uploadAndSendImage(file) {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const token = localStorage.getItem('token');
+        const response = await fetch('http://localhost:5000/api/upload', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.url) {
+          // Gửi tin nhắn với đường dẫn ảnh
+          window.socket.emit('send-message', {
+            conversationId: 1,
+            content: data.url,
+            type: 'image'
+          });
+          
+          // Reset placeholder
+          const input = document.getElementById('messageInput');
+          input.placeholder = 'Nhập tin nhắn...';
+          
+          // Reset file input
+          document.getElementById('fileInput').value = '';
+        } else {
+          alert('Lỗi khi tải lên ảnh: ' + (data.message || 'Không xác định'));
+        }
+      } catch (error) {
+        console.error('Lỗi khi tải lên ảnh:', error);
+        alert('Lỗi kết nối đến server');
+      }
+    }
+    
+    // Hiển thị/ẩn emoji picker
+    function toggleEmojiPicker() {
+      const emojiPicker = document.getElementById('emojiPicker');
+      if (emojiPicker.style.display === 'block') {
+        emojiPicker.style.display = 'none';
+      } else {
+        emojiPicker.style.display = 'block';
+        loadEmojis();
+      }
+    }
+    
+    // Load danh sách emoji
+    function loadEmojis() {
+      const emojiGrid = document.getElementById('emojiGrid');
+      if (emojiGrid.children.length > 0) return; // Đã load rồi
+      
+      // Danh sách emoji phổ biến
+      const emojis = [
+        '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇',
+        '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚',
+        '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩',
+        '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖',
+        '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯',
+        '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '💔', '❣️', '💕',
+        '💞', '💓', '💗', '💖', '💘', '💝', '💟', '👍', '👎', '👌'
+      ];
+      
+      // Tạo các phần tử emoji
+      emojis.forEach(emoji => {
+        const emojiItem = document.createElement('div');
+        emojiItem.className = 'emoji-item';
+        emojiItem.textContent = emoji;
+        emojiItem.onclick = () => sendEmoji(emoji);
+        emojiGrid.appendChild(emojiItem);
+      });
+    }
+    
+    // Gửi emoji
+    function sendEmoji(emoji) {
+      if (window.socket) {
+        window.socket.emit('send-message', {
+          conversationId: 1,
+          content: emoji,
+          type: 'emoji'
+        });
+        
+        // Ẩn emoji picker sau khi chọn
+        document.getElementById('emojiPicker').style.display = 'none';
       }
     }
 

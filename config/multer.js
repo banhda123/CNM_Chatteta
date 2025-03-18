@@ -65,9 +65,9 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Giới hạn kích thước file (10MB)
+// Giới hạn kích thước file (20MB)
 const limits = {
-  fileSize: 10 * 1024 * 1024
+  fileSize: 20 * 1024 * 1024
 };
 
 // Cấu hình multer cho upload file thông thường

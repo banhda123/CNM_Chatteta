@@ -10,7 +10,7 @@ exports.uploadFile = (req, res, next) => {
         if (err instanceof multer.MulterError) {
             // Lỗi từ Multer
             if (err.code === 'LIMIT_FILE_SIZE') {
-                return res.status(400).json({ message: 'Kích thước file quá lớn (tối đa 10MB)' });
+                return res.status(400).json({ message: 'Kích thước file quá lớn (tối đa 20MB)' });
             }
             return res.status(400).json({ message: `Lỗi upload: ${err.message}` });
         } else if (err) {
@@ -66,7 +66,7 @@ exports.uploadMultipleFiles = (req, res, next) => {
         if (err instanceof multer.MulterError) {
             // Lỗi từ Multer
             if (err.code === 'LIMIT_FILE_SIZE') {
-                return res.status(400).json({ message: 'Kích thước file quá lớn (tối đa 10MB)' });
+                return res.status(400).json({ message: 'Kích thước file quá lớn (tối đa 20MB)' });
             } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
                 return res.status(400).json({ message: 'Số lượng file vượt quá giới hạn (tối đa 5 file)' });
             }
