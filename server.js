@@ -87,6 +87,17 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 io.on('connection', async (socket) => {
   console.log('Người dùng đã kết nối:', socket.id);
 
+  socket.on('update-status', async (data) => {
+    try {
+      if (socket.userId) {
+        await User.updateStatus(socket.userId, data.status);
+        io.emit('status-update', { userId: socket.userId, status: data.status });
+      }
+    } catch (error) {
+      console.error('Lỗi cập nhật trạng thái:', error);
+    }
+  });
+
   const token = socket.handshake.auth.token;
   if (!token) {
     console.log('Không có token, ngắt kết nối');
@@ -204,8 +215,16 @@ socket.on('send-message', async (data) => {
     socket.disconnect();
   }
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log('Người dùng ngắt kết nối:', socket.id);
+    try {
+      if (socket.userId) {
+        await User.updateStatus(socket.userId, 'offline');
+        io.emit('status-update', { userId: socket.userId, status: 'offline' });
+      }
+    } catch (error) {
+      console.error('Lỗi cập nhật trạng thái:', error);
+    }
     if (conn) conn.release();
   });
 });

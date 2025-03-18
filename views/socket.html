@@ -11,6 +11,22 @@
       padding: 0;
       box-sizing: border-box;
     }
+
+    .user-status {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 5px;
+    }
+
+    .status-online {
+      background-color: #44b700;
+    }
+
+    .status-offline {
+      background-color: #bdbdbd;
+    }
     
     body {
       font-family: Arial, sans-serif;
@@ -185,6 +201,7 @@
       <div class="chat-header">
         <h2>Chat</h2>
         <div>
+          <span class="user-status" id="userStatus"></span>
           <span id="userInfo"></span>
           <button onclick="logout()">Đăng xuất</button>
         </div>
@@ -246,19 +263,25 @@
 
       socket.on('connect', () => {
         console.log('Đã kết nối socket');
+        socket.emit('update-status', { status: 'online' });
         socket.emit('join-conversation', 1);
       });
 
       socket.on('disconnect', () => {
         console.log('Mất kết nối socket');
+        socket.emit('update-status', { status: 'offline' });
+      });
+
+      socket.on('status-update', (data) => {
+        const statusElement = document.getElementById('userStatus');
+        if (statusElement) {
+          statusElement.className = `user-status status-${data.status}`;
+        }
       });
     }
 
     // Thêm tin nhắn vào giao diện
     function addMessage(message, isSent = false) {
-    console.log('Thêm tin nhắn:', message);
-    
-    // Kiểm tra xem tin nhắn có phải của người dùng hiện tại không
     const currentUserId = localStorage.getItem('userId');
     isSent = message.sender_id.toString() === currentUserId;
     
@@ -266,7 +289,6 @@
     const li = document.createElement('li');
     li.className = `message ${isSent ? 'sent' : 'received'} clearfix`;
     
-    // Tạo div cho thông tin người gửi (chỉ hiển thị cho tin nhắn nhận)
     if (!isSent) {
       const senderDiv = document.createElement('div');
       senderDiv.className = 'message-sender';
@@ -274,13 +296,11 @@
       li.appendChild(senderDiv);
     }
     
-    // Tạo div cho nội dung tin nhắn
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
     contentDiv.textContent = message.content;
     li.appendChild(contentDiv);
     
-    // Tạo div cho thời gian
     const timeDiv = document.createElement('div');
     timeDiv.className = 'message-time';
     const messageTime = new Date(message.created_at);
@@ -289,7 +309,6 @@
     
     messages.appendChild(li);
     
-    // Cuộn xuống tin nhắn mới nhất
     const container = document.querySelector('.messages-container');
     container.scrollTop = container.scrollHeight;
   }
