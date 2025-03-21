@@ -27,6 +27,7 @@ const io = new Server(server, {
 // Import routes
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
+const friendRoutes = require('./routes/friend');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -66,10 +67,22 @@ const upload = multer({
 // Sử dụng routes
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/friends', friendRoutes);
 
 // Phục vụ file HTML
 app.get('/socket', (req, res) => {
   res.sendFile(path.join(__dirname, 'views/socket.html'));
+});
+
+// Route cho trang đăng nhập
+app.get('/', (req, res) => {
+  // Chuyển hướng đến trang đăng nhập
+  res.sendFile(path.join(__dirname, 'views/index.html'));
+});
+
+// Route cho trang chat (để tương thích ngược)
+app.get('/chat', (req, res) => {
+  res.redirect('/socket');
 });
 
 // Route upload file (lưu file trên server)
@@ -235,15 +248,6 @@ socket.on('send-message', async (data) => {
 // Phục vụ file tĩnh từ thư mục uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Thêm route cho trang socket.html
-app.get('/socket', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views/socket.html'));
-});
-
-// Thêm route mặc định
-app.get('/', (req, res) => {
-  res.send('Zalo Clone API đang chạy');
-});
 
 // Khởi chạy server
 const PORT = process.env.PORT || 5000;

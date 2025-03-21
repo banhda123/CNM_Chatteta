@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng nhập - Zalo Clone</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 400px;
+      padding: 20px;
+    }
+
+    .form-container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      margin-bottom: 20px;
+    }
+
+    h2 {
+      text-align: center;
+      color: #1877f2;
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #dddfe2;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #1877f2;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #1877f2;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #166fe5;
+    }
+
+    .switch-form {
+      text-align: center;
+      margin-top: 10px;
+    }
+
+    .switch-form a {
+      color: #1877f2;
+      text-decoration: none;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .error-message {
+      color: #ff4d4f;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="loginForm" class="form-container">
+      <h2>Đăng nhập</h2>
+      <div class="error-message" id="loginError"></div>
+      <div class="form-group">
+        <input id="username" placeholder="Tên đăng nhập" />
+        <input id="password" type="password" placeholder="Mật khẩu" />
+        <button onclick="login()">Đăng nhập</button>
+      </div>
+      <div class="switch-form">
+        <a onclick="showRegisterForm()">Chưa có tài khoản? Đăng ký ngay</a>
+      </div>
+    </div>
+
+    <div id="registerForm" class="form-container" style="display: none;">
+      <h2>Đăng ký</h2>
+      <div class="error-message" id="registerError"></div>
+      <div class="form-group">
+        <input id="regUsername" placeholder="Tên đăng nhập" />
+        <input id="regPassword" type="password" placeholder="Mật khẩu" />
+        <input id="regFullname" placeholder="Họ tên" />
+        <button onclick="register()">Đăng ký</button>
+      </div>
+      <div class="switch-form">
+        <a onclick="showLoginForm()">Đã có tài khoản? Đăng nhập</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Chuyển đổi form
+    function showRegisterForm() {
+      document.getElementById('loginForm').style.display = 'none';
+      document.getElementById('registerForm').style.display = 'block';
+    }
+
+    function showLoginForm() {
+      document.getElementById('loginForm').style.display = 'block';
+      document.getElementById('registerForm').style.display = 'none';
+    }
+
+    // Đăng nhập
+    async function login() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      if (!username || !password) {
+        document.getElementById('loginError').textContent = 'Vui lòng điền đầy đủ thông tin';
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('username', data.user.username);
+          localStorage.setItem('userId', data.user.id);
+          window.location.href = '/socket'; // Chuyển hướng đến trang chat
+        } else {
+          document.getElementById('loginError').textContent = data.message || 'Đăng nhập thất bại';
+        }
+      } catch (error) {
+        console.error('Lỗi đăng nhập:', error);
+        document.getElementById('loginError').textContent = 'Lỗi kết nối server';
+      }
+    }
+
+    // Đăng ký
+    async function register() {
+      const username = document.getElementById('regUsername').value;
+      const password = document.getElementById('regPassword').value;
+      const fullname = document.getElementById('regFullname').value;
+
+      if (!username || !password || !fullname) {
+        document.getElementById('registerError').textContent = 'Vui lòng điền đầy đủ thông tin';
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password, fullname })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          document.getElementById('registerError').textContent = 'Đăng ký thành công!';
+          setTimeout(() => {
+            showLoginForm();
+            document.getElementById('username').value = username;
+          }, 1000);
+        } else {
+          document.getElementById('registerError').textContent = data.message || 'Đăng ký thất bại';
+        }
+      } catch (error) {
+        console.error('Lỗi đăng ký:', error);
+        document.getElementById('registerError').textContent = 'Lỗi kết nối server';
+      }
+    }
+
+    // Kiểm tra token khi tải trang
+    window.onload = function() {
+      const token = localStorage.getItem('token');
+      if (token) {
+        window.location.href = '/socket';
+      }
+    }
+  </script>
+</body>
+</html>
