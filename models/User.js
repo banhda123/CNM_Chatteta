@@ -4,92 +4,92 @@ const bcrypt = require('bcryptjs');
 class User {
     // Tìm người dùng theo ID
     static async findById(id) {
+        const conn = await db.getConnection();
         try {
-            const conn = await db.getConnection();
-            const users = await conn.query(
-                'SELECT * FROM users WHERE id = ?',
+            const [users] = await conn.query(
+                'SELECT id, username, fullname, avatar, status FROM users WHERE id = ?',
                 [id]
             );
+            return users[0];
+        } finally {
             conn.release();
-            
-            return users.length > 0 ? users[0] : null;
-        } catch (error) {
-            console.error('Lỗi tìm người dùng theo ID:', error);
-            throw error;
         }
     }
     
     // Tìm người dùng theo username
     static async findByUsername(username) {
+        const conn = await db.getConnection();
         try {
-            const conn = await db.getConnection();
-            const users = await conn.query(
+            const [users] = await conn.query(
                 'SELECT * FROM users WHERE username = ?',
                 [username]
             );
+            return users[0];
+        } finally {
             conn.release();
-            
-            return users.length > 0 ? users[0] : null;
-        } catch (error) {
-            console.error('Lỗi tìm người dùng theo username:', error);
-            throw error;
         }
     }
     
     // Tạo người dùng mới
     static async create(userData) {
+        const conn = await db.getConnection();
         try {
             const { username, password, fullname } = userData;
             const hashedPassword = await bcrypt.hash(password, 10);
             
-            const conn = await db.getConnection();
-            const result = await conn.query(
+            const [result] = await conn.query(
                 'INSERT INTO users (username, password, fullname) VALUES (?, ?, ?)',
                 [username, hashedPassword, fullname]
             );
-            conn.release();
             
             return result.insertId;
-        } catch (error) {
-            console.error('Lỗi tạo người dùng mới:', error);
-            throw error;
+        } finally {
+            conn.release();
         }
     }
     
     // Cập nhật trạng thái người dùng
     static async updateStatus(userId, status) {
+        if (!userId || !status) {
+            throw new Error('userId và status là bắt buộc');
+        }
+
+        let conn;
         try {
-            const conn = await db.getConnection();
-            await conn.query(
+            conn = await db.getConnection();
+            console.log('Đang cập nhật trạng thái cho user:', userId, 'thành', status);
+            
+            const result = await conn.execute(
                 'UPDATE users SET status = ? WHERE id = ?',
                 [status, userId]
             );
-            conn.release();
             
-            return true;
+            console.log('Kết quả cập nhật:', result);
+            return result && result[0] && result[0].affectedRows > 0;
         } catch (error) {
-            console.error('Lỗi cập nhật trạng thái người dùng:', error);
+            console.error('Lỗi SQL khi cập nhật trạng thái:', error);
             throw error;
+        } finally {
+            if (conn) {
+                conn.release();
+            }
         }
     }
     
-
+    // Tìm kiếm người dùng
     static async search(keyword, currentUserId) {
+        const conn = await db.getConnection();
         try {
-            const conn = await db.getConnection();
-            const users = await conn.query(
+            const [users] = await conn.query(
                 `SELECT id, username, fullname, avatar, status 
                  FROM users 
                  WHERE (username LIKE ? OR fullname LIKE ?) AND id != ?
                  LIMIT 20`,
                 [`%${keyword}%`, `%${keyword}%`, currentUserId]
             );
-            
-            conn.release();
             return users;
-        } catch (error) {
-            console.error('Lỗi tìm kiếm người dùng:', error);
-            throw error;
+        } finally {
+            conn.release();
         }
     }
 }

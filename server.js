@@ -7,6 +7,7 @@ const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
 const db = require('./config/db');
 const fs = require('fs');
+const User = require('./models/User');
 
 // Load biến môi trường từ file .env
 dotenv.config();
@@ -105,12 +106,26 @@ io.on('connection', async (socket) => {
 
   socket.on('update-status', async (data) => {
     try {
-      if (socket.userId) {
-        await User.updateStatus(socket.userId, data.status);
+      if (!socket.userId) {
+        console.error('Không có userId trong socket');
+        return;
+      }
+
+      if (!data || !data.status) {
+        console.error('Dữ liệu status không hợp lệ:', data);
+        return;
+      }
+
+      const updated = await User.updateStatus(socket.userId, data.status);
+      if (updated) {
         io.emit('status-update', { userId: socket.userId, status: data.status });
+        console.log('Đã cập nhật trạng thái:', socket.userId, data.status);
+      } else {
+        console.error('Không thể cập nhật trạng thái cho userId:', socket.userId);
       }
     } catch (error) {
       console.error('Lỗi cập nhật trạng thái:', error);
+      socket.emit('error', { message: 'Không thể cập nhật trạng thái' });
     }
   });
 
@@ -179,52 +194,50 @@ io.on('connection', async (socket) => {
     });
 
     // Xử lý gửi tin nhắn
-    // Xử lý gửi tin nhắn
-// Xử lý gửi tin nhắn
-socket.on('send-message', async (data) => {
-  try {
-    console.log('Nhận tin nhắn:', data);
+    socket.on('send-message', async (data) => {
+      try {
+        console.log('Nhận tin nhắn:', data);
 
-    // Kiểm tra quyền gửi tin nhắn
-    const membershipResult = await conn.query(`
-      SELECT * FROM conversation_members 
-      WHERE conversation_id = ? AND user_id = ?
-    `, [data.conversationId, socket.userId]);
+        // Kiểm tra quyền gửi tin nhắn
+        const membershipResult = await conn.query(`
+          SELECT * FROM conversation_members 
+          WHERE conversation_id = ? AND user_id = ?
+        `, [data.conversationId, socket.userId]);
 
-    if (!membershipResult || membershipResult.length === 0) {
-      socket.emit('error', { message: 'Không có quyền gửi tin nhắn trong cuộc trò chuyện này' });
-      return;
-    }
+        if (!membershipResult || membershipResult.length === 0) {
+          socket.emit('error', { message: 'Không có quyền gửi tin nhắn trong cuộc trò chuyện này' });
+          return;
+        }
 
-    // Lưu tin nhắn
-    const result = await conn.query(`
-      INSERT INTO messages (conversation_id, sender_id, content, type) 
-      VALUES (?, ?, ?, ?)
-    `, [data.conversationId, socket.userId, data.content, 'text']);
+        // Lưu tin nhắn
+        const result = await conn.query(`
+          INSERT INTO messages (conversation_id, sender_id, content, type) 
+          VALUES (?, ?, ?, ?)
+        `, [data.conversationId, socket.userId, data.content, 'text']);
 
-    // Lấy thông tin người gửi
-    const senderResult = await conn.query(`
-      SELECT username FROM users WHERE id = ?
-    `, [socket.userId]);
+        // Lấy thông tin người gửi
+        const senderResult = await conn.query(`
+          SELECT username FROM users WHERE id = ?
+        `, [socket.userId]);
 
-    const newMessage = {
-      id: Number(result.insertId), // Chuyển BigInt sang Number
-      conversation_id: Number(data.conversationId),
-      sender_id: Number(socket.userId),
-      sender_name: senderResult[0].username,
-      content: data.content,
-      type: 'text',
-      created_at: new Date().toISOString() // Chuyển Date sang string
-    };
+        const newMessage = {
+          id: Number(result.insertId), // Chuyển BigInt sang Number
+          conversation_id: Number(data.conversationId),
+          sender_id: Number(socket.userId),
+          sender_name: senderResult[0].username,
+          content: data.content,
+          type: 'text',
+          created_at: new Date().toISOString() // Chuyển Date sang string
+        };
 
-    console.log('Gửi tin nhắn mới:', newMessage);
-    io.to(`conversation_${data.conversationId}`).emit('new-message', newMessage);
+        console.log('Gửi tin nhắn mới:', newMessage);
+        io.to(`conversation_${data.conversationId}`).emit('new-message', newMessage);
 
-  } catch (error) {
-    console.error('Lỗi khi gửi tin nhắn:', error);
-    socket.emit('error', { message: 'Không thể gửi tin nhắn' });
-  }
-});
+      } catch (error) {
+        console.error('Lỗi khi gửi tin nhắn:', error);
+        socket.emit('error', { message: 'Không thể gửi tin nhắn' });
+      }
+    });
 
   } catch (error) {
     console.error('Lỗi xác thực:', error);
