@@ -391,6 +391,29 @@
     .received .message-sender {
       color: #2ecc71;
     }
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 20px;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .user-info .avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+    .header-actions {
+        display: flex;
+        gap: 10px;
+    }
   </style>
 </head>
 <body>
@@ -456,6 +479,16 @@
       
       <!-- Khu vực chat chính -->
       <div class="chat-main">
+        <div class="header">
+            <div class="user-info">
+                <img id="userAvatar" src="" alt="Avatar" class="avatar">
+                <span id="username"></span>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="window.location.href='/profile'">Hồ sơ</button>
+                <button class="btn btn-danger" onclick="logout()">Đăng xuất</button>
+            </div>
+        </div>
         <div class="chat-header">
           <h2 id="chatHeader">Chat</h2>
         </div>
@@ -480,6 +513,42 @@
   </div>
 
   <script>
+    // Lấy token từ localStorage
+    const token = localStorage.getItem('token');
+    if (!token) {
+        window.location.href = '/';
+    }
+
+    // Load thông tin người dùng
+    async function loadUserInfo() {
+        try {
+            const response = await fetch('/api/users/profile', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('username').textContent = data.user.username;
+                if (data.user.avatar) {
+                    document.getElementById('userAvatar').src = data.user.avatar;
+                }
+            }
+        } catch (error) {
+            console.error('Lỗi khi tải thông tin người dùng:', error);
+        }
+    }
+
+    // Xử lý đăng xuất
+    function logout() {
+        localStorage.removeItem('token');
+        window.location.href = '/';
+    }
+
+    // Load thông tin khi trang tải xong
+    loadUserInfo();
+
     // Kiểm tra đã đăng nhập chưa
     function checkAuth() {
       const token = localStorage.getItem('token');
@@ -1015,17 +1084,6 @@
         console.error('Lỗi đăng ký:', error);
         alert('Lỗi kết nối đến server');
       }
-    }
-
-    // Đăng xuất
-    function logout() {
-      localStorage.removeItem('token');
-      localStorage.removeItem('username');
-      localStorage.removeItem('userId');
-      if (window.socket) {
-        window.socket.disconnect();
-      }
-      checkAuth();
     }
 
     // Bắt đầu cuộc trò chuyện với bạn bè

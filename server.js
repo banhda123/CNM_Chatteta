@@ -29,6 +29,7 @@ const io = new Server(server, {
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
 const friendRoutes = require('./routes/friend');
+const userRoutes = require('./routes/user');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -47,28 +48,68 @@ app.use((req, res, next) => {
 
 // Đảm bảo thư mục uploads tồn tại
 const uploadDir = path.join(__dirname, 'uploads');
+const avatarDir = path.join(__dirname, 'uploads/avatars');
+
+// Tạo thư mục nếu chưa tồn tại
 if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+if (!fs.existsSync(avatarDir)) {
+    fs.mkdirSync(avatarDir, { recursive: true });
 }
 
-// Cấu hình Multer để lưu file tạm thời trên server
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Thư mục lưu file
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}_${file.originalname}`); // Tên file
-  },
+// Cấu hình Multer cho upload avatar
+const avatarStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        // Đảm bảo thư mục tồn tại trước khi lưu file
+        if (!fs.existsSync(avatarDir)) {
+            fs.mkdirSync(avatarDir, { recursive: true });
+        }
+        cb(null, avatarDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
 });
+
+const avatarUpload = multer({ 
+    storage: avatarStorage,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB
+    },
+    fileFilter: (req, file, cb) => {
+        const filetypes = /jpeg|jpg|png|gif/;
+        const mimetype = filetypes.test(file.mimetype);
+        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+
+        if (mimetype && extname) {
+            return cb(null, true);
+        }
+        cb('Error: Chỉ chấp nhận file ảnh!');
+    }
+});
+
+// Cấu hình Multer cho upload file thông thường
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}_${file.originalname}`);
+    },
+});
+
 const upload = multer({ 
-  storage,
-  limits: { fileSize: 20 * 1024 * 1024 } // Giới hạn 20MB
+    storage,
+    limits: { fileSize: 20 * 1024 * 1024 } // 20MB
 });
 
 // Sử dụng routes
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/friends', friendRoutes);
+app.use('/api/users', userRoutes);
 
 // Phục vụ file HTML
 app.get('/socket', (req, res) => {
@@ -79,6 +120,11 @@ app.get('/socket', (req, res) => {
 app.get('/', (req, res) => {
   // Chuyển hướng đến trang đăng nhập
   res.sendFile(path.join(__dirname, 'views/index.html'));
+});
+
+// Route cho trang profile
+app.get('/profile', (req, res) => {
+  res.sendFile(path.join(__dirname, 'views/profile.html'));
 });
 
 // Route cho trang chat (để tương thích ngược)
@@ -98,6 +144,23 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     console.error('Lỗi khi tải lên file:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
+});
+
+// Route upload avatar
+app.post('/api/users/avatar', avatarUpload.single('avatar'), (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'Không có file được tải lên' });
+        }
+        // Trả về đường dẫn file
+        res.json({ 
+            success: true, 
+            url: `http://localhost:${process.env.PORT}/uploads/avatars/${req.file.filename}` 
+        });
+    } catch (error) {
+        console.error('Lỗi khi tải lên avatar:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server' });
+    }
 });
 
 // Xử lý real-time messaging với Socket.IO

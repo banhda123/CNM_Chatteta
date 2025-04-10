@@ -105,7 +105,7 @@ exports.updateAvatar = async (req, res) => {
             return res.status(400).json({ message: 'Vui lòng chọn ảnh đại diện' });
         }
         
-        const avatarPath = req.file.path.replace(/\\/g, '/');
+        const avatarPath = `/uploads/avatars/${req.file.filename}`;
         
         const conn = await db.getConnection();
         
