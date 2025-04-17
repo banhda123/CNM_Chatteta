@@ -1,305 +1,377 @@
-const db = require('../config/db');
-const bcrypt = require('bcryptjs');
-const fs = require('fs');
-const path = require('path');
+import { UsersModel } from "../models/UserModel.js";
+import { generateToken } from "../utils/index.js";
+import cloudinary from "cloudinary";
+import { ConversationModel } from "../models/ConversationModel.js";
+import { MessageModel } from "../models/MessageModel.js";
+import { sendSMS } from "../utils/sms.js";
 
-const handleError = (res, error, msg = 'Lỗi server') => {
-  console.error(msg, error);
-  res.status(500).json({ message: msg });
+export const getUser = async (req, res) => {
+  const users = await UsersModel.find();
+  res.send(users);
 };
 
-const checkFriendship = async (conn, userId, targetId) => {
-  const [friendCheck] = await conn.query(
-    'SELECT 1 FROM friends WHERE ((user_id1 = ? AND user_id2 = ?) OR (user_id1 = ? AND user_id2 = ?)) AND status = "accepted"',
-    [userId, targetId, targetId, userId]
-  );
-  return friendCheck.length > 0;
-};
-
-exports.getUserProfile = async (req, res) => {
-  const conn = await db.getConnection();
-  try {
-    const userId = req.params.id || req.user.userId;
-    const [user] = await conn.query(
-      'SELECT id, username, fullname, avatar, status, created_at FROM users WHERE id = ?',
-      [userId]
-    );
-    if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
-    let isFriend = false, friendRequest = null;
-    if (req.user && req.user.userId != userId) {
-      isFriend = await checkFriendship(conn, req.user.userId, userId);
-      const [request] = await conn.query(
-        'SELECT id, status, sender_id, receiver_id, created_at FROM friend_requests WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)',
-        [req.user.userId, userId, userId, req.user.userId]
-      );
-      friendRequest = request || null;
-    }
-    res.json({ success: true, user, isFriend, friendRequest });
-  } catch (error) {
-    handleError(res, error, 'Lỗi lấy thông tin người dùng:');
-  } finally {
-    conn.release();
+export const getUserById = async (req, res) => {
+  const user = await UsersModel.findOne({ _id: req.params.id });
+  if (user) {
+    res.send(user);
+  } else {
+    res.status(403).send({ message: "user not found" });
   }
 };
 
-exports.updateProfile = async (req, res) => {
-  const conn = await db.getConnection();
-  try {
-    const { userId } = req.user;
-    const { fullname } = req.body;
-    await conn.query('UPDATE users SET fullname = ? WHERE id = ?', [fullname, userId]);
-    const [user] = await conn.query('SELECT id, username, fullname, avatar, status FROM users WHERE id = ?', [userId]);
-    res.json({ success: true, message: 'Cập nhật thông tin thành công', user });
-  } catch (error) {
-    handleError(res, error, 'Lỗi cập nhật thông tin:');
-  } finally {
-    conn.release();
-  }
+export const updateRefeshToken = (user, refeshToken) => {
+  user.refeshToken = refeshToken;
+  user.save();
 };
 
-exports.updateAvatar = async (req, res) => {
-  const conn = await db.getConnection();
-  try {
-    const { userId } = req.user;
-    if (!req.file) return res.status(400).json({ message: 'Vui lòng chọn ảnh đại diện' });
-    const avatarPath = `/uploads/avatars/${req.file.filename}`;
-    const [{ avatar: oldAvatar } = {}] = await conn.query('SELECT avatar FROM users WHERE id = ?', [userId]);
-    await conn.query('UPDATE users SET avatar = ? WHERE id = ?', [avatarPath, userId]);
-    
-    if (oldAvatar && fs.existsSync(path.join(__dirname, '..', oldAvatar))) {
-      fs.unlinkSync(path.join(__dirname, '..', oldAvatar));
-    }
-    const [user] = await conn.query('SELECT id, username, fullname, avatar, status FROM users WHERE id = ?', [userId]);
-    res.json({ success: true, message: 'Cập nhật ảnh đại diện thành công', user });
-  } catch (error) {
-    handleError(res, error, 'Lỗi cập nhật avatar:');
-  } finally {
-    conn.release();
+export const Login = async (req, res) => {
+  // Kiểm tra thông tin đầy đủ
+  if (!req.body.phone || !req.body.password) {
+    return res.status(400).send({ message: "Vui lòng điền đầy đủ thông tin" });
   }
-};
 
-exports.changePassword = async (req, res) => {
-  const conn = await db.getConnection();
-  try {
-    const { userId } = req.user;
-    const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) return res.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin' });
+  const user = await UsersModel.findOne({ 
+    phone: req.body.phone,
+    password: req.body.password 
+  });
 
-    const [{ password }] = await conn.query('SELECT password FROM users WHERE id = ?', [userId]);
-    if (!password || !await bcrypt.compare(currentPassword, password)) {
-      return res.status(400).json({ message: 'Mật khẩu hiện tại không đúng' });
-    }
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await conn.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, userId]);
-    res.json({ success: true, message: 'Đổi mật khẩu thành công' });
-  } catch (error) {
-    handleError(res, error, 'Lỗi đổi mật khẩu:');
-  } finally {
-    conn.release();
-  }
-};
+  if (user) {
+    const tokens = generateToken(user);
+    updateRefeshToken(user, tokens.refeshToken);
 
-exports.searchUsers = async (req, res) => {
-  let conn;
-  try {
-    conn = await db.getConnection();
-    const { q } = req.query;
-    const { userId } = req.user;
-    
-    // If search query is empty or too short, return empty results
-    if (!q || q.trim().length < 2) {
-      return res.json({ 
-        success: true, 
-        users: [],
-        message: 'Từ khóa tìm kiếm phải có ít nhất 2 ký tự' 
-      });
-    }
-    
-    console.log(`Searching users with keyword: ${q}`);
-    
-    const [users] = await conn.query(`
-      SELECT u.id, u.username, u.fullname, u.avatar, u.status,
-        CASE
-          WHEN f.id IS NOT NULL THEN 'friend'
-          WHEN fr_sent.id IS NOT NULL THEN 'sent_request'
-          WHEN fr_received.id IS NOT NULL THEN 'received_request'
-          ELSE 'none'
-        END as relationship
-      FROM users u
-      LEFT JOIN friends f ON (f.user_id = ? AND f.friend_id = u.id) OR (f.user_id = u.id AND f.friend_id = ?)
-      LEFT JOIN friend_requests fr_sent ON fr_sent.sender_id = ? AND fr_sent.receiver_id = u.id AND fr_sent.status = 'pending'
-      LEFT JOIN friend_requests fr_received ON fr_received.receiver_id = ? AND fr_received.sender_id = u.id AND fr_received.status = 'pending'
-      WHERE u.id != ? AND (u.username LIKE ? OR u.fullname LIKE ?)
-      ORDER BY 
-        CASE 
-          WHEN relationship = 'friend' THEN 1
-          WHEN relationship = 'received_request' THEN 2
-          WHEN relationship = 'sent_request' THEN 3
-          ELSE 4
-        END, u.username
-      LIMIT 20
-    `, [userId, userId, userId, userId, userId, `%${q}%`, `%${q}%`]);
-    
-    console.log(`Found ${users.length} users matching keyword: ${q}`);
-    
-    // Ensure users is always an array
-    if (!Array.isArray(users)) {
-      console.log('Search results are not an array, converting to array:', users);
-      res.json({ success: true, users: users ? [users] : [] });
-    } else {
-      res.json({ success: true, users });
-    }
-  } catch (error) {
-    console.error('Error searching users:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Lỗi khi tìm kiếm người dùng', 
-      error: error.message 
+    res.send({
+      _id: user._id,
+      name: user.name,
+      phone: user.phone,
+      password: user.password,
+      otp: user.otp || null,
+      token: tokens.accessToken,
+      refeshToken: tokens.refeshToken,
     });
-  } finally {
-    if (conn) conn.release();
+  } else {
+    res.status(403).send({ message: "Số điện thoại hoặc mật khẩu không đúng" });
   }
 };
 
-exports.sendFriendRequest = async (req, res) => {
-  const conn = await db.getConnection();
+export const Register = async (req, res) => {
+  console.log(req.body)
+  const userExists = await UsersModel.findOne({ phone: req.body.phone });
+  console.log(userExists)
+  if (userExists) {
+    res.status(400).send({ message: "Số điện thoại này đã đăng kí tài khoản" });
+  } else {
+    const user = new UsersModel({
+      name: req.body.name,
+      phone: req.body.phone,
+      password: req.body.password,
+      avatar: "https://res.cloudinary.com/daclejcpu/image/upload/v1744812771/avatar-mac-dinh-12_i7jnd3.jpg"
+    });
+    await user.save();
+
+    res.status(200).send({
+      _id: user._id,
+      name: user.name,
+      password: user.password,
+      phone: user.phone,
+      otp: "",
+    });
+  }
+};
+
+export const getNewToken = async (req, res) => {
+  const refeshToken = req.body;
+  const userExists = await UsersModel.findOne(refeshToken);
+  if (userExists) {
+    const tokens = generateToken(userExists);
+    updateRefeshToken(userExists, tokens.refeshToken);
+    res.send(tokens);
+  } else {
+    res.status(403).send({ message: "no refesh token" });
+  }
+};
+
+export const UpdatePassword = async (req, res) => {
+  const userExist = await UsersModel.findOne({ phone: req.body.email });
+  if (userExist) {
+    userExist.password = req.body.password;
+    await userExist.save();
+    res.send({ message: "Cập nhật mật khẩu thành công" });
+  } else {
+    res.status(403).send({ message: "Email này chưa đăng kí tài khoản" });
+  }
+};
+
+function countDownOtp(time, user) {
+  setTimeout(() => {
+    user.otp = "";
+    user.save();
+  }, time);
+}
+
+export const sendMail = async (req, res) => {
   try {
-    const { receiverId } = req.body;
-    const { userId } = req.user;
-    if (userId == receiverId) return res.status(400).json({ message: 'Không thể gửi lời mời kết bạn cho chính mình' });
-    const [receiver] = await conn.query('SELECT 1 FROM users WHERE id = ?', [receiverId]);
-    if (!receiver) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
-    if (await checkFriendship(conn, userId, receiverId)) return res.status(400).json({ message: 'Đã là bạn bè' });
-    const [request] = await conn.query(
-      'SELECT id, sender_id, status FROM friend_requests WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)',
-      [userId, receiverId, receiverId, userId]
-    );
-    if (request) {
-      if (request.sender_id == receiverId && request.status === 'pending') {
-        await conn.query('UPDATE friend_requests SET status = ? WHERE id = ?', ['accepted', request.id]);
-        await conn.query('INSERT INTO friends (user_id1, user_id2) VALUES (?, ?), (?, ?)', [userId, receiverId, receiverId, userId]);
-        return res.json({ success: true, message: 'Đã chấp nhận lời mời kết bạn', status: 'accepted' });
+    const { email } = req.body;
+    const otp = Math.floor(100000 + Math.random() * 900000);
+
+    const userExist = await UsersModel.findOne({ phone: email });
+    if (userExist) {
+      countDownOtp(60000, userExist);
+      userExist.otp = String(otp);
+      await userExist.save();
+      
+      const smsSent = await sendSMS(email, otp);
+      
+      if (smsSent) {
+        res.send({ 
+          message: "Mã OTP đã được gửi đến số điện thoại của bạn",
+          otp: otp
+        });
+      } else {
+        res.status(500).send({ message: "Không thể gửi SMS" });
       }
-      return res.status(400).json({ message: 'Đã gửi lời mời kết bạn trước đó' });
+    } else {
+      res.status(403).send({ message: "Số điện thoại này chưa đăng kí tài khoản" });
     }
-    const { insertId } = await conn.query(
-      'INSERT INTO friend_requests (sender_id, receiver_id, status) VALUES (?, ?, ?)',
-      [userId, receiverId, 'pending']
-    );
-    res.status(201).json({ success: true, message: 'Đã gửi lời mời kết bạn', requestId: insertId, status: 'pending' });
   } catch (error) {
-    handleError(res, error, 'Lỗi gửi lời mời kết bạn:');
-  } finally {
-    conn.release();
+    console.log(error);
+    res.status(403).send({ message: "Không gửi được mã OTP" });
   }
 };
 
-exports.respondFriendRequest = async (req, res) => {
-  const conn = await db.getConnection();
-  try {
-    const { requestId } = req.params;
-    const { action } = req.body;
-    const { userId } = req.user;
-    if (!['accept', 'reject'].includes(action)) return res.status(400).json({ message: 'Hành động không hợp lệ' });
-    const [request] = await conn.query(
-      'SELECT sender_id FROM friend_requests WHERE id = ? AND receiver_id = ? AND status = ?',
-      [requestId, userId, 'pending']
-    );
-    if (!request) return res.status(404).json({ message: 'Không tìm thấy lời mời kết bạn' });
-
-    const status = action === 'accept' ? 'accepted' : 'rejected';
-    await conn.query('UPDATE friend_requests SET status = ? WHERE id = ?', [status, requestId]);
-    if (action === 'accept') {
-      await conn.query('INSERT INTO friends (user_id1, user_id2) VALUES (?, ?), (?, ?)', [userId, request.sender_id, request.sender_id, userId]);
+export const checkCodeOtp = async (req, res) => {
+  console.log("Request body:", req.body);
+  const userExist = await UsersModel.findOne({ phone: req.body.email });
+  console.log("User found:", userExist);
+  
+  if (userExist) {
+    console.log("User OTP:", userExist.otp);
+    console.log("Request OTP:", req.body.otp);
+    
+    if (req.body.otp === userExist.otp) {
+      res.send({ message: "OTP đã đúng" });
+    } else {
+      res.status(403).send({ message: "OTP không đúng" });
     }
-    res.json({ success: true, message: `Đã ${action === 'accept' ? 'chấp nhận' : 'từ chối'} lời mời kết bạn` });
-  } catch (error) {
-    handleError(res, error, 'Lỗi phản hồi lời mời kết bạn:');
-  } finally {
-    conn.release();
+  } else {
+    res.status(403).send({ message: "Số điện thoại này chưa đăng kí tài khoản" });
   }
 };
 
-exports.getFriends = async (req, res) => {
-  const conn = await db.getConnection();
-  try {
-    const friends = await conn.query(`
-      SELECT u.id, u.username, u.fullname, u.avatar, u.status
-      FROM friends f
-      JOIN users u ON f.user_id2 = u.id
-      WHERE f.user_id1 = ?
-      ORDER BY u.fullname
-    `, [req.user.userId]);
-    res.json({ success: true, friends });
-  } catch (error) {
-    handleError(res, error, 'Lỗi lấy danh sách bạn bè:');
-  } finally {
-    conn.release();
+export const changeAvatar = async (req, res) => {
+  const userExist = await UsersModel.findById(req.body._id);
+  const result = await cloudinary.uploader.upload(req.file.path, {
+    folder: "zalo",
+  });
+
+  if (userExist) {
+    if (
+      userExist.avatar ===
+      "https://res.cloudinary.com/daclejcpu/image/upload/v1744812771/avatar-mac-dinh-12_i7jnd3.jpg"
+    ) {
+      console.log("image default");
+    } else {
+      cloudinary.uploader.destroy(userExist.cloudinary_id);
+    }
+
+    userExist.avatar = result.secure_url;
+    userExist.cloulinary_id = result.public_id;
+
+    await userExist.save();
+    res.send(userExist);
+  } else {
+    res.status(403).send({ mesage: "user not found" });
   }
 };
 
-exports.getFriendRequests = async (req, res) => {
-  const conn = await db.getConnection();
-  try {
-    const { userId } = req.user;
-    const received = await conn.query(`
-      SELECT fr.*, u.username, u.fullname, u.avatar
-      FROM friend_requests fr
-      JOIN users u ON fr.sender_id = u.id
-      WHERE fr.receiver_id = ? AND fr.status = ?
-      ORDER BY fr.created_at DESC
-    `, [userId, 'pending']);
-    const sent = await conn.query(`
-      SELECT fr.*, u.username, u.fullname, u.avatar
-      FROM friend_requests fr
-      JOIN users u ON fr.receiver_id = u.id
-      WHERE fr.sender_id = ? AND fr.status = ?
-      ORDER BY fr.created_at DESC
-    `, [userId, 'pending']);
-    res.json({ success: true, received, sent });
-  } catch (error) {
-    handleError(res, error, 'Lỗi lấy danh sách lời mời kết bạn:');
-  } finally {
-    conn.release();
+export const searchUser = async (req, res) => {
+  let user;
+  if (req.body.id) {
+    user = await UsersModel.findById(req.body.id);
+  } else if (req.body.phone) {
+    user = await UsersModel.findOne({ phone: req.body.phone });
+  } else {
+    return res.status(400).send({ message: "Vui lòng cung cấp ID hoặc số điện thoại" });
+  }
+
+  if (user) {
+    res.send(user);
+  } else {
+    res.status(404).send({ message: "Không tìm thấy người dùng" });
   }
 };
 
-exports.unfriend = async (req, res) => {
-  const conn = await db.getConnection();
+export const addFriend = async (req, res) => {
   try {
-    const { friendId } = req.params;
-    const { userId } = req.user;
-    await conn.query(
-      'DELETE FROM friends WHERE (user_id1 = ? AND user_id2 = ?) OR (user_id1 = ? AND user_id2 = ?)',
-      [userId, friendId, friendId, userId]
+    const userFrom = req.user._id; // Lấy ID từ token
+    const userTo = req.body.userTo;
+
+    if (!userTo) {
+      return res.status(400).send({ message: "Vui lòng cung cấp ID người dùng" });
+    }
+
+    const userToAccount = await UsersModel.findById(userTo);
+    const userFromAccount = await UsersModel.findById(userFrom);
+
+    if (!userToAccount || !userFromAccount) {
+      return res.status(404).send({ message: "Không tìm thấy người dùng" });
+    }
+
+    // Kiểm tra đã là bạn bè chưa
+    const isAlreadyFriend = userFromAccount.friends.some(friend => friend.idUser.toString() === userTo);
+    if (isAlreadyFriend) {
+      return res.status(400).send({ message: "Đã là bạn bè" });
+    }
+
+    // Kiểm tra đã gửi lời mời chưa
+    const hasSentRequest = userFromAccount.myRequest.some(request => request.idUser.toString() === userTo);
+    if (hasSentRequest) {
+      return res.status(400).send({ message: "Đã gửi lời mời kết bạn" });
+    }
+
+    userToAccount.peopleRequest.push({ idUser: userFrom });
+    userFromAccount.myRequest.push({ idUser: userTo });
+
+    await userToAccount.save();
+    await userFromAccount.save();
+
+    res.send({ message: "Đã gửi lời mời kết bạn" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Lỗi server" });
+  }
+};
+
+export const deleteRequestFriend = async (userFrom, userTo) => {
+  const userToAccount = await UsersModel.findOne({ _id: userTo });
+  const userFromAccount = await UsersModel.findOne({ _id: userFrom });
+
+  if (userToAccount && userFromAccount) {
+    userFromAccount.myRequest = userFromAccount.myRequest.filter(
+      (x) => x.idUser != userTo
     );
-    await conn.query(
-      'DELETE FROM friend_requests WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)',
-      [userId, friendId, friendId, userId]
+    userToAccount.peopleRequest = userToAccount.peopleRequest.filter(
+      (x) => x.idUser != userFrom
     );
-    res.json({ success: true, message: 'Đã hủy kết bạn' });
-  } catch (error) {
-    handleError(res, error, 'Lỗi hủy kết bạn:');
-  } finally {
-    conn.release();
+
+    await userFromAccount.save();
+    await userToAccount.save();
   }
 };
 
-// Lấy danh sách người dùng online
-exports.getOnlineUsers = async (req, res) => {
-  const conn = await db.getConnection();
+export const acceptFriend = async (req, res) => {
   try {
-    const onlineUsers = await conn.query(`
-      SELECT u.id, u.username, u.fullname, u.avatar
-      FROM friends f
-      JOIN users u ON f.user_id2 = u.id
-      WHERE f.user_id1 = ? AND u.status = ?
-      ORDER BY u.fullname
-    `, [req.user.userId, 'online']);
-    res.json({ success: true, onlineUsers });
+    const { userFrom, userTo } = req.body;
+
+    if (!userFrom || !userTo) {
+      return res.status(400).send({ message: "Vui lòng cung cấp đầy đủ thông tin" });
+    }
+
+    const userFromAccount = await UsersModel.findById(userFrom);
+    const userToAccount = await UsersModel.findById(userTo);
+
+    if (!userFromAccount || !userToAccount) {
+      return res.status(404).send({ message: "Không tìm thấy người dùng" });
+    }
+
+    // Kiểm tra xem có lời mời kết bạn không
+    const hasRequest = userToAccount.peopleRequest.some(request => request.idUser.toString() === userFrom);
+    if (!hasRequest) {
+      return res.status(400).send({ message: "Không tìm thấy lời mời kết bạn" });
+    }
+
+    // Tạo cuộc trò chuyện mới
+    const newConversation = new ConversationModel({
+      type: "single",
+      members: [
+        { idUser: userFrom },
+        { idUser: userTo }
+      ]
+    });
+    await newConversation.save();
+
+    // Cập nhật danh sách bạn bè
+    userFromAccount.peopleRequest = userFromAccount.peopleRequest.filter(
+      (x) => x.idUser.toString() !== userTo
+    );
+    userFromAccount.friends.push({
+      idUser: userTo,
+      idConversation: newConversation._id,
+    });
+
+    userToAccount.myRequest = userToAccount.myRequest.filter(
+      (x) => x.idUser.toString() !== userFrom
+    );
+    userToAccount.friends.push({
+      idUser: userFrom,
+      idConversation: newConversation._id,
+    });
+
+    await userFromAccount.save();
+    await userToAccount.save();
+
+    res.send({ message: "Đã chấp nhận lời mời kết bạn" });
   } catch (error) {
-    handleError(res, error, 'Lỗi lấy danh sách người dùng online:');
-  } finally {
-    conn.release();
+    console.error(error);
+    res.status(500).send({ message: "Lỗi server" });
   }
+};
+
+export const DontAcceptFriend = async (userFrom, userTo) => {
+  const userFromAccount = await UsersModel.findOne({ _id: userFrom });
+  const userToAccount = await UsersModel.findOne({ _id: userTo });
+
+  if (userFromAccount && userToAccount) {
+    userFromAccount.peopleRequest = userFromAccount.peopleRequest.filter(
+      (x) => x.idUser != userTo
+    );
+
+    userToAccount.myRequest = userToAccount.myRequest.filter(
+      (x) => x.idUser != userFrom
+    );
+
+    await userFromAccount.save();
+    await userToAccount.save();
+  }
+};
+
+export const unFriend = async (userFrom, userTo, idConversation) => {
+  await ConversationModel.findByIdAndDelete(idConversation);
+  await MessageModel.deleteMany({ idConversation: idConversation });
+
+  const userFromAccount = await UsersModel.findOne({ _id: userFrom });
+  const userToAccount = await UsersModel.findOne({ _id: userTo });
+
+  if (userFromAccount && userToAccount) {
+    userFromAccount.friends = userFromAccount.friends.filter(
+      (x) => x.idUser != userTo
+    );
+
+    userToAccount.friends = userToAccount.friends.filter(
+      (x) => x.idUser != userFrom
+    );
+
+    await userFromAccount.save();
+    await userToAccount.save();
+  }
+};
+
+export const getAllPeopleRequestByUser = async (req, res) => {
+  const list = await UsersModel.findById(req.params.id).populate({
+    path: "peopleRequest.idUser",
+    select: { name: 1, avatar: 1 },
+  });
+  res.send(list.peopleRequest);
+};
+
+export const getAllFriendByUser = async (req, res) => {
+  const list = await UsersModel.findById(req.params.id).populate({
+    path: "friends.idUser",
+    select: { name: 1, avatar: 1 },
+  });
+
+  res.send(list.friends);
+};
+
+export const Demo = (req, res) => {
+  res.send("dnsahbc");
 };
