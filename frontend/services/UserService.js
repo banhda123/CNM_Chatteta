@@ -155,6 +155,34 @@ const UserService = {
     }
   },
 
+  updateUserInfo: async (userInfo, token) => {
+    try {
+      const response = await axios.post(`${API_URL}/update-profile`, userInfo, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error updating user info:", error);
+      throw error;
+    }
+  },
+
+  changeUserPassword: async (passwordData, token) => {
+    try {
+      const response = await axios.post(`${API_URL}/change-password`, passwordData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error changing password:", error);
+      throw error;
+    }
+  },
+
   // Friend Operations
   addFriend: async (userTo, token) => {
     try {

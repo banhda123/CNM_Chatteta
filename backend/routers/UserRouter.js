@@ -18,7 +18,9 @@ import {
   DontAcceptFriend,
   unFriend,
   deleteRequestFriend,
-} from "../controllers/UserController.js";
+  updateUserInfo,
+  changeUserPassword
+} from "../controllers/userController.js";
 import { isAuth } from "../utils/index.js";
 import { upload } from "../utils/uploadImage.js";
 
@@ -42,10 +44,15 @@ UserRouter.post("/addFriend", isAuth, addFriend);
 UserRouter.post("/acceptFriend", isAuth, acceptFriend);
 UserRouter.post("/dontAcceptFriend", isAuth, DontAcceptFriend);
 UserRouter.post("/unFriend", isAuth, unFriend);
+UserRouter.post("/deleteRequestFriend", isAuth, deleteRequestFriend);
 
 UserRouter.get("/getAllFriendByUser/:id", getAllFriendByUser);
 UserRouter.get("/getAllPeopleRequestByUser/:id", getAllPeopleRequestByUser);
 
 UserRouter.get("/demo", Demo);
+
+// New routes
+UserRouter.post("/update-profile", isAuth, updateUserInfo);
+UserRouter.post("/change-password", isAuth, changeUserPassword);
 
 export default UserRouter;

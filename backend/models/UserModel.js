@@ -16,6 +16,18 @@ const UserSchema = new Schema(
     otp: String,
     refeshToken: String,
     cloudinary_id: String,
+    
+    // Thêm các trường mới
+    email: String,
+    birthday: String,
+    status: {
+      type: String,
+      default: "Hey there! I'm using this app"
+    },
+    about: {
+      type: String,
+      default: "No bio yet"
+    },
 
     friends: [FriendSchema],
     myRequest: [FriendSchema], 

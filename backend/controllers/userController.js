@@ -421,3 +421,77 @@ export const getAllFriendByUser = async (req, res) => {
 export const Demo = (req, res) => {
   res.send("dnsahbc");
 };
+
+export const updateUserInfo = async (req, res) => {
+  try {
+    const { userId, name, status, about, email, birthday } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const user = await UsersModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Update only provided fields
+    if (name) user.name = name;
+    if (status) user.status = status;
+    if (about) user.about = about;
+    if (email) user.email = email;
+    if (birthday) user.birthday = birthday;
+
+    await user.save();
+    
+    res.status(200).json({
+      success: true,
+      message: "User information updated successfully",
+      user: {
+        _id: user._id,
+        name: user.name,
+        phone: user.phone,
+        email: user.email,
+        avatar: user.avatar,
+        status: user.status,
+        about: user.about,
+        birthday: user.birthday
+      }
+    });
+  } catch (error) {
+    console.error("Error updating user info:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export const changeUserPassword = async (req, res) => {
+  try {
+    const { userId, currentPassword, newPassword } = req.body;
+
+    if (!userId || !currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+
+    const user = await UsersModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Verify current password
+    if (user.password !== currentPassword) {
+      return res.status(401).json({ message: "Current password is incorrect" });
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+    
+    res.status(200).json({
+      success: true,
+      message: "Password updated successfully"
+    });
+  } catch (error) {
+    console.error("Error changing password:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
