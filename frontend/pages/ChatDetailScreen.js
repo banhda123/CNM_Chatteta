@@ -286,31 +286,39 @@ const ChatUI = () => {
     if (draft) setNewMessage(draft);
   }, [activeConversation]);
 
-  // Xử lý tin nhắn mới
+  // Đoạn xử lý nhận tin nhắn từ socket
   useEffect(() => {
-    if (!SocketService.socket) return;
-    
-    console.log('📨 Thiết lập listener cho tin nhắn mới');
-    
-    const handleNewMessage = (message) => {
-      console.log('📩 Nhận tin nhắn mới từ socket:', message);
+    // Setup socket event listener for new messages
+    SocketService.onNewMessage((message) => {
+      if (!message) return;
       
-      setMessages(prev => {
-        // Kiểm tra tin nhắn đã tồn tại chưa
-        const isDuplicate = prev.some(msg => 
-          // Trường hợp 1: ID giống nhau
-          (msg._id && msg._id === message._id) ||
-          // Trường hợp 2: ID tạm = ID thật từ server
-          (msg.id && msg.id === message._id) ||
-          // Trường hợp 3: Là tin nhắn tạm và sender + content giống nhau
-          (msg.id && msg.id.startsWith('temp-') && 
-           msg.sender.toString() === message.sender.toString() && 
-           msg.content === message.content)
+      console.log(`📩 Received message from socket: ${message._id || 'unknown'}`);
+      
+      // Extra logging for image messages
+      if (message.type === 'image') {
+        console.log('🖼️ Received image:', {
+          id: message._id,
+          url: message.fileUrl,
+          type: message.type
+        });
+      }
+      
+      // Add or update message in the list
+      setMessages((prev) => {
+        // Check if this message already exists in our list
+        const isDuplicate = prev.some(
+          (msg) =>
+            (msg._id && msg._id === message._id) ||
+            (msg.id && msg.id === message._id) ||
+            (msg.id &&
+              msg.id.startsWith('temp-') &&
+              msg.sender.toString() === message.sender.toString() &&
+              msg.content === message.content)
         );
         
         if (isDuplicate) {
-          console.log('⚠️ Tin nhắn này đã tồn tại, cập nhật thông tin thay vì thêm mới');
-          // Cập nhật tin nhắn hiện có thay vì thêm mới
+          console.log('⚠️ This message already exists, updating instead of adding new');
+          // Update existing message instead of adding new one
           return prev.map(msg => {
             if ((msg._id && msg._id === message._id) || 
                 (msg.id && msg.id === message._id) ||
@@ -318,58 +326,64 @@ const ChatUI = () => {
                  msg.sender.toString() === message.sender.toString() && 
                  msg.content === message.content)) {
               
-              console.log('🔄 Cập nhật tin nhắn:', msg.id, ' -> ', message._id);
+              console.log('🔄 Updating message:', msg.id, ' -> ', message._id);
               
-              // Đối với hình ảnh và tập tin, đảm bảo các thuộc tính đặc biệt được giữ lại
+              // For images and files, ensure special properties are preserved
               return { 
-                ...message,                        // Lấy tất cả từ tin nhắn server
-                status: "delivered",               // Cập nhật trạng thái
-                fileUrl: message.fileUrl || msg.fileUrl,         // Giữ lại URL file
-                type: message.type || msg.type,                  // Giữ lại loại tin nhắn  
-                fileName: message.fileName || msg.fileName       // Giữ lại tên file
+                ...message,                        // Take everything from server message
+                status: "delivered",               // Update status
+                fileUrl: message.fileUrl || msg.fileUrl,         // Keep file URL
+                type: message.type || msg.type,                  // Keep message type  
+                fileName: message.fileName || msg.fileName       // Keep file name
               };
             }
             return msg;
           });
         } else {
-          console.log('✨ Thêm tin nhắn mới vào danh sách');
+          console.log('✨ Adding new message to list');
           
-          // Kiểm tra và xử lý tin nhắn ảnh/file
+          // Check and process image/file messages
           if (message.type === 'image' || message.type === 'file') {
-            console.log('📁 Nhận tin nhắn ảnh/file mới qua socket:', message.type);
-            console.log('🔗 URL file:', message.fileUrl);
-            console.log('📝 Tên file:', message.fileName);
-            console.log('📋 Loại file:', message.fileType);
+            console.log('📁 Received new image/file message via socket:', message.type);
+            console.log('🔗 File URL:', message.fileUrl);
+            console.log('📝 File name:', message.fileName);
+            console.log('📋 File type:', message.fileType);
+            
+            // Ensure the message object has all required properties for rendering
+            const enhancedMessage = {
+              ...message,
+              status: "delivered"
+            };
+            
+            // If no duplicates, add to list
+            return [...prev, enhancedMessage];
           }
           
-          // Nếu không trùng lặp, thêm mới
+          // If no duplicates, add to list
           return [...prev, message];
         }
       });
       
-      // Cuộn xuống dưới
+      // Scroll to bottom when new message arrives
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 100);
       
-      // Nếu là tin nhắn từ người khác và đang trong cuộc trò chuyện này thì đánh dấu đã xem
+      // If message is from another user and we're in the conversation, mark as seen
       if (
         message.sender.toString() !== userId.toString() && 
         message.idConversation.toString() === activeConversation?._id.toString()
       ) {
-        console.log('👁️ Đánh dấu tin nhắn đã xem');
+        console.log('👁️ Marking message as seen');
         SocketService.markMessageAsSeen(message.idConversation);
       }
-    };
-    
-    // Đăng ký event listener
-    SocketService.onNewMessage(handleNewMessage);
-    
-    // Cleanup
+    });
+
+    // Clean up socket listener on unmount
     return () => {
-      SocketService.removeListener('new_message');
+      SocketService.removeListener("new_message");
     };
-  }, [userId, activeConversation]);  // Bỏ dependency messages để tránh re-render liên tục
+  }, [userId, activeConversation]);  // Add dependencies needed for message handling
 
   // Cập nhật hàm handleSendMessage để gửi tin nhắn qua socket
   const handleSendMessage = async () => {
@@ -404,6 +418,11 @@ const ChatUI = () => {
     if (selectedFile && selectedFile.type.startsWith('image/') && selectedFilePreview) {
       tempMessage.fileUrl = selectedFilePreview; // Dùng base64 preview tạm thời
       tempMessage.isPreview = true; // Đánh dấu đây là xem trước
+      
+      // Nếu là ảnh và không có nội dung, đặt content rỗng
+      if (!newMessage.trim()) {
+        tempMessage.content = '';
+      }
     }
 
     // Thêm tin nhắn vào UI ngay lập tức
@@ -625,13 +644,15 @@ const ChatUI = () => {
         setSelectedFilePreview(e.target.result);
       };
       reader.readAsDataURL(file);
+      
+      // Focus vào input text để người dùng có thể nhập caption nếu muốn
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
     } else {
       // For non-image files, just set the name
       setSelectedFilePreview(null);
     }
-    
-    // Don't modify the input text content when selecting a file
-    // This allows users to add a caption to their image
   };
 
   const handleCancelFileSelection = () => {
@@ -918,14 +939,28 @@ const ChatUI = () => {
     
     const handleMessageRevoked = (data) => {
       console.log('📝 Tin nhắn đã bị thu hồi:', data);
-      const { messageId, conversationId } = data;
+      const { messageId, conversationId, type } = data;
       
       // Chỉ xử lý nếu messageId và conversationId đúng với cuộc trò chuyện hiện tại
       if (conversationId === activeConversation?._id) {
         setMessages(prevMessages => 
-          prevMessages.map(msg => 
-            msg._id === messageId ? { ...msg, isRevoked: true } : msg
-          )
+          prevMessages.map(msg => {
+            if (msg._id === messageId) {
+              console.log('🔄 Đánh dấu tin nhắn đã thu hồi:', 
+                { id: messageId, type: type || msg.type || 'text' });
+              
+              return { 
+                ...msg, 
+                isRevoked: true,
+                // Giữ lại loại tin nhắn để hiển thị thông báo thu hồi phù hợp
+                type: type || msg.type || 'text',
+                // Giữ lại các thuộc tính quan trọng khác
+                fileUrl: msg.fileUrl, // Giữ lại để nhận biết đây là tin nhắn ảnh/file
+                fileName: msg.fileName
+              };
+            }
+            return msg;
+          })
         );
       }
     };
@@ -991,9 +1026,13 @@ const ChatUI = () => {
         return;
       }
       
-      // Gọi API thu hồi tin nhắn - thay đổi từ PATCH sang POST
+      // Ghi nhận loại tin nhắn trước khi thu hồi
+      const messageType = selectedMessage.type || 'text';
+      console.log('📝 Đang thu hồi tin nhắn loại:', messageType);
+      
+      // Gọi API thu hồi tin nhắn
       const response = await fetch(`http://localhost:4000/chat/message/revoke/${selectedMessage._id}`, {
-        method: 'POST', // Sửa từ PATCH sang POST
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -1004,7 +1043,15 @@ const ChatUI = () => {
         // Cập nhật tin nhắn trong state
         setMessages(prevMessages => 
           prevMessages.map(msg => 
-            msg._id === selectedMessage._id ? { ...msg, isRevoked: true } : msg
+            msg._id === selectedMessage._id ? { 
+              ...msg, 
+              isRevoked: true,
+              // Giữ nguyên type để hiển thị thông báo thu hồi đúng
+              type: messageType,
+              // Giữ lại thông tin file nếu có
+              fileUrl: msg.fileUrl,
+              fileName: msg.fileName
+            } : msg
           )
         );
         
@@ -1271,7 +1318,6 @@ const ChatUI = () => {
                 ))
               )}
             </Menu>
-
             {/* Settings Menu (original menu) */}
             <IconButton onClick={handleMenuOpen} id="settings-button" aria-label="Settings menu">
               <MoreVert />
@@ -1604,7 +1650,7 @@ const ChatUI = () => {
                               aria-haspopup="true"
                             >
                               {/* Display file if message has file */}
-                              {(message.type === 'image' || message.type === 'file' || message.hasFile) && (
+                              {!message.isRevoked && (message.type === 'image' || message.type === 'file' || message.hasFile) && (
                                 <Box sx={{ mb: 1 }}>
                                   {message.type === 'image' ? (
                                     /* Image file display */
@@ -1627,6 +1673,10 @@ const ChatUI = () => {
                                           filter: message.isPreview ? 'blur(0.5px)' : 'none'
                                         }}
                                         onClick={() => message.fileUrl && !message.isPreview && window.open(message.fileUrl, '_blank')}
+                                        onError={(e) => {
+                                          console.error('🚫 Image failed to load:', message.fileUrl);
+                                          e.target.src = 'https://via.placeholder.com/150?text=Image+Error';
+                                        }}
                                       />
                                       {message.status === 'sending' && (
                                         <Box 
@@ -1635,16 +1685,16 @@ const ChatUI = () => {
                                             top: '50%',
                                             left: '50%',
                                             transform: 'translate(-50%, -50%)',
+                                            backgroundColor: 'rgba(0,0,0,0.3)',
+                                            borderRadius: '50%',
+                                            width: 40,
+                                            height: 40,
                                             display: 'flex',
                                             alignItems: 'center',
-                                            justifyContent: 'center',
-                                            borderRadius: '50%',
-                                            bgcolor: 'rgba(0, 0, 0, 0.5)',
-                                            width: 40,
-                                            height: 40
+                                            justifyContent: 'center'
                                           }}
                                         >
-                                          <CircularProgress size={24} sx={{ color: 'white' }} />
+                                          <CircularProgress size={24} color="inherit" />
                                         </Box>
                                       )}
                                       {message.status === 'failed' && (
@@ -1658,12 +1708,12 @@ const ChatUI = () => {
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             borderRadius: '50%',
-                                            bgcolor: 'rgba(255, 0, 0, 0.5)',
+                                            backgroundColor: 'rgba(255, 0, 0, 0.5)',
                                             width: 40,
                                             height: 40
                                           }}
                                         >
-                                          <Typography variant="caption" sx={{ color: 'white' }}>Lỗi</Typography>
+                                          <Typography variant="caption" sx={{ color: 'white' }}>Error</Typography>
                                         </Box>
                                       )}
                                     </Box>
@@ -1701,13 +1751,25 @@ const ChatUI = () => {
                               
                               {/* Hiển thị nội dung tin nhắn */}
                               {message.isRevoked ? (
-                                <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'gray' }}>
-                                  Tin nhắn đã bị thu hồi
-                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                  <UndoIcon fontSize="small" sx={{ color: 'text.disabled', mr: 1 }} />
+                                  <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.disabled' }}>
+                                    {(message.type === 'image') 
+                                      ? "Hình ảnh đã bị thu hồi" 
+                                      : (message.type === 'file') 
+                                        ? "Tệp đính kèm đã bị thu hồi" 
+                                        : "Tin nhắn đã bị thu hồi"}
+                                  </Typography>
+                                </Box>
                               ) : (
-                                <Typography variant="body1">
-                                  {message?.content || message?.text}
-                                </Typography>
+                                // Chỉ hiển thị nội dung text nếu không phải là tin nhắn ảnh
+                                // hoặc nếu là ảnh nhưng có nội dung khác ngoài caption tự động
+                                (!message.type || message.type !== 'image' || 
+                                 (message.content && !message.content.startsWith('File:'))) && (
+                                  <Typography variant="body1">
+                                    {message?.content || message?.text}
+                                  </Typography>
+                                )
                               )}
                             </Paper>
                             <Box
@@ -1834,7 +1896,9 @@ const ChatUI = () => {
                   <TextField
                     fullWidth
                     variant="outlined"
-                    placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
+                    placeholder={selectedFile ? 
+                      (selectedFile.type.startsWith('image/') ? "Thêm chú thích cho ảnh (không bắt buộc)..." : "Thêm mô tả cho file...") : 
+                      "Nhập tin nhắn..."}
                     multiline
                     maxRows={4}
                     value={newMessage}
@@ -1851,7 +1915,7 @@ const ChatUI = () => {
                   <IconButton
                     color="primary"
                     onClick={handleSendMessage}
-                    disabled={!newMessage.trim() && !selectedFile}
+                    disabled={!selectedFile && !newMessage.trim()}
                     sx={{
                       bgcolor: "primary.main",
                       color: "white",
@@ -1947,3 +2011,4 @@ const ChatUI = () => {
 };
 
 export default ChatUI;
+

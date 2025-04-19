@@ -136,7 +136,21 @@ class SocketService {
 
   static onNewMessage(callback) {
     if (this.socket) {
-      this.socket.on('new_message', callback);
+      this.socket.off('new_message'); // Remove any existing listeners to prevent duplicates
+      this.socket.on('new_message', (message) => {
+        // Log specific details for image messages
+        if (message && message.type === 'image') {
+          console.log('📱 Received image message via socket:', {
+            id: message._id,
+            type: message.type,
+            fileUrl: message.fileUrl,
+            fileType: message.fileType
+          });
+        }
+        
+        // Call the provided callback with the message
+        callback(message);
+      });
     }
   }
 

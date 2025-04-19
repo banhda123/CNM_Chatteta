@@ -127,12 +127,22 @@ export const ConnectSocket = (server) => {
           return;
         }
         
+        // Lưu thông tin loại tin nhắn trước khi cập nhật
+        const messageType = message.type || 'text';
+        const hasFile = !!message.fileUrl;
+        console.log(`📝 Thu hồi tin nhắn ID ${messageId}, loại: ${messageType}, có file: ${hasFile}`);
+        
         // Cập nhật tình trạng thu hồi tin nhắn
         message.isRevoked = true;
         await message.save();
         
         // Thông báo cho tất cả người dùng trong cuộc trò chuyện
-        io.to(conversationId).emit("message_revoked", { messageId, conversationId });
+        io.to(conversationId).emit("message_revoked", { 
+          messageId, 
+          conversationId,
+          type: messageType, // Gửi đúng loại tin nhắn cho client
+          hasFile: hasFile // Thêm thông tin có phải là file hay không
+        });
       } catch (error) {
         console.error("Error revoking message via socket:", error);
         socket.emit("revoke_message_error", { error: "Failed to revoke message" });
@@ -212,14 +222,31 @@ export const emitNewMessage = async (message, socketId = null) => {
   if (ioInstance && message && message.idConversation) {
     console.log(`🔔 Emitting new message to conversation ${message.idConversation}`);
     
-    // Nếu có socketId, emit trực tiếp đến socket cụ thể 
-    // để tránh trường hợp người gửi nhận tin nhắn của chính mình
+    // Ensure message is in the right format
+    let formattedMessage = message;
+    
+    // If message is a Mongoose document, convert to plain object
+    if (message.toObject && typeof message.toObject === 'function') {
+      formattedMessage = message.toObject();
+    }
+    
+    // Log image-specific details if this is an image message
+    if (formattedMessage.type === 'image') {
+      console.log('📸 Emitting image message: ', {
+        id: formattedMessage._id,
+        fileUrl: formattedMessage.fileUrl,
+        fileName: formattedMessage.fileName,
+        fileType: formattedMessage.fileType
+      });
+    }
+    
+    // If a specific socketId is provided, emit to all clients in the conversation except the sender
     if (socketId) {
-      console.log(`📲 Phát hiện socketId: ${socketId}, emit trực tiếp`);
-      ioInstance.to(message.idConversation.toString()).except(socketId).emit('new_message', message);
+      console.log(`📲 Detected socketId: ${socketId}, direct emit`);
+      ioInstance.to(formattedMessage.idConversation.toString()).except(socketId).emit('new_message', formattedMessage);
     } else {
-      // Nếu không có socketId, emit đến tất cả client trong conversation
-      ioInstance.to(message.idConversation.toString()).emit('new_message', message);
+      // Otherwise, emit to all clients in the conversation
+      ioInstance.to(formattedMessage.idConversation.toString()).emit('new_message', formattedMessage);
     }
     return true;
   }
