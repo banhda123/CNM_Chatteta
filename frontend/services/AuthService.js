@@ -36,6 +36,60 @@ const AuthService = {
     }
   },
 
+  // Register method
+  register: async (name, phone, password) => {
+    try {
+      const response = await axios.post(`${API_URL}/register`, {
+        name,
+        phone,
+        password,
+      });
+
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error("Register error:", error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message,
+      };
+    }
+  },
+
+  // Send OTP method
+  sendOTP: async (phone) => {
+    try {
+      const response = await axios.post(`${API_URL}/sendmail`, {
+        email: phone, // API is using email field for OTP
+      });
+
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error("Send OTP error:", error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message,
+      };
+    }
+  },
+
+  // Verify OTP method
+  verifyOTP: async (phone, otp) => {
+    try {
+      const response = await axios.post(`${API_URL}/checkotp`, {
+        email: phone, // API is using email field
+        otp,
+      });
+
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error("Verify OTP error:", error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message,
+      };
+    }
+  },
+
   // Logout method
   logout: () => {
     try {
@@ -69,15 +123,40 @@ const AuthService = {
     return localStorage.getItem("refreshToken");
   },
 
+  // Set user data
+  setUserData: (userData) => {
+    try {
+      localStorage.setItem(
+        "userData",
+        JSON.stringify(userData)
+      );
+      return true;
+    } catch (error) {
+      console.error("Error saving user data:", error);
+      return false;
+    }
+  },
+
   // Get user data
   getUserData: () => {
-    const data = localStorage.getItem("userData");
-    return data ? JSON.parse(data) : null;
+    try {
+      const data = localStorage.getItem("userData");
+      return data ? JSON.parse(data) : null;
+    } catch (error) {
+      console.error("Error retrieving user data:", error);
+      return null;
+    }
   },
 
   // Check if user is authenticated
   isAuthenticated: () => {
-    return !!localStorage.getItem("accessToken");
+    try {
+      const token = localStorage.getItem("accessToken");
+      return !!token;
+    } catch (error) {
+      console.error("Error checking authentication:", error);
+      return false;
+    }
   },
 };
 

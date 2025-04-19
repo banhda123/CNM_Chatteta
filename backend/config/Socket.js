@@ -5,7 +5,7 @@ import {
   saveMessage,
   seenMessage,
   updateLastMesssage,
-} from "../controllers/ChatController.js";
+} from "../controllers/chatController.js";
 import {
   acceptFriend,
   addFriend,
@@ -13,16 +13,23 @@ import {
   DontAcceptFriend,
   unFriend,
 } from "../controllers/UserController.js";
+import { MessageModel } from "../models/MessageModel.js";
+
+// Biến để lưu trữ io instance để có thể sử dụng từ các module khác
+let ioInstance = null;
 
 export const ConnectSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: ["http://localhost:3000", "http://localhost"],
-      methods: ["GET", "POST"],
-      allowedHeaders: ["my-custom-header"],
+      origin: ["http://localhost:3000", "http://localhost", "http://localhost:8081"],
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+      allowedHeaders: ["my-custom-header", "Content-Type", "Authorization"],
       credentials: true,
     },
   });
+  
+  // Lưu io instance để có thể sử dụng từ bên ngoài
+  ioInstance = io;
 
   io.on("connection", (socket) => {
     console.log(`${socket.id} connected`);
@@ -102,6 +109,72 @@ export const ConnectSocket = (server) => {
       );
     });
 
+    socket.on("revoke_message", async (data) => {
+      try {
+        const { messageId, conversationId, userId } = data;
+        
+        // Tìm tin nhắn
+        const message = await MessageModel.findById(messageId);
+        
+        if (!message) {
+          socket.emit("revoke_message_error", { error: "Message not found" });
+          return;
+        }
+        
+        // Kiểm tra người thu hồi tin nhắn có phải là người gửi không
+        if (message.sender.toString() !== userId) {
+          socket.emit("revoke_message_error", { error: "You can only revoke your own messages" });
+          return;
+        }
+        
+        // Cập nhật tình trạng thu hồi tin nhắn
+        message.isRevoked = true;
+        await message.save();
+        
+        // Thông báo cho tất cả người dùng trong cuộc trò chuyện
+        io.to(conversationId).emit("message_revoked", { messageId, conversationId });
+      } catch (error) {
+        console.error("Error revoking message via socket:", error);
+        socket.emit("revoke_message_error", { error: "Failed to revoke message" });
+      }
+    });
+    
+    socket.on("delete_message", async (data) => {
+      try {
+        const { messageId, conversationId, userId } = data;
+        
+        // Tìm tin nhắn
+        const message = await MessageModel.findById(messageId);
+        
+        if (!message) {
+          socket.emit("delete_message_error", { error: "Message not found" });
+          return;
+        }
+        
+        // Không cần kiểm tra người xóa có phải người gửi không
+        // Kiểm tra xem người dùng đã xóa tin nhắn này chưa
+        if (message.deletedBy && message.deletedBy.some(id => id.toString() === userId)) {
+          socket.emit("delete_message_error", { error: "Message already deleted by you" });
+          return;
+        }
+        
+        // Thêm userId vào mảng deletedBy
+        if (!message.deletedBy) {
+          message.deletedBy = [];
+        }
+        
+        message.deletedBy.push(userId);
+        await message.save();
+        
+        // Chỉ gửi thông báo cho người dùng đang thực hiện thao tác
+        // không phát sóng cho tất cả mọi người trong cuộc trò chuyện
+        socket.emit("message_deleted", { messageId, conversationId, forUser: userId });
+      } catch (error) {
+        console.error("Error deleting message via socket:", error);
+        socket.emit("delete_message_error", { error: "Failed to delete message" });
+      }
+    });
+
     socket.on("create_conversation", async (data) => {
       try {
         const { userFrom, userTo } = data;
@@ -133,3 +206,25 @@ export const ConnectSocket = (server) => {
     });
   });
 };
+
+// Hàm tiện ích để gửi tin nhắn mới đến các client trong cuộc trò chuyện
+export const emitNewMessage = async (message, socketId = null) => {
+  if (ioInstance && message && message.idConversation) {
+    console.log(`🔔 Emitting new message to conversation ${message.idConversation}`);
+    
+    // Nếu có socketId, emit trực tiếp đến socket cụ thể 
+    // để tránh trường hợp người gửi nhận tin nhắn của chính mình
+    if (socketId) {
+      console.log(`📲 Phát hiện socketId: ${socketId}, emit trực tiếp`);
+      ioInstance.to(message.idConversation.toString()).except(socketId).emit('new_message', message);
+    } else {
+      // Nếu không có socketId, emit đến tất cả client trong conversation
+      ioInstance.to(message.idConversation.toString()).emit('new_message', message);
+    }
+    return true;
+  }
+  return false;
+};
+
+// Xuất ioInstance để các module khác có thể sử dụng
+export const getIO = () => ioInstance;

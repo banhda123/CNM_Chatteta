@@ -56,16 +56,19 @@ class ChatService {
       const config = {
         headers: {
           Authorization: `Bearer ${token}`,
-        },
+          'Content-Type': 'application/json'
+        }
       };
+      
       const response = await axios.post(
-        `${API_URL}/message`,
+        `${API_URL}/message`, 
         messageData,
         config
       );
+      
       return response.data;
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error("Error sending message via HTTP:", error);
       throw error;
     }
   }
@@ -111,6 +114,29 @@ class ChatService {
       return response.data;
     } catch (error) {
       console.error("Error joining conversation:", error);
+      throw error;
+    }
+  }
+
+  // Upload file message
+  static async uploadFile(formData, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      };
+      
+      const response = await axios.post(
+        `${API_URL}/upload`, 
+        formData,
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error uploading file:", error);
       throw error;
     }
   }

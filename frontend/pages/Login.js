@@ -7,12 +7,11 @@ import {
   TextField,
   Typography,
   Paper,
-  Link,
   CircularProgress,
 } from "@mui/material";
 import AuthService from "../services/AuthService";
 
-const Login = ({ switchToRegister }) => {
+const Login = () => {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
@@ -28,9 +27,22 @@ const Login = ({ switchToRegister }) => {
       const result = await AuthService.login(phone, password);
 
       if (result.success) {
-        const userData = await AuthService.getUserData();
-        if (userData?._id) {
-          navigation.navigate("Chat", { userId: userData._id });
+        const userData = result.user || {};
+        
+        const userDataToStore = {
+          _id: userData._id,
+          name: userData.name,
+          phone: userData.phone,
+          avatar: userData.avatar || null
+        };
+        
+        AuthService.setUserData(userDataToStore);
+        
+        if (userData._id) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Chat', params: { userId: userData._id } }],
+          });
         } else {
           throw new Error("Failed to retrieve user data");
         }
@@ -48,59 +60,84 @@ const Login = ({ switchToRegister }) => {
 
   return (
     <Container maxWidth="sm">
-      <Paper elevation={3} sx={{ p: 4, mt: 8, borderRadius: "16px" }}>
-        <Typography variant="h5" gutterBottom align="center">
-          Login
-        </Typography>
-
-        {error && (
-          <Typography color="error" sx={{ mb: 2 }} align="center">
-            {error}
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Paper
+          elevation={3}
+          sx={{
+            p: 4,
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            borderRadius: "16px"
+          }}
+        >
+          <Typography variant="h4" align="center" gutterBottom>
+            Đăng nhập
           </Typography>
-        )}
+          
+          {error && (
+            <Typography color="error" align="center">
+              {error}
+            </Typography>
+          )}
 
-        <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 2 }}>
-          <TextField
-            fullWidth
-            label="Phone Number"
-            margin="normal"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            required
-            inputProps={{
-              inputMode: "numeric",
-              pattern: "[0-9]*",
-            }}
-          />
+          <Box component="form" onSubmit={handleSubmit} noValidate>
+            <TextField
+              fullWidth
+              label="Số điện thoại"
+              variant="outlined"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              margin="normal"
+              required
+              inputProps={{
+                inputMode: "numeric",
+                pattern: "[0-9]*",
+              }}
+            />
+            
+            <TextField
+              fullWidth
+              label="Mật khẩu"
+              type="password"
+              variant="outlined"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              margin="normal"
+              required
+            />
 
-          <TextField
-            fullWidth
-            label="Password"
-            margin="normal"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+            <Button
+              type="submit"
+              fullWidth
+              variant="contained"
+              color="primary"
+              sx={{ mt: 3, mb: 2 }}
+              disabled={isLoading}
+            >
+              {isLoading ? <CircularProgress size={24} /> : "Đăng nhập"}
+            </Button>
 
-          <Button
-            fullWidth
-            type="submit"
-            variant="contained"
-            sx={{ mt: 3, mb: 2 }}
-            disabled={isLoading}
-          >
-            {isLoading ? <CircularProgress size={24} /> : "Login"}
-          </Button>
-        </Box>
-
-        <Typography variant="body2" align="center" sx={{ mt: 2 }}>
-          Don't have an account?{" "}
-          <Link component="button" onClick={switchToRegister}>
-            Register
-          </Link>
-        </Typography>
-      </Paper>
+            <Typography align="center" sx={{ mt: 2 }}>
+              Chưa có tài khoản?{' '}
+              <Button
+                color="primary"
+                onClick={() => navigation.navigate('Register')}
+              >
+                Đăng ký
+              </Button>
+            </Typography>
+          </Box>
+        </Paper>
+      </Box>
     </Container>
   );
 };

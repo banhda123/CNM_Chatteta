@@ -14,8 +14,32 @@ const MessageSchema = new Schema(
     },
     sender: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     content: String,
-    type: String,
+    type: {
+      type: String,
+      enum: ["text", "file", "image", "audio", "video"],
+      default: "text"
+    },
     seen: Boolean,
+    fileUrl: {
+      type: String,
+      default: null
+    },
+    fileName: {
+      type: String,
+      default: null
+    },
+    fileType: {
+      type: String,
+      default: null
+    },
+    isRevoked: {
+      type: Boolean,
+      default: false
+    },
+    deletedBy: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User"
+    }]
   },
   {
     timestamps: true,

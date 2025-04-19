@@ -38,7 +38,7 @@ const ProfileUI = () => {
         const userData = await UserService.getUserById(userId);
         setUser({
           name: userData.name || "No name provided",
-          avatar: userData.avatar || "https://via.placeholder.com/150",
+          avatar: userData.avatar || "https://res.cloudinary.com/daclejcpu/image/upload/v1744812771/avatar-mac-dinh-12_i7jnd3.jpg",
           status: userData.status || "Hey there! I'm using this app",
           birthday: userData.birthday || "Not specified",
           phone: userData.phone || "Not provided",
