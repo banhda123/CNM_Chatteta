@@ -10,6 +10,15 @@ export const getUser = async (req, res) => {
   res.send(users);
 };
 
+export const getUserByPhoneNumber = async (req, res) => {
+  const user = await UsersModel.findOne({ phone: req.params.phone });
+  if (user) {
+    res.send(user);
+  } else {
+    res.status(403).send({ message: "user not found" });
+  }
+};
+
 export const getUserById = async (req, res) => {
   const user = await UsersModel.findOne({ _id: req.params.id });
   if (user) {
@@ -26,13 +35,13 @@ export const updateRefeshToken = (user, refeshToken) => {
 
 export const Login = async (req, res) => {
   // Kiểm tra thông tin đầy đủ
-  if (!req.body.phone || !req.body.password) {
+  if (!req.body.phone == null || !req.body.password == null) {
     return res.status(400).send({ message: "Vui lòng điền đầy đủ thông tin" });
   }
 
-  const user = await UsersModel.findOne({ 
+  const user = await UsersModel.findOne({
     phone: req.body.phone,
-    password: req.body.password 
+    password: req.body.password,
   });
 
   if (user) {
@@ -54,9 +63,9 @@ export const Login = async (req, res) => {
 };
 
 export const Register = async (req, res) => {
-  console.log(req.body)
+  console.log(req.body);
   const userExists = await UsersModel.findOne({ phone: req.body.phone });
-  console.log(userExists)
+  console.log(userExists);
   if (userExists) {
     res.status(400).send({ message: "Số điện thoại này đã đăng kí tài khoản" });
   } else {
@@ -64,7 +73,8 @@ export const Register = async (req, res) => {
       name: req.body.name,
       phone: req.body.phone,
       password: req.body.password,
-      avatar: "https://res.cloudinary.com/daclejcpu/image/upload/v1744812771/avatar-mac-dinh-12_i7jnd3.jpg"
+      avatar:
+        "https://res.cloudinary.com/daclejcpu/image/upload/v1744812771/avatar-mac-dinh-12_i7jnd3.jpg",
     });
     await user.save();
 
@@ -118,19 +128,21 @@ export const sendMail = async (req, res) => {
       countDownOtp(60000, userExist);
       userExist.otp = String(otp);
       await userExist.save();
-      
+
       const smsSent = await sendSMS(email, otp);
-      
+
       if (smsSent) {
-        res.send({ 
+        res.send({
           message: "Mã OTP đã được gửi đến số điện thoại của bạn",
-          otp: otp
+          otp: otp,
         });
       } else {
         res.status(500).send({ message: "Không thể gửi SMS" });
       }
     } else {
-      res.status(403).send({ message: "Số điện thoại này chưa đăng kí tài khoản" });
+      res
+        .status(403)
+        .send({ message: "Số điện thoại này chưa đăng kí tài khoản" });
     }
   } catch (error) {
     console.log(error);
@@ -142,18 +154,20 @@ export const checkCodeOtp = async (req, res) => {
   console.log("Request body:", req.body);
   const userExist = await UsersModel.findOne({ phone: req.body.email });
   console.log("User found:", userExist);
-  
+
   if (userExist) {
     console.log("User OTP:", userExist.otp);
     console.log("Request OTP:", req.body.otp);
-    
+
     if (req.body.otp === userExist.otp) {
       res.send({ message: "OTP đã đúng" });
     } else {
       res.status(403).send({ message: "OTP không đúng" });
     }
   } else {
-    res.status(403).send({ message: "Số điện thoại này chưa đăng kí tài khoản" });
+    res
+      .status(403)
+      .send({ message: "Số điện thoại này chưa đăng kí tài khoản" });
   }
 };
 
@@ -190,7 +204,9 @@ export const searchUser = async (req, res) => {
   } else if (req.body.phone) {
     user = await UsersModel.findOne({ phone: req.body.phone });
   } else {
-    return res.status(400).send({ message: "Vui lòng cung cấp ID hoặc số điện thoại" });
+    return res
+      .status(400)
+      .send({ message: "Vui lòng cung cấp ID hoặc số điện thoại" });
   }
 
   if (user) {
@@ -203,10 +219,12 @@ export const searchUser = async (req, res) => {
 export const addFriend = async (req, res) => {
   try {
     const userFrom = req.user._id; // Lấy ID từ token
-    const userTo = req.body.userTo;
+    const userTo = req.body.id;
 
     if (!userTo) {
-      return res.status(400).send({ message: "Vui lòng cung cấp ID người dùng" });
+      return res
+        .status(400)
+        .send({ message: "Vui lòng cung cấp ID người dùng" });
     }
 
     const userToAccount = await UsersModel.findById(userTo);
@@ -217,13 +235,17 @@ export const addFriend = async (req, res) => {
     }
 
     // Kiểm tra đã là bạn bè chưa
-    const isAlreadyFriend = userFromAccount.friends.some(friend => friend.idUser.toString() === userTo);
+    const isAlreadyFriend = userFromAccount.friends.some(
+      (friend) => friend.idUser.toString() === userTo
+    );
     if (isAlreadyFriend) {
       return res.status(400).send({ message: "Đã là bạn bè" });
     }
 
     // Kiểm tra đã gửi lời mời chưa
-    const hasSentRequest = userFromAccount.myRequest.some(request => request.idUser.toString() === userTo);
+    const hasSentRequest = userFromAccount.myRequest.some(
+      (request) => request.idUser.toString() === userTo
+    );
     if (hasSentRequest) {
       return res.status(400).send({ message: "Đã gửi lời mời kết bạn" });
     }
@@ -263,35 +285,40 @@ export const acceptFriend = async (req, res) => {
     const { userFrom, userTo } = req.body;
 
     if (!userFrom || !userTo) {
-      return res.status(400).send({ message: "Vui lòng cung cấp đầy đủ thông tin" });
+      return res
+        .status(400)
+        .send({ message: "Vui lòng cung cấp đầy đủ thông tin" });
     }
 
     const userFromAccount = await UsersModel.findById(userFrom);
-    const userToAccount = await UsersModel.findById(userTo);
+    const userToAccount = await UsersModel.findById(userTo._id);
 
     if (!userFromAccount || !userToAccount) {
       return res.status(404).send({ message: "Không tìm thấy người dùng" });
     }
 
+    console.log(userFromAccount);
+    console.log(userTo._id);
     // Kiểm tra xem có lời mời kết bạn không
-    const hasRequest = userToAccount.peopleRequest.some(request => request.idUser.toString() === userFrom);
+    const hasRequest = userFromAccount.peopleRequest.some(
+      (request) => request.idUser.toString() === userTo._id.toString()
+    );
     if (!hasRequest) {
-      return res.status(400).send({ message: "Không tìm thấy lời mời kết bạn" });
+      return res
+        .status(400)
+        .send({ message: "Không tìm thấy lời mời kết bạn" });
     }
 
     // Tạo cuộc trò chuyện mới
     const newConversation = new ConversationModel({
       type: "single",
-      members: [
-        { idUser: userFrom },
-        { idUser: userTo }
-      ]
+      members: [{ idUser: userFrom }, { idUser: userTo }],
     });
     await newConversation.save();
 
     // Cập nhật danh sách bạn bè
     userFromAccount.peopleRequest = userFromAccount.peopleRequest.filter(
-      (x) => x.idUser.toString() !== userTo
+      (x) => x.idUser.toString() !== userTo._id
     );
     userFromAccount.friends.push({
       idUser: userTo,
@@ -356,11 +383,30 @@ export const unFriend = async (userFrom, userTo, idConversation) => {
 };
 
 export const getAllPeopleRequestByUser = async (req, res) => {
-  const list = await UsersModel.findById(req.params.id).populate({
-    path: "peopleRequest.idUser",
-    select: { name: 1, avatar: 1 },
-  });
-  res.send(list.peopleRequest);
+  try {
+    // Basic validation
+    if (!req.params?.id) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    // Get user with populated friend requests
+    const user = await UsersModel.findById(req.params.id)
+      .populate({
+        path: "peopleRequest.idUser", // Changed from "friends.idUser"
+        select: "_id name avatar",
+      })
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Return peopleRequest array instead of friends
+    res.json(user.peopleRequest || []); // Changed from user.friends
+  } catch (error) {
+    console.error("Error fetching friend requests:", error); // Updated error message
+    res.status(500).json({ message: "Server error" });
+  }
 };
 
 export const getAllFriendByUser = async (req, res) => {

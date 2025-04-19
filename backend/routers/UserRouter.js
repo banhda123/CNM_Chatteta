@@ -1,4 +1,4 @@
-import express from 'express'
+import express from "express";
 import {
   changeAvatar,
   checkCodeOtp,
@@ -16,7 +16,8 @@ import {
   addFriend,
   acceptFriend,
   DontAcceptFriend,
-  unFriend
+  unFriend,
+  deleteRequestFriend,
 } from "../controllers/UserController.js";
 import { isAuth } from "../utils/index.js";
 import { upload } from "../utils/uploadImage.js";
@@ -47,4 +48,4 @@ UserRouter.get("/getAllPeopleRequestByUser/:id", getAllPeopleRequestByUser);
 
 UserRouter.get("/demo", Demo);
 
-export default UserRouter
+export default UserRouter;

@@ -49,9 +49,11 @@ export const getAllConversationByUser = async (req, res) => {
 export const saveMessage = async (req, res) => {
   try {
     const { idConversation, content, type } = req.body;
-    
+
     if (!idConversation || !content || !type) {
-      return res.status(400).send({ message: "Vui lòng cung cấp đầy đủ thông tin" });
+      return res
+        .status(400)
+        .send({ message: "Vui lòng cung cấp đầy đủ thông tin" });
     }
 
     const message = new MessageModel({
@@ -59,14 +61,14 @@ export const saveMessage = async (req, res) => {
       content,
       type,
       seen: false,
-      sender: req.user._id
+      sender: req.user._id,
     });
-    
+
     await message.save();
-    
+
     // Cập nhật tin nhắn cuối cùng
     await updateLastMesssage({ idConversation, message: message._id });
-    
+
     res.send(message);
   } catch (error) {
     console.error(error);
@@ -83,7 +85,7 @@ export const updateLastMesssage = async ({ idConversation, message }) => {
 
 export const getAllMessageByConversation = async (req, res) => {
   const allMessage = await MessageModel.find({ idConversation: req.params.id });
-
+  console.log(allMessage);
   res.send(allMessage);
 };
 
@@ -100,10 +102,17 @@ export const getAllFriend = async (req, res) => {
 
   res.send(data);
 };
+export const seenMessage = async (req, res) => {
+  const idConversation = req.params.id;
 
-export const seenMessage = async (idConversation) => {
-  await MessageModel.updateMany(
-    { idConversation: idConversation },
-    { seen: true }
-  );
+  try {
+    await MessageModel.updateMany(
+      { idConversation: idConversation },
+      { seen: true }
+    );
+    res.status(200).json({ message: "Messages marked as seen" });
+  } catch (error) {
+    console.error("Error updating messages:", error);
+    res.status(500).json({ error: "Failed to mark messages as seen" });
+  }
 };

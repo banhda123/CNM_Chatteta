@@ -1,8 +1,8 @@
-import express from 'express'
-import cors from 'cors'
-import UserRouter from './routers/UserRouter.js'
-import ConnectToDB from './config/DB.js'
-import dotenv from 'dotenv'
+import express from "express";
+import cors from "cors";
+import UserRouter from "./routers/UserRouter.js";
+import ConnectToDB from "./config/DB.js";
+import dotenv from "dotenv";
 import { createServer } from "http";
 import { ConnectSocket } from "./config/Socket.js";
 import cloudinary from "./config/Cloudinary.js";
@@ -17,7 +17,14 @@ const PORT = 4000;
 ConnectSocket(server);
 ConnectToDB();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "http://localhost:8081", // Your React dev server
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
