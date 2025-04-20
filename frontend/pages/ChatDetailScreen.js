@@ -1426,9 +1426,17 @@ const ChatUI = () => {
                 onClick={() => handleConversationSelect(conversation)}
                 selected={activeConversation?._id === conversation?._id}
                 sx={{
-                  "&:hover": { bgcolor: "action.hover" },
+                  "&:hover": { 
+                    bgcolor: "action.hover",
+                    transform: "translateY(-2px)",
+                    transition: "transform 0.2s ease"
+                  },
                   borderBottom: "1px solid",
                   borderColor: "divider",
+                  bgcolor: conversation?.unreadCount > 0 ? "rgba(25, 118, 210, 0.08)" : "transparent",
+                  transition: "all 0.3s ease",
+                  py: 1.5,
+                  cursor: "pointer"
                 }}
               >
                 <ListItemAvatar>
@@ -1558,7 +1566,7 @@ const ChatUI = () => {
                 flex: 1,
                 overflowY: "auto",
                 p: 2,
-                bgcolor: "background.default",
+                bgcolor: "#f0f2f5",
                 backgroundImage:
                   "url('https://web.whatsapp.com/img/bg-chat-tile-light_a4be512e7195b6b733d9110b408f075d.png')",
                 backgroundRepeat: "repeat",
@@ -1571,7 +1579,15 @@ const ChatUI = () => {
                     <CircularProgress />
                   </Box>
                 ) : messages.length > 0 ? (
-                  <>
+                  <Box 
+                    sx={{
+                      pt: 2,
+                      pb: 2,
+                      px: { xs: 1, sm: 3 },
+                      borderRadius: 2,
+                      bgcolor: 'rgba(255, 255, 255, 0.05)',
+                    }}
+                  >
                     {Object.keys(typingUsers).length > 0 && (
                       <Box
                         sx={{
@@ -1619,13 +1635,36 @@ const ChatUI = () => {
                               message?.idUser?.toString() === userId?.toString())
                                 ? "row-reverse"
                                 : "row",
+                            alignItems: "flex-end",
                           }}
                         >
+                          {/* Hiển thị avatar bên tin nhắn của đối phương */}
+                          {!(message?.sender?.toString() === userId?.toString() ||
+                            message?.idUser?.toString() === userId?.toString()) && (
+                            <Avatar
+                              src={getOtherParticipant(activeConversation)?.idUser?.avatar ||
+                                "/static/images/avatar/2.jpg"}
+                              sx={{ 
+                                width: 28, 
+                                height: 28, 
+                                mr: 1, 
+                                mb: 1,
+                                display: { xs: 'none', sm: 'flex' }
+                              }}
+                            />
+                          )}
                           <Box
                             sx={{
                               maxWidth: {
                                 xs: "80%",
                                 sm: "60%",
+                              },
+                              minWidth: "120px",
+                              position: "relative",
+                              "&:hover": {
+                                "& .message-time": {
+                                  opacity: 1,
+                                },
                               },
                             }}
                           >
@@ -1644,6 +1683,45 @@ const ChatUI = () => {
                                     ? "#d9fdd3"
                                     : "white",
                                 position: "relative",
+                                boxShadow: 
+                                  (message?.sender?.toString() === userId?.toString() ||
+                                  message?.idUser?.toString() === userId?.toString())
+                                    ? "0 1px 0.5px rgba(0, 0, 0, 0.13)"
+                                    : "0 1px 0.5px rgba(0, 0, 0, 0.13)",
+                                borderLeft: 
+                                  (message?.sender?.toString() === userId?.toString() ||
+                                  message?.idUser?.toString() === userId?.toString())
+                                    ? "none"
+                                    : "3px solid #00a884",
+                                borderBottom:
+                                  (message?.sender?.toString() === userId?.toString() ||
+                                  message?.idUser?.toString() === userId?.toString())
+                                    ? "none"
+                                    : "1px solid #f0f2f5",
+                                '&::before': {
+                                  content: '""',
+                                  position: 'absolute',
+                                  width: '12px',
+                                  height: '12px',
+                                  transform: 'rotate(45deg)',
+                                  zIndex: 0,
+                                  ...(!(message?.sender?.toString() === userId?.toString() ||
+                                      message?.idUser?.toString() === userId?.toString()) && {
+                                    left: '-6px',
+                                    top: '10px',
+                                    backgroundColor: 'white',
+                                    borderLeft: '1px solid rgba(0, 0, 0, 0.1)',
+                                    borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
+                                  }),
+                                  ...((message?.sender?.toString() === userId?.toString() ||
+                                      message?.idUser?.toString() === userId?.toString()) && {
+                                    right: '-6px',
+                                    top: '10px',
+                                    backgroundColor: '#d9fdd3',
+                                    borderRight: '1px solid rgba(0, 0, 0, 0.1)',
+                                    borderTop: '1px solid rgba(0, 0, 0, 0.1)',
+                                  }),
+                                }
                               }}
                               onContextMenu={(e) => handleMessageContextMenu(e, message)}
                               id={`message-${message?._id || index}`}
@@ -1762,14 +1840,31 @@ const ChatUI = () => {
                                   </Typography>
                                 </Box>
                               ) : (
-                                // Chỉ hiển thị nội dung text nếu không phải là tin nhắn ảnh
-                                // hoặc nếu là ảnh nhưng có nội dung khác ngoài caption tự động
-                                (!message.type || message.type !== 'image' || 
-                                 (message.content && !message.content.startsWith('File:'))) && (
-                                  <Typography variant="body1">
-                                    {message?.content || message?.text}
-                                  </Typography>
-                                )
+                                <>
+                                  {/* Hiển thị tên người gửi cho tin nhắn đối phương */}
+                                  {!(message?.sender?.toString() === userId?.toString() ||
+                                    message?.idUser?.toString() === userId?.toString()) && (
+                                    <Typography 
+                                      variant="subtitle2" 
+                                      sx={{ 
+                                        fontSize: '0.75rem',
+                                        fontWeight: 'bold', 
+                                        color: '#00a884',
+                                        mb: 0.5
+                                      }}
+                                    >
+                                      {getOtherParticipant(activeConversation)?.idUser?.name || "Unknown User"}
+                                    </Typography>
+                                  )}
+                                  
+                                  {/* Nội dung tin nhắn */}
+                                  {(!message.type || message.type !== 'image' || 
+                                   (message.content && !message.content.startsWith('File:'))) && (
+                                    <Typography variant="body1">
+                                      {message?.content || message?.text}
+                                    </Typography>
+                                  )}
+                                </>
                               )}
                             </Paper>
                             <Box
@@ -1781,6 +1876,9 @@ const ChatUI = () => {
                                     ? "flex-end"
                                     : "flex-start",
                                 mt: 0.5,
+                                opacity: 0.7,
+                                transition: "opacity 0.2s",
+                                className: "message-time"
                               }}
                             >
                               <Typography
@@ -1813,7 +1911,7 @@ const ChatUI = () => {
                         </Box>
                       </Box>
                     ))}
-                  </>
+                  </Box>
                 ) : (
                   <Typography
                     variant="body1"

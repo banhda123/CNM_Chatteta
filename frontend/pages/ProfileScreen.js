@@ -76,24 +76,24 @@ const ProfileScreen = ({ onBack }) => {
     fetchUserData();
   }, [userId]);
 
-  const fetchUserData = async () => {
-    try {
+    const fetchUserData = async () => {
+      try {
       setLoading(true);
 
-      if (!userId) {
-        throw new Error("User ID not found");
-      }
+        if (!userId) {
+          throw new Error("User ID not found");
+        }
 
-      const userData = await UserService.getUserById(userId);
+        const userData = await UserService.getUserById(userId);
       
       const userInfo = {
-        name: userData.name || "No name provided",
+          name: userData.name || "No name provided",
         avatar: userData.avatar || "https://via.placeholder.com/150",
-        status: userData.status || "Hey there! I'm using this app",
-        birthday: userData.birthday || "Not specified",
-        phone: userData.phone || "Not provided",
-        email: userData.email || "Not provided",
-        about: userData.about || "No bio yet",
+          status: userData.status || "Hey there! I'm using this app",
+          birthday: userData.birthday || "Not specified",
+          phone: userData.phone || "Not provided",
+          email: userData.email || "Not provided",
+          about: userData.about || "No bio yet",
       };
       
       setUser(userInfo);
@@ -103,14 +103,14 @@ const ProfileScreen = ({ onBack }) => {
         email: userInfo.email,
         birthday: userInfo.birthday,
         about: userInfo.about
-      });
-    } catch (error) {
+        });
+      } catch (error) {
       console.error("Failed to load profile data:", error);
       alert("Failed to load profile data");
-    } finally {
-      setLoading(false);
-    }
-  };
+      } finally {
+        setLoading(false);
+      }
+    };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
