@@ -218,6 +218,24 @@ class SocketService {
   static getSocketId() {
     return this.currentSocketId;
   }
+
+  static addReaction(messageId, conversationId, userId, emoji) {
+    if (this.socket && messageId && conversationId && userId && emoji) {
+      this.socket.emit('add_reaction', { messageId, conversationId, userId, emoji });
+    }
+  }
+
+  static removeReaction(messageId, conversationId, userId, emoji) {
+    if (this.socket && messageId && conversationId && userId && emoji) {
+      this.socket.emit('remove_reaction', { messageId, conversationId, userId, emoji });
+    }
+  }
+
+  static onMessageReaction(callback) {
+    if (this.socket) {
+      this.socket.on('message_reaction', callback);
+    }
+  }
 }
 
 export default SocketService; 

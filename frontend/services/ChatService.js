@@ -175,6 +175,52 @@ class ChatService {
       return false;
     }
   }
+
+  // Thêm cảm xúc vào tin nhắn
+  static async addReaction(messageId, userId, emoji, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.post(
+        `${API_URL}/message/reaction`, 
+        { messageId, userId, emoji },
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error adding reaction:", error);
+      throw error;
+    }
+  }
+  
+  // Xóa cảm xúc khỏi tin nhắn
+  static async removeReaction(messageId, userId, emoji, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.post(
+        `${API_URL}/message/reaction/remove`, 
+        { messageId, userId, emoji },
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error removing reaction:", error);
+      throw error;
+    }
+  }
 }
 
 export default ChatService;

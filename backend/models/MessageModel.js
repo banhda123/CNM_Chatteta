@@ -39,7 +39,11 @@ const MessageSchema = new Schema(
     deletedBy: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: "User"
-    }]
+    }],
+    reactions: {
+      type: Object,
+      default: {}
+    }
   },
   {
     timestamps: true,

@@ -51,6 +51,7 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import RenderFileMessage from "../components/RenderFileMessage";
+import MessageReactions from "../components/MessageReactions";
 
 const ChatUI = () => {
   const route = useRoute();
@@ -1324,6 +1325,176 @@ const ChatUI = () => {
     }
   };
 
+  // Xử lý thêm cảm xúc vào tin nhắn
+  const handleAddReaction = async (messageId, emoji) => {
+    if (!messageId || !userId || !activeConversation) return;
+    
+    try {
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        console.error('No access token found');
+        Alert.alert("Error", "You are not authenticated");
+        return;
+      }
+      
+      // Kiểm tra tin nhắn có reaction từ user này chưa
+      const message = messages.find(msg => msg._id === messageId);
+      if (!message) return;
+      
+      // Kiểm tra nếu user đã thả cảm xúc này, thì xóa đi
+      if (message.reactions && 
+          message.reactions[emoji] && 
+          message.reactions[emoji].includes(userId)) {
+        // Xóa cảm xúc
+        await handleRemoveReaction(messageId, emoji);
+        return;
+      }
+      
+      // Cập nhật UI tạm thời trước
+      setMessages(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg._id === messageId) {
+            // Tạo bản sao của reactions hoặc object mới nếu chưa có
+            const updatedReactions = { ...(msg.reactions || {}) };
+            
+            // Cập nhật hoặc tạo mới danh sách người dùng cho emoji này
+            if (updatedReactions[emoji]) {
+              // Nếu đã có danh sách cho emoji này, thêm userId vào
+              if (!updatedReactions[emoji].includes(userId)) {
+                updatedReactions[emoji] = [...updatedReactions[emoji], userId];
+              }
+            } else {
+              // Tạo mới danh sách cho emoji này
+              updatedReactions[emoji] = [userId];
+            }
+            
+            return {
+              ...msg,
+              reactions: updatedReactions
+            };
+          }
+          return msg;
+        })
+      );
+      
+      // Gửi yêu cầu qua socket để thông báo cho các người dùng khác
+      SocketService.addReaction(messageId, activeConversation._id, userId, emoji);
+      
+      // Đồng bộ với server qua API
+      await ChatService.addReaction(messageId, userId, emoji, token);
+      
+    } catch (error) {
+      console.error('Error adding reaction:', error);
+      Alert.alert("Error", "Failed to add reaction");
+    }
+  };
+  
+  // Xử lý xóa cảm xúc khỏi tin nhắn
+  const handleRemoveReaction = async (messageId, emoji) => {
+    if (!messageId || !userId || !activeConversation) return;
+    
+    try {
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        console.error('No access token found');
+        Alert.alert("Error", "You are not authenticated");
+        return;
+      }
+      
+      // Cập nhật UI tạm thời trước
+      setMessages(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg._id === messageId && msg.reactions && msg.reactions[emoji]) {
+            // Tạo bản sao của reactions
+            const updatedReactions = { ...msg.reactions };
+            
+            // Xóa userId khỏi danh sách người dùng cho emoji này
+            updatedReactions[emoji] = updatedReactions[emoji].filter(id => id !== userId);
+            
+            // Nếu không còn ai thả emoji này, xóa khỏi danh sách
+            if (updatedReactions[emoji].length === 0) {
+              delete updatedReactions[emoji];
+            }
+            
+            return {
+              ...msg,
+              reactions: updatedReactions
+            };
+          }
+          return msg;
+        })
+      );
+      
+      // Gửi yêu cầu qua socket để thông báo cho các người dùng khác
+      SocketService.removeReaction(messageId, activeConversation._id, userId, emoji);
+      
+      // Đồng bộ với server qua API
+      await ChatService.removeReaction(messageId, userId, emoji, token);
+      
+    } catch (error) {
+      console.error('Error removing reaction:', error);
+      Alert.alert("Error", "Failed to remove reaction");
+    }
+  };
+
+  // Thêm event listener cho việc cập nhật cảm xúc
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('👍 Thiết lập listener cho cảm xúc tin nhắn');
+    
+    const handleMessageReaction = (data) => {
+      const { messageId, emoji, userId: reactUserId, action } = data;
+      
+      console.log(`👍 Nhận phản hồi cảm xúc: ${emoji} từ ${reactUserId} cho tin nhắn ${messageId}`);
+      
+      if (!messageId || !emoji || !reactUserId) return;
+      
+      setMessages(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg._id === messageId) {
+            // Tạo bản sao của reactions hoặc object mới nếu chưa có
+            const updatedReactions = { ...(msg.reactions || {}) };
+            
+            if (action === 'add') {
+              // Thêm cảm xúc
+              if (updatedReactions[emoji]) {
+                if (!updatedReactions[emoji].includes(reactUserId)) {
+                  updatedReactions[emoji] = [...updatedReactions[emoji], reactUserId];
+                }
+              } else {
+                updatedReactions[emoji] = [reactUserId];
+              }
+            } else if (action === 'remove') {
+              // Xóa cảm xúc
+              if (updatedReactions[emoji]) {
+                updatedReactions[emoji] = updatedReactions[emoji].filter(id => id !== reactUserId);
+                
+                if (updatedReactions[emoji].length === 0) {
+                  delete updatedReactions[emoji];
+                }
+              }
+            }
+            
+            return {
+              ...msg,
+              reactions: updatedReactions
+            };
+          }
+          return msg;
+        })
+      );
+    };
+    
+    // Đăng ký event listener
+    SocketService.onMessageReaction(handleMessageReaction);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('message_reaction');
+    };
+  }, []);
+
   if (showProfile) {
     return <ProfileScreen onBack={() => setShowProfile(false)} />;
   }
@@ -1998,6 +2169,15 @@ const ChatUI = () => {
                                 </Box>
                               )}
                             </Box>
+                            
+                            {/* Add MessageReactions component */}
+                            {!message.isRevoked && (
+                              <MessageReactions 
+                                message={message} 
+                                userId={userId} 
+                                onAddReaction={handleAddReaction} 
+                              />
+                            )}
                           </Box>
                         </Box>
                       </Box>

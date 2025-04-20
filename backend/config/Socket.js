@@ -211,6 +211,90 @@ export const ConnectSocket = (server) => {
       socket.to(idConversation).emit("user_stop_typing", userId);
     });
 
+    // Xử lý thêm cảm xúc vào tin nhắn
+    socket.on("add_reaction", async (data) => {
+      try {
+        const { messageId, conversationId, userId, emoji } = data;
+        
+        // Tìm tin nhắn
+        const message = await MessageModel.findById(messageId);
+        
+        if (!message) {
+          socket.emit("reaction_error", { error: "Message not found" });
+          return;
+        }
+
+        // Khởi tạo reactions object nếu chưa có
+        if (!message.reactions) {
+          message.reactions = {};
+        }
+        
+        // Khởi tạo mảng người dùng cho emoji này nếu chưa có
+        if (!message.reactions[emoji]) {
+          message.reactions[emoji] = [];
+        }
+        
+        // Thêm userId vào danh sách nếu chưa có
+        if (!message.reactions[emoji].includes(userId)) {
+          message.reactions[emoji].push(userId);
+          await message.save();
+          
+          console.log(`👍 Người dùng ${userId} đã thêm cảm xúc ${emoji} vào tin nhắn ${messageId}`);
+        }
+        
+        // Gửi thông báo cho tất cả người dùng trong cuộc trò chuyện
+        io.to(conversationId).emit("message_reaction", { 
+          messageId, 
+          emoji,
+          userId,
+          action: 'add'
+        });
+      } catch (error) {
+        console.error("Error adding reaction:", error);
+        socket.emit("reaction_error", { error: "Failed to add reaction" });
+      }
+    });
+    
+    // Xử lý xóa cảm xúc khỏi tin nhắn
+    socket.on("remove_reaction", async (data) => {
+      try {
+        const { messageId, conversationId, userId, emoji } = data;
+        
+        // Tìm tin nhắn
+        const message = await MessageModel.findById(messageId);
+        
+        if (!message) {
+          socket.emit("reaction_error", { error: "Message not found" });
+          return;
+        }
+        
+        // Kiểm tra xem có reactions không
+        if (message.reactions && message.reactions[emoji]) {
+          // Xóa userId khỏi danh sách
+          message.reactions[emoji] = message.reactions[emoji].filter(id => id.toString() !== userId);
+          
+          // Nếu không còn ai thả emoji này, xóa khỏi danh sách
+          if (message.reactions[emoji].length === 0) {
+            delete message.reactions[emoji];
+          }
+          
+          await message.save();
+          console.log(`👎 Người dùng ${userId} đã xóa cảm xúc ${emoji} khỏi tin nhắn ${messageId}`);
+        }
+        
+        // Gửi thông báo cho tất cả người dùng trong cuộc trò chuyện
+        io.to(conversationId).emit("message_reaction", { 
+          messageId, 
+          emoji,
+          userId,
+          action: 'remove'
+        });
+      } catch (error) {
+        console.error("Error removing reaction:", error);
+        socket.emit("reaction_error", { error: "Failed to remove reaction" });
+      }
+    });
+
     socket.on("disconnect", () => {
       console.log(`${socket.id} disconnected`);
     });
