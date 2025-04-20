@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography, CircularProgress } from '@mui/material';
+import { Box, Typography, CircularProgress, IconButton } from '@mui/material';
 import {
   PictureAsPdf as PictureAsPdfIcon,
   Description as DescriptionIcon,
@@ -12,7 +12,12 @@ import {
 
 const RenderFileMessage = ({ message, handleOpenFile }) => {
   // Đảm bảo có tin nhắn file
-  if (!message || !message.fileUrl) {
+  if (!message) {
+    return null;
+  }
+  
+  // Kiểm tra nếu có đường dẫn file hoặc tempFileUrl (cho file chưa upload)
+  if (!message.fileUrl && !message.fileName) {
     return null;
   }
 
@@ -26,28 +31,65 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
         <Box 
           sx={{
             position: 'relative',
-            width: 'fit-content'
+            width: 'fit-content',
+            maxWidth: '100%'
           }}
         >
-          <Box 
-            component="img"
-            src={message.fileUrl}
-            alt="Image attachment"
-            sx={{ 
-              maxWidth: '100%',
-              maxHeight: '200px',
+          <Box
+            sx={{
+              position: 'relative',
               borderRadius: '8px',
-              cursor: isSending ? 'default' : 'pointer',
-              opacity: isSending ? 0.7 : 1,
-              filter: message.isPreview ? 'blur(0.5px)' : 'none'
+              overflow: 'hidden'
             }}
-            onClick={() => message.fileUrl && !message.isPreview && !isSending && 
-              window.open(message.fileUrl, '_blank')}
-            onError={(e) => {
-              console.error('🚫 Image failed to load:', message.fileUrl);
-              e.target.src = 'https://via.placeholder.com/150?text=Image+Error';
-            }}
-          />
+          >
+            <Box 
+              component="img"
+              src={message.fileUrl}
+              alt="Image attachment"
+              sx={{ 
+                maxWidth: '100%',
+                maxHeight: '250px',
+                borderRadius: '8px',
+                cursor: isSending ? 'default' : 'pointer',
+                opacity: isSending ? 0.7 : 1,
+                filter: message.isPreview ? 'blur(0.5px)' : 'none'
+              }}
+              onClick={() => message.fileUrl && !message.isPreview && !isSending && 
+                window.open(message.fileUrl.startsWith('http')
+                  ? message.fileUrl 
+                  : `http://localhost:4000${message.fileUrl.startsWith('/') ? '' : '/'}${message.fileUrl}`, '_blank')}
+              onError={(e) => {
+                console.error('🚫 Image failed to load:', message.fileUrl);
+                e.target.src = 'https://via.placeholder.com/150?text=Image+Error';
+              }}
+            />
+            
+            {/* Tải xuống ảnh */}
+            {message.fileUrl && !isSending && !message.isPreview && (
+              <IconButton 
+                size="small" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenFile(message.fileUrl, message.fileName || 'image.jpg', message.fileType);
+                }}
+                sx={{ 
+                  position: 'absolute',
+                  bottom: 8,
+                  right: 8,
+                  bgcolor: 'rgba(0,0,0,0.5)',
+                  color: 'white',
+                  '&:hover': {
+                    bgcolor: 'rgba(0,0,0,0.7)'
+                  },
+                  width: 28,
+                  height: 28
+                }}
+              >
+                <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>↓</Box>
+              </IconButton>
+            )}
+          </Box>
+          
           {isSending && (
             <Box 
               sx={{
@@ -350,25 +392,102 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
             p: 1.5,
             borderRadius: '8px',
             display: 'flex',
-            alignItems: 'center',
-            cursor: isSending ? 'default' : 'pointer',
-            opacity: isSending ? 0.7 : 1,
-            '&:hover': {
-              bgcolor: !isSending ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)'
-            },
-            maxWidth: 300
+            flexDirection: 'column',
+            alignItems: 'center', 
+            width: '100%',
+            maxWidth: 350,
+            overflow: 'hidden'
           }}
-          onClick={() => message.fileUrl && !isSending && 
-            handleOpenFile(message.fileUrl, message.fileName, message.fileType)}
         >
-          <VideocamIcon fontSize="medium" sx={{ mr: 1.5, color: '#f44336' }} />
-          <Box>
-            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-              {message.fileName || "Video"}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {isSending ? "Đang tải..." : "Nhấn để phát video"}
-            </Typography>
+          {/* Video display */}
+          {message.fileUrl && !isSending && !message.fileUrl.startsWith('temp_file_') ? (
+            <Box sx={{ width: '100%', mb: 1, borderRadius: '8px', overflow: 'hidden' }}>
+              <video 
+                controls 
+                width="100%"
+                style={{ 
+                  borderRadius: '8px',
+                  maxHeight: '250px',
+                  backgroundColor: '#000',
+                }}
+              >
+                <source 
+                  src={message.fileUrl.startsWith('http') 
+                    ? message.fileUrl 
+                    : `http://localhost:4000${message.fileUrl.startsWith('/') ? '' : '/'}${message.fileUrl}`
+                  } 
+                  type={message.fileType || "video/mp4"} 
+                />
+                Video không được hỗ trợ.
+              </video>
+            </Box>
+          ) : (
+            <Box
+              sx={{ 
+                width: '100%',
+                height: 150,
+                bgcolor: '#222',
+                borderRadius: '8px',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                mb: 1,
+                position: 'relative'
+              }}
+            >
+              <VideocamIcon sx={{ fontSize: 48, color: '#f44336' }} />
+              {isSending && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    bgcolor: 'rgba(0,0,0,0.6)'
+                  }}
+                >
+                  <CircularProgress size={24} color="inherit" sx={{ color: '#fff' }} />
+                </Box>
+              )}
+            </Box>
+          )}
+          
+          {/* Video info */}
+          <Box sx={{ width: '100%', display: 'flex', alignItems: 'center' }}>
+            <VideocamIcon fontSize="small" sx={{ mr: 1, color: '#f44336' }} />
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 'medium', wordBreak: 'break-word' }}>
+                {message.fileName || "Video"}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {isSending 
+                  ? "Đang tải..." 
+                  : message.fileUrl && !message.fileUrl.startsWith('temp_file_')
+                    ? "Đang phát video" 
+                    : "Đang chuẩn bị video..."
+                }
+              </Typography>
+            </Box>
+            
+            {/* Tải xuống video */}
+            {message.fileUrl && !isSending && !message.fileUrl.startsWith('temp_file_') && (
+              <Box sx={{ ml: 'auto' }}>
+                <IconButton 
+                  size="small" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenFile(message.fileUrl, message.fileName, message.fileType);
+                  }}
+                  sx={{ color: 'primary.main' }}
+                >
+                  <Box component="span" sx={{ fontSize: '1.2rem', fontWeight: 'bold' }}>↓</Box>
+                </IconButton>
+              </Box>
+            )}
           </Box>
         </Box>
       );
@@ -381,25 +500,101 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
             p: 1.5,
             borderRadius: '8px',
             display: 'flex',
-            alignItems: 'center',
-            cursor: isSending ? 'default' : 'pointer',
-            opacity: isSending ? 0.7 : 1,
-            '&:hover': {
-              bgcolor: !isSending ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)'
-            },
-            maxWidth: 300
+            flexDirection: 'column',
+            width: '100%',
+            maxWidth: 350,
+            overflow: 'hidden'
           }}
-          onClick={() => message.fileUrl && !isSending && 
-            handleOpenFile(message.fileUrl, message.fileName, message.fileType)}
         >
-          <AudiotrackIcon fontSize="medium" sx={{ mr: 1.5, color: '#9c27b0' }} />
-          <Box>
-            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-              {message.fileName || "Audio"}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {isSending ? "Đang tải..." : "Nhấn để phát audio"}
-            </Typography>
+          {/* Audio player */}
+          {message.fileUrl && !isSending && !message.fileUrl.startsWith('temp_file_') ? (
+            <Box sx={{ width: '100%', mb: 1 }}>
+              <audio 
+                controls 
+                style={{ 
+                  width: '100%',
+                  height: 40,
+                  borderRadius: '8px',
+                  backgroundColor: '#f5f0ff',
+                }}
+              >
+                <source 
+                  src={message.fileUrl.startsWith('http') 
+                    ? message.fileUrl 
+                    : `http://localhost:4000${message.fileUrl.startsWith('/') ? '' : '/'}${message.fileUrl}`
+                  } 
+                  type={message.fileType || "audio/mpeg"} 
+                />
+                Audio không được hỗ trợ.
+              </audio>
+            </Box>
+          ) : (
+            <Box
+              sx={{ 
+                width: '100%',
+                height: 60,
+                bgcolor: '#f5f0ff',
+                borderRadius: '8px',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                mb: 1,
+                position: 'relative'
+              }}
+            >
+              <AudiotrackIcon sx={{ fontSize: 36, color: '#9c27b0' }} />
+              {isSending && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    bgcolor: 'rgba(255,255,255,0.7)'
+                  }}
+                >
+                  <CircularProgress size={24} />
+                </Box>
+              )}
+            </Box>
+          )}
+          
+          {/* Audio info */}
+          <Box sx={{ width: '100%', display: 'flex', alignItems: 'center' }}>
+            <AudiotrackIcon fontSize="small" sx={{ mr: 1, color: '#9c27b0' }} />
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 'medium', wordBreak: 'break-word' }}>
+                {message.fileName || "Audio"}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {isSending 
+                  ? "Đang tải..." 
+                  : message.fileUrl && !message.fileUrl.startsWith('temp_file_')
+                    ? "Đang phát audio" 
+                    : "Đang chuẩn bị audio..."
+                }
+              </Typography>
+            </Box>
+            
+            {/* Tải xuống audio */}
+            {message.fileUrl && !isSending && !message.fileUrl.startsWith('temp_file_') && (
+              <Box sx={{ ml: 'auto' }}>
+                <IconButton 
+                  size="small" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenFile(message.fileUrl, message.fileName, message.fileType);
+                  }}
+                  sx={{ color: 'primary.main' }}
+                >
+                  <Box component="span" sx={{ fontSize: '1.2rem', fontWeight: 'bold' }}>↓</Box>
+                </IconButton>
+              </Box>
+            )}
           </Box>
         </Box>
       );

@@ -458,13 +458,17 @@ const ChatUI = () => {
       status: "sending",
       hasFile: !!selectedFile,
       fileName: selectedFile?.name || "",
-      type: messageType
+      fileType: selectedFile?.type || "",
+      type: messageType,
+      fileUrl: selectedFile && selectedFile.type.startsWith('image/') 
+        ? selectedFilePreview 
+        : (selectedFile?.tempFileUrl || null), // Sử dụng tempFileUrl nếu không phải hình ảnh
     };
-
-    // Thêm đường dẫn xem trước cho hình ảnh nếu có
-    if (selectedFile && selectedFile.type.startsWith('image/') && selectedFilePreview) {
-      tempMessage.fileUrl = selectedFilePreview; // Dùng base64 preview tạm thời
-      tempMessage.isPreview = true; // Đánh dấu đây là xem trước
+    
+    // Xử lý bổ sung cho tin nhắn ảnh
+    if (selectedFile && selectedFile.type && selectedFile.type.startsWith('image/')) {
+      // Đánh dấu đây là xem trước
+      tempMessage.isPreview = !!selectedFilePreview;
       
       // Nếu là ảnh và không có nội dung, đặt content rỗng
       if (!newMessage.trim()) {
@@ -523,6 +527,11 @@ const ChatUI = () => {
                     ...msg,
                     _id: fileResponse._id, // Thêm _id để phòng trường hợp socket không trả về kịp thời
                     status: "sent", // Đánh dấu là đã gửi
+                    fileUrl: fileResponse.fileUrl || msg.fileUrl, // Cập nhật URL từ response
+                    fileName: fileResponse.fileName || msg.fileName,
+                    fileType: fileResponse.fileType || msg.fileType,
+                    // Xóa trạng thái preview
+                    isPreview: false
                   }
                 : msg
             )
@@ -735,6 +744,10 @@ const ChatUI = () => {
       
       // Store the detected file type for later use
       file.detectedType = fileType;
+      
+      // Tạo một identifier tạm cho file để hiển thị trước khi upload
+      // Đảm bảo mỗi file đều có một identifier duy nhất
+      file.tempFileUrl = `temp_file_${Date.now()}_${file.name}`;
     }
     
     // Focus input text for caption
@@ -1216,6 +1229,12 @@ const ChatUI = () => {
       return;
     }
 
+    // Kiểm tra nếu là file tạm thời, thì hiển thị thông báo
+    if (fileUrl.startsWith('temp_file_')) {
+      Alert.alert("Thông báo", "File đang được tải lên máy chủ. Vui lòng đợi trong giây lát.");
+      return;
+    }
+
     console.log("🔗 Mở file:", fileUrl);
     console.log("📄 Tên file:", fileName);
     console.log("📦 Loại file:", fileType);
@@ -1249,14 +1268,21 @@ const ChatUI = () => {
     const type = getFileType();
     
     try {
+      // Đảm bảo fileUrl là URL đầy đủ
+      const url = fileUrl.startsWith('http') 
+        ? fileUrl 
+        : `http://localhost:4000${fileUrl.startsWith('/') ? '' : '/'}${fileUrl}`;
+  
+      console.log('🌐 URL hoàn chỉnh:', url);
+      
       // Mở file trực tiếp mà không cần kiểm tra
       if (['image', 'pdf', 'video', 'audio'].includes(type)) {
         // Với hình ảnh, PDF và video, trực tiếp mở URL
-        window.open(fileUrl, '_blank');
+        window.open(url, '_blank');
       } else {
         // Với các file khác, chỉ cần tải xuống
         const link = document.createElement('a');
-        link.href = fileUrl;
+        link.href = url;
         link.download = fileName || 'download'; // Đặt tên file khi tải xuống
         link.target = '_blank';
         document.body.appendChild(link);
@@ -1272,12 +1298,21 @@ const ChatUI = () => {
           {
             text: "Tải xuống",
             onPress: () => {
-              const link = document.createElement('a');
-              link.href = fileUrl;
-              link.setAttribute('download', fileName || 'download');
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
+              try {
+                const downloadUrl = fileUrl.startsWith('http') 
+                  ? fileUrl 
+                  : `http://localhost:4000${fileUrl.startsWith('/') ? '' : '/'}${fileUrl}`;
+                
+                const downloadLink = document.createElement('a');
+                downloadLink.href = downloadUrl;
+                downloadLink.setAttribute('download', fileName || 'download');
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+              } catch (err) {
+                console.error('Lỗi khi tải xuống:', err);
+                Alert.alert('Lỗi', 'Không thể tải xuống file');
+              }
             }
           },
           {
