@@ -345,7 +345,7 @@ const ProfileScreen = ({ onBack }) => {
               <PhotoCameraIcon fontSize="small" />
             </IconButton>
           </Box>
-          
+
           <Typography variant="h5" fontWeight="bold" mb={0.5}>
             {user.name}
           </Typography>

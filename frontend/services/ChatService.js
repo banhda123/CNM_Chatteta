@@ -121,6 +121,8 @@ class ChatService {
   // Upload file message
   static async uploadFile(formData, token) {
     try {
+      console.log("Uploading file with formData:", Object.fromEntries(formData.entries()));
+      
       const config = {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -137,7 +139,40 @@ class ChatService {
       return response.data;
     } catch (error) {
       console.error("Error uploading file:", error);
+      // Xem chi tiết lỗi từ response nếu có
+      if (error.response && error.response.data) {
+        console.error("Server error details:", error.response.data);
+      }
       throw error;
+    }
+  }
+  
+  // Kiểm tra xem URL có hoạt động không
+  static async checkFileUrl(url) {
+    try {
+      const response = await fetch(url, { method: 'HEAD' });
+      return response.ok;
+    } catch (error) {
+      console.error("Error checking file URL:", error);
+      return false;
+    }
+  }
+  
+  // Tải xuống file từ URL
+  static async downloadFile(url, fileName) {
+    try {
+      // Tạo một thẻ a tạm thời để tải xuống
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName || 'download');
+      link.setAttribute('target', '_blank');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return true;
+    } catch (error) {
+      console.error("Error downloading file:", error);
+      return false;
     }
   }
 }

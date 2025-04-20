@@ -230,14 +230,24 @@ export const emitNewMessage = async (message, socketId = null) => {
       formattedMessage = message.toObject();
     }
     
-    // Log image-specific details if this is an image message
-    if (formattedMessage.type === 'image') {
-      console.log('📸 Emitting image message: ', {
+    // Log detailed info for file messages
+    if (formattedMessage.type !== 'text') {
+      console.log(`📨 Emitting ${formattedMessage.type} message:`, {
         id: formattedMessage._id,
+        type: formattedMessage.type,
         fileUrl: formattedMessage.fileUrl,
         fileName: formattedMessage.fileName,
-        fileType: formattedMessage.fileType
+        fileType: formattedMessage.fileType,
+        content: formattedMessage.content
       });
+      
+      // Đảm bảo các thuộc tính file được giữ lại
+      if (!formattedMessage.fileUrl) {
+        console.warn('⚠️ Message is missing fileUrl! This will cause rendering issues.');
+      }
+      if (!formattedMessage.fileName && (formattedMessage.type !== 'text' && formattedMessage.type !== 'image')) {
+        console.warn('⚠️ Non-text/image message is missing fileName! This will cause rendering issues.');
+      }
     }
     
     // If a specific socketId is provided, emit to all clients in the conversation except the sender

@@ -76,40 +76,73 @@ export const saveMessage = async (dataOrReq, res) => {
 
     const { idConversation, content, type, fileUrl, fileName, fileType } = data;
 
-    if (!idConversation || !content) {
-      console.error("Missing required fields: idConversation or content");
+    if (!idConversation) {
+      console.error("Missing required field: idConversation");
       if (res) {
-        return res.status(400).send({ message: "Vui lòng cung cấp đầy đủ thông tin" });
+        return res.status(400).send({ message: "Thiếu ID cuộc trò chuyện" });
       }
       return null;
     }
 
+    // Kiểm tra xem nội dung có phải là tin nhắn file mà không có content không
+    const messageContent = content || (fileName ? `File: ${fileName}` : '');
+
+    // Log thông tin file nhận được
+    if (fileUrl || fileName || fileType) {
+      console.log("📁 Saving file message:", {
+        type,
+        fileUrl,
+        fileName,
+        fileType,
+        content: messageContent
+      });
+    }
+
     const messageData = {
       idConversation,
-      content,
+      content: messageContent,
       type: type || 'text',
       seen: false,
       sender: userId,
     };
 
     // Add file information if it exists
-    if (fileUrl) messageData.fileUrl = fileUrl;
-    if (fileName) messageData.fileName = fileName;
-    if (fileType) messageData.fileType = fileType;
+    if (fileUrl) {
+      messageData.fileUrl = fileUrl;
+      console.log("📄 Setting fileUrl:", fileUrl);
+    }
+    if (fileName) {
+      messageData.fileName = fileName;
+      console.log("📝 Setting fileName:", fileName);
+    }
+    if (fileType) {
+      messageData.fileType = fileType;
+      console.log("📊 Setting fileType:", fileType);
+    }
+
+    // Log để kiểm tra dữ liệu trước khi lưu
+    console.log("💾 Saving message with data:", JSON.stringify(messageData, null, 2));
 
     const message = new MessageModel(messageData);
+    const savedMessage = await message.save();
 
-    await message.save();
+    // Log sau khi lưu để kiểm tra
+    console.log("✅ Saved message:", {
+      id: savedMessage._id,
+      type: savedMessage.type,
+      fileUrl: savedMessage.fileUrl,
+      fileName: savedMessage.fileName
+    });
 
     // Cập nhật tin nhắn cuối cùng
-    await updateLastMesssage({ idConversation, message: message._id });
+    await updateLastMesssage({ idConversation, message: savedMessage._id });
 
     // Return the message object
     if (res) {
-      res.send(message);
+      res.send(savedMessage);
     }
     
-    return message;
+    return savedMessage;
   } catch (error) {
     console.error("saveMessage error:", error);
     if (res) {

@@ -21,6 +21,7 @@ import {
   CircularProgress,
   Grid,
   Popover,
+  ListItemIcon,
 } from "@mui/material";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
 import {
@@ -30,6 +31,8 @@ import {
   Mood as MoodIcon,
   Search as SearchIcon,
   Notifications as NotificationsIcon,
+  Photo as PhotoIcon,
+  Slideshow as SlideshowIcon,
 } from "@mui/icons-material";
 import Button from "@mui/material/Button";
 import AddIcon from "@mui/icons-material/Add";
@@ -41,6 +44,13 @@ import SocketService from "../services/SocketService";
 import CancelIcon from '@mui/icons-material/Cancel';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import UndoIcon from '@mui/icons-material/Undo';
+import VideocamIcon from '@mui/icons-material/Videocam';
+import AudiotrackIcon from '@mui/icons-material/Audiotrack';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import DescriptionIcon from '@mui/icons-material/Description';
+import TableChartIcon from '@mui/icons-material/TableChart';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import RenderFileMessage from "../components/RenderFileMessage";
 
 const ChatUI = () => {
   const route = useRoute();
@@ -83,6 +93,8 @@ const ChatUI = () => {
   const typingTimeoutRef = useRef(null);
   const [messageContextMenu, setMessageContextMenu] = useState(null);
   const [selectedMessage, setSelectedMessage] = useState(null);
+  const [attachMenuAnchorEl, setAttachMenuAnchorEl] = useState(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   
   // List of emojis
   const emojis = [
@@ -294,73 +306,91 @@ const ChatUI = () => {
       
       console.log(`📩 Received message from socket: ${message._id || 'unknown'}`);
       
-      // Extra logging for image messages
-      if (message.type === 'image') {
-        console.log('🖼️ Received image:', {
+      // Log chi tiết cho các loại file
+      if (message.type !== 'text') {
+        console.log(`📁 Received ${message.type} message:`, {
           id: message._id,
+          type: message.type,
           url: message.fileUrl,
-          type: message.type
+          fileName: message.fileName,
+          fileType: message.fileType
         });
       }
       
       // Add or update message in the list
       setMessages((prev) => {
         // Check if this message already exists in our list
-        const isDuplicate = prev.some(
+        const existingIndex = prev.findIndex(
           (msg) =>
             (msg._id && msg._id === message._id) ||
             (msg.id && msg.id === message._id) ||
             (msg.id &&
               msg.id.startsWith('temp-') &&
               msg.sender.toString() === message.sender.toString() &&
-              msg.content === message.content)
+              ((msg.content === message.content) || 
+              (msg.fileName === message.fileName && msg.type === message.type)))
         );
+        
+        const isDuplicate = existingIndex !== -1;
         
         if (isDuplicate) {
           console.log('⚠️ This message already exists, updating instead of adding new');
           // Update existing message instead of adding new one
-          return prev.map(msg => {
-            if ((msg._id && msg._id === message._id) || 
-                (msg.id && msg.id === message._id) ||
-                (msg.id && msg.id.startsWith('temp-') && 
-                 msg.sender.toString() === message.sender.toString() && 
-                 msg.content === message.content)) {
-              
+          return prev.map((msg, index) => {
+            if (index === existingIndex) {
               console.log('🔄 Updating message:', msg.id, ' -> ', message._id);
               
-              // For images and files, ensure special properties are preserved
-              return { 
-                ...message,                        // Take everything from server message
-                status: "delivered",               // Update status
-                fileUrl: message.fileUrl || msg.fileUrl,         // Keep file URL
-                type: message.type || msg.type,                  // Keep message type  
-                fileName: message.fileName || msg.fileName       // Keep file name
+              // Create enhanced message with all required properties
+              const enhancedMessage = { 
+                ...message,                           // Take everything from server message
+                _id: message._id,                     // Ensure ID is set
+                id: message._id,                      // Ensure id is also set for consistent checking
+                status: "delivered",                  // Update status
+                fileUrl: message.fileUrl || msg.fileUrl,     // Keep file URL
+                fileName: message.fileName || msg.fileName,  // Keep file name
+                fileType: message.fileType || msg.fileType,  // Keep file type
+                type: message.type || msg.type,              // Keep message type
+                content: message.content || msg.content      // Keep content
               };
+              
+              console.log('📄 Updated message data:', enhancedMessage);
+              return enhancedMessage;
             }
             return msg;
           });
         } else {
           console.log('✨ Adding new message to list');
           
-          // Check and process image/file messages
-          if (message.type === 'image' || message.type === 'file') {
-            console.log('📁 Received new image/file message via socket:', message.type);
-            console.log('🔗 File URL:', message.fileUrl);
-            console.log('📝 File name:', message.fileName);
-            console.log('📋 File type:', message.fileType);
+          // Ensure the message has consistent ID format  
+          const enhancedMessage = {
+            ...message,
+            id: message._id,              // Add id property for consistent checking
+            status: "delivered"           // Set status
+          };
+
+          // Handle specific file types
+          if (['image', 'video', 'audio', 'pdf', 'doc', 'excel', 'presentation', 'file'].includes(message.type)) {
+            // Log file data
+            console.log(`📁 Processing ${message.type} message:`, {
+              id: message._id,
+              url: message.fileUrl,
+              fileName: message.fileName,
+              fileType: message.fileType,
+              content: message.content
+            });
+
+            // If there's no fileUrl but there's a message with this ID that has it, use that
+            if (!message.fileUrl && existingIndex !== -1) {
+              enhancedMessage.fileUrl = prev[existingIndex].fileUrl;
+            }
             
-            // Ensure the message object has all required properties for rendering
-            const enhancedMessage = {
-              ...message,
-              status: "delivered"
-            };
-            
-            // If no duplicates, add to list
-            return [...prev, enhancedMessage];
+            if (!message.fileName && existingIndex !== -1) {
+              enhancedMessage.fileName = prev[existingIndex].fileName;
+            }
           }
           
           // If no duplicates, add to list
-          return [...prev, message];
+          return [...prev, enhancedMessage];
         }
       });
       
@@ -396,6 +426,23 @@ const ChatUI = () => {
       SocketService.sendStopTypingStatus(activeConversation._id, userId);
     }
 
+    // Determine message type based on selected file
+    let messageType = 'text';
+    if (selectedFile) {
+      if (selectedFile.type.startsWith('image/')) {
+        messageType = 'image';
+      } else if (selectedFile.type.startsWith('video/')) {
+        messageType = 'video';
+      } else if (selectedFile.type.startsWith('audio/')) {
+        messageType = 'audio';
+      } else if (selectedFile.detectedType) {
+        // Use the detected type from handleFileSelect
+        messageType = selectedFile.detectedType;
+      } else {
+        messageType = 'file';
+      }
+    }
+
     // Tạo tin nhắn tạm thời
     const tempMessage = {
       id: `temp-${Date.now()}`,
@@ -411,7 +458,7 @@ const ChatUI = () => {
       status: "sending",
       hasFile: !!selectedFile,
       fileName: selectedFile?.name || "",
-      type: selectedFile ? (selectedFile.type.startsWith('image/') ? 'image' : 'file') : 'text'
+      type: messageType
     };
 
     // Thêm đường dẫn xem trước cho hình ảnh nếu có
@@ -442,17 +489,14 @@ const ChatUI = () => {
 
       // Xử lý tải lên file
       if (selectedFile) {
-        console.log('📎 Đang tải lên file:', selectedFile.name);
+        console.log('📎 Đang tải lên file:', selectedFile.name, 'loại:', messageType);
         
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('idConversation', activeConversation._id);
         formData.append('sender', userId);
         formData.append('content', newMessage || `File: ${selectedFile.name}`);
-        
-        // Xác định loại file
-        const fileType = selectedFile.type.startsWith('image/') ? 'image' : 'file';
-        formData.append('type', fileType);
+        formData.append('type', messageType);
         
         // Thêm socketId để server có thể gửi thông báo tin nhắn mới đến đúng client
         const socketId = SocketService.getSocketId();
@@ -492,7 +536,24 @@ const ChatUI = () => {
           }
         } catch (error) {
           console.error("❌ Lỗi khi tải lên file:", error);
-          Alert.alert("Error", "Failed to upload file");
+          
+          // Hiển thị thông tin lỗi chi tiết hơn
+          let errorMessage = "Không thể tải lên file";
+          if (error.response) {
+            // Server đã trả về phản hồi với mã lỗi
+            console.error("Chi tiết lỗi từ server:", error.response.data);
+            errorMessage = `Lỗi: ${error.response.status} - ${error.response.data.error || error.response.data.message || "Lỗi không xác định"}`;
+          } else if (error.request) {
+            // Request được tạo nhưng không nhận được phản hồi
+            console.error("Không nhận được phản hồi từ server:", error.request);
+            errorMessage = "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.";
+          } else {
+            // Có lỗi khi thiết lập request
+            console.error("Lỗi thiết lập request:", error.message);
+            errorMessage = `Lỗi: ${error.message}`;
+          }
+          
+          Alert.alert("Lỗi tải lên", errorMessage);
           
           // Cập nhật trạng thái tin nhắn thành thất bại
           setMessages((prev) =>
@@ -637,22 +698,49 @@ const ChatUI = () => {
     
     setSelectedFile(file);
     
-    // Create preview URL for images
+    // Determine file type and create preview when possible
     if (file.type.startsWith('image/')) {
+      // For images, create a preview
       const reader = new FileReader();
       reader.onload = (e) => {
         setSelectedFilePreview(e.target.result);
       };
       reader.readAsDataURL(file);
-      
-      // Focus vào input text để người dùng có thể nhập caption nếu muốn
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
-    } else {
-      // For non-image files, just set the name
+    } else if (file.type.startsWith('video/')) {
+      // For videos, we'll just use a placeholder in the UI
       setSelectedFilePreview(null);
+    } else {
+      // For documents and other file types
+      setSelectedFilePreview(null);
+      
+      // Determine file type for UI display
+      let fileType = 'file';
+      if (file.type.includes('pdf')) {
+        fileType = 'pdf';
+      } else if (file.type.includes('word') || 
+                file.type.includes('document') ||
+                file.name.endsWith('.doc') || 
+                file.name.endsWith('.docx')) {
+        fileType = 'doc';
+      } else if (file.type.includes('excel') || 
+                file.type.includes('sheet') ||
+                file.name.endsWith('.xls') || 
+                file.name.endsWith('.xlsx')) {
+        fileType = 'excel';
+      } else if (file.type.includes('presentation') ||
+                file.name.endsWith('.ppt') || 
+                file.name.endsWith('.pptx')) {
+        fileType = 'presentation';
+      }
+      
+      // Store the detected file type for later use
+      file.detectedType = fileType;
     }
+    
+    // Focus input text for caption
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
   };
 
   const handleCancelFileSelection = () => {
@@ -1118,6 +1206,86 @@ const ChatUI = () => {
     } catch (error) {
       console.error('Error deleting message:', error);
       Alert.alert("Error", "An error occurred while deleting the message");
+    }
+  };
+
+  // Cập nhật hàm mở file
+  const handleOpenFile = async (fileUrl, fileName, fileType) => {
+    if (!fileUrl) {
+      Alert.alert("Lỗi", "Không tìm thấy đường dẫn file.");
+      return;
+    }
+
+    console.log("🔗 Mở file:", fileUrl);
+    console.log("📄 Tên file:", fileName);
+    console.log("📦 Loại file:", fileType);
+    
+    // Xác định loại file từ tham số hoặc phân tích từ fileName
+    const getFileType = () => {
+      // Nếu đã có type được truyền vào
+      if (fileType && (fileType.includes('pdf') || fileType.includes('image') || 
+          fileType.includes('video') || fileType.includes('audio'))) {
+        if (fileType.includes('pdf')) return 'pdf';
+        if (fileType.includes('image')) return 'image';
+        if (fileType.includes('video')) return 'video';
+        if (fileType.includes('audio')) return 'audio';
+      }
+      
+      // Phân tích từ fileName
+      if (fileName) {
+        const extension = fileName.split('.').pop().toLowerCase();
+        if (['pdf'].includes(extension)) return 'pdf';
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) return 'image';
+        if (['mp4', 'webm', 'ogg', 'avi', 'mov'].includes(extension)) return 'video';
+        if (['mp3', 'wav', 'm4a'].includes(extension)) return 'audio';
+        if (['doc', 'docx'].includes(extension)) return 'doc';
+        if (['xls', 'xlsx'].includes(extension)) return 'excel';
+        if (['ppt', 'pptx'].includes(extension)) return 'presentation';
+      }
+      
+      return 'file';
+    };
+    
+    const type = getFileType();
+    
+    try {
+      // Mở file trực tiếp mà không cần kiểm tra
+      if (['image', 'pdf', 'video', 'audio'].includes(type)) {
+        // Với hình ảnh, PDF và video, trực tiếp mở URL
+        window.open(fileUrl, '_blank');
+      } else {
+        // Với các file khác, chỉ cần tải xuống
+        const link = document.createElement('a');
+        link.href = fileUrl;
+        link.download = fileName || 'download'; // Đặt tên file khi tải xuống
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (error) {
+      console.error("❌ Lỗi khi mở file:", error);
+      Alert.alert(
+        "Không thể mở file", 
+        "Có lỗi xảy ra khi mở file. Thử tải xuống thay thế.",
+        [
+          {
+            text: "Tải xuống",
+            onPress: () => {
+              const link = document.createElement('a');
+              link.href = fileUrl;
+              link.setAttribute('download', fileName || 'download');
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }
+          },
+          {
+            text: "Hủy",
+            style: "cancel"
+          }
+        ]
+      );
     }
   };
 
@@ -1588,38 +1756,6 @@ const ChatUI = () => {
                       bgcolor: 'rgba(255, 255, 255, 0.05)',
                     }}
                   >
-                    {Object.keys(typingUsers).length > 0 && (
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          pl: 2,
-                          mb: 1,
-                          ml: 6 // Canh lề trái cho typing indicator
-                        }}
-                      >
-                        <Paper
-                          elevation={0}
-                          sx={{
-                            p: 1.5,
-                            borderRadius: "18px 18px 18px 4px",
-                            bgcolor: "rgba(0, 0, 0, 0.04)",
-                            maxWidth: "75%"
-                          }}
-                        >
-                          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                            {Object.keys(typingUsers).length === 1 
-                              ? `${typingUsers[Object.keys(typingUsers)[0]]} đang nhập...`
-                              : 'Có người đang nhập...'}
-                          </Typography>
-                          <span className="typing-animation">
-                            <span className="dot"></span>
-                            <span className="dot"></span>
-                            <span className="dot"></span>
-                          </span>
-                        </Paper>
-                      </Box>
-                    )}
                     {messages.map((message, index) => (
                       <Box
                         key={message?._id || index}
@@ -1728,103 +1864,12 @@ const ChatUI = () => {
                               aria-haspopup="true"
                             >
                               {/* Display file if message has file */}
-                              {!message.isRevoked && (message.type === 'image' || message.type === 'file' || message.hasFile) && (
-                                <Box sx={{ mb: 1 }}>
-                                  {message.type === 'image' ? (
-                                    /* Image file display */
-                                    <Box 
-                                      sx={{
-                                        position: 'relative',
-                                        width: 'fit-content'
-                                      }}
-                                    >
-                                      <Box 
-                                        component="img"
-                                        src={message.fileUrl}
-                                        alt="Image attachment"
-                                        sx={{ 
-                                          maxWidth: '100%',
-                                          maxHeight: '200px',
-                                          borderRadius: '8px',
-                                          cursor: 'pointer',
-                                          opacity: message.status === 'sending' ? 0.7 : 1,
-                                          filter: message.isPreview ? 'blur(0.5px)' : 'none'
-                                        }}
-                                        onClick={() => message.fileUrl && !message.isPreview && window.open(message.fileUrl, '_blank')}
-                                        onError={(e) => {
-                                          console.error('🚫 Image failed to load:', message.fileUrl);
-                                          e.target.src = 'https://via.placeholder.com/150?text=Image+Error';
-                                        }}
-                                      />
-                                      {message.status === 'sending' && (
-                                        <Box 
-                                          sx={{
-                                            position: 'absolute',
-                                            top: '50%',
-                                            left: '50%',
-                                            transform: 'translate(-50%, -50%)',
-                                            backgroundColor: 'rgba(0,0,0,0.3)',
-                                            borderRadius: '50%',
-                                            width: 40,
-                                            height: 40,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center'
-                                          }}
-                                        >
-                                          <CircularProgress size={24} color="inherit" />
-                                        </Box>
-                                      )}
-                                      {message.status === 'failed' && (
-                                        <Box 
-                                          sx={{
-                                            position: 'absolute',
-                                            top: '50%',
-                                            left: '50%',
-                                            transform: 'translate(-50%, -50%)',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            borderRadius: '50%',
-                                            backgroundColor: 'rgba(255, 0, 0, 0.5)',
-                                            width: 40,
-                                            height: 40
-                                          }}
-                                        >
-                                          <Typography variant="caption" sx={{ color: 'white' }}>Error</Typography>
-                                        </Box>
-                                      )}
-                                    </Box>
-                                  ) : (
-                                    /* Other file types display */
-                                    <Box
-                                      sx={{ 
-                                        bgcolor: 'rgba(0,0,0,0.05)',
-                                        p: 1,
-                                        borderRadius: '4px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        cursor: message.status === 'sending' ? 'default' : 'pointer',
-                                        opacity: message.status === 'sending' ? 0.7 : 1,
-                                        '&:hover': {
-                                          bgcolor: message.status !== 'sending' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)'
-                                        }
-                                      }}
-                                      onClick={() => message.fileUrl && message.status !== 'sending' && window.open(message.fileUrl, '_blank')}
-                                    >
-                                      {message.status === 'sending' ? (
-                                        <CircularProgress size={16} sx={{ mr: 1 }} />
-                                      ) : (
-                                        <AttachFileIcon fontSize="small" sx={{ mr: 1 }} />
-                                      )}
-                                      <Typography variant="body2">
-                                        {message.fileName || "Attached file"}
-                                        {message.status === 'sending' && " (đang tải...)"}
-                                        {message.status === 'failed' && " (lỗi)"}
-                                      </Typography>
-                                    </Box>
-                                  )}
-                                </Box>
+                              {!message.isRevoked && (
+                                message.type === 'image' || message.type === 'file' || message.type === 'video' || message.type === 'audio' || 
+                                message.type === 'pdf' || message.type === 'doc' || message.type === 'excel' || message.type === 'presentation' || 
+                                message.hasFile
+                              ) && (
+                                <RenderFileMessage message={message} handleOpenFile={handleOpenFile} />
                               )}
                               
                               {/* Hiển thị nội dung tin nhắn */}
@@ -1834,9 +1879,21 @@ const ChatUI = () => {
                                   <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.disabled' }}>
                                     {(message.type === 'image') 
                                       ? "Hình ảnh đã bị thu hồi" 
-                                      : (message.type === 'file') 
-                                        ? "Tệp đính kèm đã bị thu hồi" 
-                                        : "Tin nhắn đã bị thu hồi"}
+                                      : (message.type === 'video')
+                                        ? "Video đã bị thu hồi"
+                                        : (message.type === 'audio')
+                                          ? "Âm thanh đã bị thu hồi"
+                                          : (message.type === 'pdf')
+                                            ? "Tài liệu PDF đã bị thu hồi"
+                                            : (message.type === 'doc')
+                                              ? "Tài liệu Word đã bị thu hồi"
+                                              : (message.type === 'excel')
+                                                ? "Bảng tính Excel đã bị thu hồi"
+                                                : (message.type === 'presentation')
+                                                  ? "Bài thuyết trình đã bị thu hồi"
+                                                  : (message.type === 'file')
+                                                    ? "Tệp đính kèm đã bị thu hồi"
+                                                    : "Tin nhắn đã bị thu hồi"}
                                   </Typography>
                                 </Box>
                               ) : (
@@ -1858,8 +1915,7 @@ const ChatUI = () => {
                                   )}
                                   
                                   {/* Nội dung tin nhắn */}
-                                  {(!message.type || message.type !== 'image' || 
-                                   (message.content && !message.content.startsWith('File:'))) && (
+                                  {(message.type === 'text' || !message.type) && (
                                     <Typography variant="body1">
                                       {message?.content || message?.text}
                                     </Typography>
@@ -1923,6 +1979,64 @@ const ChatUI = () => {
                   </Typography>
                 )}
                 <div ref={messagesEndRef} />
+                
+                {/* Typing indicator - Chuyển xuống cuối box chat */}
+                {Object.keys(typingUsers).length > 0 && (
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-start",
+                      position: "sticky",
+                      bottom: 0,
+                      mt: 2,
+                      mb: 1,
+                      ml: 2,
+                      zIndex: 1,
+                    }}
+                  >
+                    {/* Hiển thị avatar của người đang nhập */}
+                    {Object.keys(typingUsers).length === 1 && (
+                      <Avatar
+                        src={
+                          activeConversation?.members?.find(
+                            m => m.idUser?._id === Object.keys(typingUsers)[0]
+                          )?.idUser?.avatar || "/static/images/avatar/2.jpg"
+                        }
+                        sx={{
+                          width: 28,
+                          height: 28,
+                          mr: 1
+                        }}
+                      />
+                    )}
+                    
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        p: 1,
+                        pl: 2,
+                        pr: 2,
+                        borderRadius: "18px 18px 18px 4px",
+                        bgcolor: "rgba(230, 230, 230, 0.9)",
+                        maxWidth: "75%",
+                        display: "flex",
+                        alignItems: "center"
+                      }}
+                    >
+                      <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', fontSize: '0.85rem' }}>
+                        {Object.keys(typingUsers).length === 1 
+                          ? `${typingUsers[Object.keys(typingUsers)[0]]} đang nhập...`
+                          : 'Có người đang nhập...'}
+                      </Typography>
+                      <span className="typing-animation">
+                        <span className="dot"></span>
+                        <span className="dot"></span>
+                        <span className="dot"></span>
+                      </span>
+                    </Paper>
+                  </Box>
+                )}
               </Container>
             </Box>
 
@@ -1933,6 +2047,10 @@ const ChatUI = () => {
                 borderTop: "1px solid",
                 borderColor: "divider",
                 bgcolor: "background.paper",
+                position: "sticky", 
+                bottom: 0,
+                zIndex: 5,
+                boxShadow: "0px -1px 4px rgba(0, 0, 0, 0.05)",
               }}
             >
               <Container maxWidth="md" disableGutters>
@@ -1975,21 +2093,162 @@ const ChatUI = () => {
                   </Box>
                 )}
                 
+                {selectedFile && !selectedFilePreview && (
+                  <Box 
+                    sx={{ 
+                      mb: 2, 
+                      position: 'relative',
+                      display: 'inline-block', 
+                      borderRadius: 2,
+                      padding: 2,
+                      backgroundColor: 'rgba(0,0,0,0.04)',
+                      minWidth: 200
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      {selectedFile.type.startsWith('video/') ? (
+                        <VideocamIcon fontSize="large" sx={{ mr: 2, color: '#f44336' }} />
+                      ) : selectedFile.type.startsWith('audio/') ? (
+                        <AudiotrackIcon fontSize="large" sx={{ mr: 2, color: '#9c27b0' }} />
+                      ) : selectedFile.type.includes('pdf') ? (
+                        <PictureAsPdfIcon fontSize="large" sx={{ mr: 2, color: '#f44336' }} />
+                      ) : selectedFile.type.includes('word') || selectedFile.type.includes('document') ? (
+                        <DescriptionIcon fontSize="large" sx={{ mr: 2, color: '#2196f3' }} />
+                      ) : selectedFile.type.includes('excel') || selectedFile.type.includes('sheet') ? (
+                        <TableChartIcon fontSize="large" sx={{ mr: 2, color: '#4caf50' }} />
+                      ) : (
+                        <InsertDriveFileIcon fontSize="large" sx={{ mr: 2, color: '#607d8b' }} />
+                      )}
+                      <Box sx={{ overflow: 'hidden' }}>
+                        <Typography noWrap variant="body2" sx={{ fontWeight: 'medium', maxWidth: '180px' }}>
+                          {selectedFile.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {(selectedFile.size / 1024).toFixed(1)} KB
+                        </Typography>
+                      </Box>
+                    </Box>
+                    
+                    <IconButton
+                      size="small"
+                      sx={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        bgcolor: 'rgba(0,0,0,0.1)',
+                        color: 'text.secondary',
+                        '&:hover': {
+                          bgcolor: 'rgba(0,0,0,0.2)'
+                        }
+                      }}
+                      onClick={handleCancelFileSelection}
+                    >
+                      <CancelIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                )}
+                
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                   <IconButton onClick={handleEmojiOpen}>
                     <MoodIcon />
                   </IconButton>
                   
+                  {/* File input */}
                   <input
                     type="file"
                     ref={fileInputRef}
                     style={{ display: 'none' }}
-                    accept="image/*"
                     onChange={handleFileSelect}
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
                   />
-                  <IconButton onClick={triggerFileInput}>
+                  <IconButton 
+                    onClick={(event) => {
+                      setAttachMenuAnchorEl(event.currentTarget);
+                      setAttachMenuOpen(true);
+                    }}
+                    aria-controls={attachMenuOpen ? 'attach-menu' : undefined}
+                    aria-haspopup="true"
+                    aria-expanded={attachMenuOpen ? 'true' : undefined}
+                  >
                     <AttachFileIcon />
                   </IconButton>
+                  
+                  {/* Menu cho loại file đính kèm */}
+                  <Menu
+                    id="attach-menu"
+                    anchorEl={attachMenuAnchorEl}
+                    open={Boolean(attachMenuAnchorEl)}
+                    onClose={() => setAttachMenuAnchorEl(null)}
+                    anchorOrigin={{
+                      vertical: 'top',
+                      horizontal: 'center',
+                    }}
+                    transformOrigin={{
+                      vertical: 'bottom',
+                      horizontal: 'center',
+                    }}
+                  >
+                    <MenuItem onClick={() => {
+                      fileInputRef.current.accept = "image/*";
+                      fileInputRef.current.click();
+                      setAttachMenuAnchorEl(null);
+                    }}>
+                      <ListItemIcon>
+                        <PhotoIcon fontSize="small" sx={{ color: '#4caf50' }} />
+                      </ListItemIcon>
+                      <ListItemText>Hình ảnh</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={() => {
+                      fileInputRef.current.accept = "video/*";
+                      fileInputRef.current.click();
+                      setAttachMenuAnchorEl(null);
+                    }}>
+                      <ListItemIcon>
+                        <VideocamIcon fontSize="small" sx={{ color: '#f44336' }} />
+                      </ListItemIcon>
+                      <ListItemText>Video</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={() => {
+                      fileInputRef.current.accept = "application/pdf";
+                      fileInputRef.current.click();
+                      setAttachMenuAnchorEl(null);
+                    }}>
+                      <ListItemIcon>
+                        <PictureAsPdfIcon fontSize="small" sx={{ color: '#f44336' }} />
+                      </ListItemIcon>
+                      <ListItemText>PDF</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={() => {
+                      fileInputRef.current.accept = "application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                      fileInputRef.current.click();
+                      setAttachMenuAnchorEl(null);
+                    }}>
+                      <ListItemIcon>
+                        <DescriptionIcon fontSize="small" sx={{ color: '#2196f3' }} />
+                      </ListItemIcon>
+                      <ListItemText>Word</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={() => {
+                      fileInputRef.current.accept = "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                      fileInputRef.current.click();
+                      setAttachMenuAnchorEl(null);
+                    }}>
+                      <ListItemIcon>
+                        <TableChartIcon fontSize="small" sx={{ color: '#4caf50' }} />
+                      </ListItemIcon>
+                      <ListItemText>Excel</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={() => {
+                      fileInputRef.current.accept = "*";
+                      fileInputRef.current.click();
+                      setAttachMenuAnchorEl(null);
+                    }}>
+                      <ListItemIcon>
+                        <AttachFileIcon fontSize="small" sx={{ color: '#607d8b' }} />
+                      </ListItemIcon>
+                      <ListItemText>Tệp khác</ListItemText>
+                    </MenuItem>
+                  </Menu>
                   
                   <TextField
                     fullWidth

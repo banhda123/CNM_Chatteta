@@ -60,6 +60,14 @@ ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {
       console.log(`📱 Received socketId in request: ${socketId}`);
     }
 
+    // Log file details
+    console.log('📝 Received file:', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      path: req.file.path
+    });
+
     // Upload to Cloudinary - ensure this is awaited properly
     const filePath = req.file.path;
     let result;
@@ -68,6 +76,12 @@ ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {
       if (!result || !result.secure_url) {
         throw new Error("Cloudinary upload failed or returned invalid result");
       }
+      
+      console.log('☁️ Cloudinary upload successful:', {
+        url: result.secure_url,
+        public_id: result.public_id,
+        resource_type: result.resource_type
+      });
     } catch (cloudinaryError) {
       console.error("Cloudinary upload error:", cloudinaryError);
       // Clean up the local file
@@ -77,14 +91,30 @@ ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {
       return res.status(500).json({ error: "Failed to upload to cloud storage" });
     }
 
-    // Determine correct file type based on mimetype
-    let messageType = type || 'file';
+    // Determine more specific file type
+    let messageType = 'file';
     if (req.file.mimetype.startsWith('image/')) {
       messageType = 'image';
     } else if (req.file.mimetype.startsWith('video/')) {
       messageType = 'video';
     } else if (req.file.mimetype.startsWith('audio/')) {
       messageType = 'audio';
+    } else if (req.file.mimetype.includes('pdf')) {
+      messageType = 'pdf';
+    } else if (req.file.mimetype.includes('word') || 
+               req.file.mimetype.includes('document') || 
+               req.file.originalname.endsWith('.doc') || 
+               req.file.originalname.endsWith('.docx')) {
+      messageType = 'doc';
+    } else if (req.file.mimetype.includes('excel') || 
+               req.file.mimetype.includes('sheet') || 
+               req.file.originalname.endsWith('.xls') || 
+               req.file.originalname.endsWith('.xlsx')) {
+      messageType = 'excel';
+    } else if (req.file.mimetype.includes('presentation') || 
+               req.file.originalname.endsWith('.ppt') || 
+               req.file.originalname.endsWith('.pptx')) {
+      messageType = 'presentation';
     }
     
     const messageData = {
@@ -97,17 +127,19 @@ ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {
       type: messageType
     };
     
-    // Chỉ thêm content nếu người dùng nhập caption hoặc không phải là ảnh
+    // Add content based on message type
     if (content && content.trim() !== '') {
-      // Người dùng nhập caption
+      // User entered caption
       messageData.content = content;
     } else if (messageType !== 'image') {
-      // Với file không phải ảnh, cần hiển thị tên file
+      // For non-image files, display file name
       messageData.content = `File: ${req.file.originalname}`;
     } else {
-      // Với ảnh mà không có caption, để trống content
+      // For images without caption, leave content empty
       messageData.content = '';
     }
+    
+    console.log('💾 Saving message with data:', JSON.stringify(messageData, null, 2));
     
     const mockReq = {
       body: messageData,
@@ -123,15 +155,19 @@ ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {
         fs.unlinkSync(filePath);
       }
       
-      // Populate the message object if needed
+      // Get the complete message with all fields
       const populatedMessage = {
         ...savedMessage.toObject(),
-        type: messageType, // Ensure type is correctly set
-        fileUrl: result.secure_url, // Ensure fileUrl is correctly set
+        _id: savedMessage._id.toString(),      // Ensure _id is a string for consistent comparisons
+        type: messageType,                     // Ensure type is correctly set
+        fileUrl: result.secure_url,            // Ensure fileUrl is correctly set
+        fileName: req.file.originalname,       // Ensure fileName is set
+        fileType: req.file.mimetype            // Ensure fileType is set
       };
       
+      console.log('📤 Sending file message with complete data:', populatedMessage);
+      
       // Send new message through socket for real-time
-      console.log('📱 Sending image message via socket:', savedMessage._id);
       await emitNewMessage(populatedMessage, socketId);
       
       // Send response to client
