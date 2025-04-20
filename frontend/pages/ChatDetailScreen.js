@@ -106,11 +106,6 @@ const ChatUI = () => {
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
   const [targetConversation, setTargetConversation] = useState(null);
-  const [chatMenuAnchorEl, setChatMenuAnchorEl] = useState(null);
-  const [unfriendDialogOpen, setUnfriendDialogOpen] = useState(false);
-  const [conversationMenuAnchorEl, setConversationMenuAnchorEl] = useState(null);
-  const [selectedConversation, setSelectedConversation] = useState(null);
-  const [deleteConversationDialogOpen, setDeleteConversationDialogOpen] = useState(false);
   
   // List of emojis
   const emojis = [
@@ -156,24 +151,16 @@ const ChatUI = () => {
 
   // Helper function to safely get other participant
   const getOtherParticipant = (conversation) => {
-    if (!conversation || !conversation.members || !Array.isArray(conversation.members)) {
-      return null;
-    }
-    
-    // Find the member that is not the current user
-    const otherMember = conversation.members.find(
-      member => member.idUser && member.idUser._id !== userId
+    console.log(conversation);
+    if (!conversation?.members) return { idUser: {} };
+    const members = Array.isArray(conversation.members)
+      ? conversation.members
+      : [];
+    return (
+      members.find((member) => member?.idUser?._id !== userId) || {
+        idUser: {},
+      }
     );
-    
-    return otherMember;
-  };
-
-  // Kiểm tra xem người dùng có phải là người lạ không
-  const isStranger = (conversation) => {
-    if (!conversation) return false;
-    
-    // Nếu cuộc trò chuyện có trạng thái isFriendship = false, đó là người lạ
-    return conversation.isFriendship === false;
   };
 
   // Nếu không có userId từ route params, thử lấy từ localStorage
@@ -704,114 +691,6 @@ const ChatUI = () => {
     setPhone(input);
     handleFindFriendByPhoneNumber(input);
   };
-  
-  // Xử lý mở menu tùy chọn cho cuộc trò chuyện
-  const handleChatMenuOpen = (event) => {
-    setChatMenuAnchorEl(event.currentTarget);
-  };
-  
-  // Xử lý đóng menu tùy chọn cho cuộc trò chuyện
-  const handleChatMenuClose = () => {
-    setChatMenuAnchorEl(null);
-  };
-  
-  // Xử lý khi người dùng nhấn vào nút xóa bạn bè
-  const handleUnfriend = () => {
-    handleChatMenuClose();
-    setUnfriendDialogOpen(true);
-  };
-  
-  // Xử lý khi người dùng hủy xóa bạn bè
-  const handleCancelUnfriend = () => {
-    setUnfriendDialogOpen(false);
-  };
-  
-  // Xử lý khi nhấn chuột phải vào cuộc trò chuyện
-  const handleConversationContextMenu = (event, conversation) => {
-    event.preventDefault(); // Ngăn chặn hành vi mặc định của chuột phải
-    event.stopPropagation(); // Ngăn chặn sự kiện lan truyền
-    setConversationMenuAnchorEl(event.currentTarget);
-    setSelectedConversation(conversation);
-  };
-
-  // Đóng menu tùy chọn cuộc trò chuyện
-  const handleCloseConversationMenu = () => {
-    setConversationMenuAnchorEl(null);
-  };
-
-  // Hiển thị dialog xác nhận xóa cuộc trò chuyện
-  const handleDeleteConversation = () => {
-    setDeleteConversationDialogOpen(true);
-    handleCloseConversationMenu();
-  };
-
-  // Đóng dialog xác nhận xóa cuộc trò chuyện
-  const handleCancelDeleteConversation = () => {
-    setDeleteConversationDialogOpen(false);
-  };
-
-  // Xử lý khi người dùng xác nhận xóa cuộc trò chuyện
-  const handleConfirmDeleteConversation = async () => {
-    if (!selectedConversation || !userId) return;
-    
-    try {
-      // Gọi API để xóa cuộc trò chuyện
-      await ChatService.deleteConversation(selectedConversation._id);
-      
-      // Cập nhật danh sách cuộc trò chuyện
-      setConversations(prevConversations => 
-        prevConversations.filter(conv => conv._id !== selectedConversation._id)
-      );
-      
-      // Nếu đang xem cuộc trò chuyện bị xóa, chuyển về màn hình trống
-      if (activeConversation && activeConversation._id === selectedConversation._id) {
-        setActiveConversation(null);
-        setMessages([]);
-      }
-      
-      // Hiển thị thông báo thành công
-      Alert.alert('Thành công', 'Đã xóa cuộc trò chuyện');
-    } catch (error) {
-      console.error('Lỗi khi xóa cuộc trò chuyện:', error);
-      Alert.alert('Lỗi', 'Không thể xóa cuộc trò chuyện. Vui lòng thử lại sau.');
-    }
-    
-    // Đóng dialog
-    setDeleteConversationDialogOpen(false);
-  };
-
-  // Xử lý khi người dùng xác nhận xóa bạn bè
-  const handleConfirmUnfriend = () => {
-    if (!activeConversation || !userId) return;
-    
-    // Lấy thông tin người dùng khác trong cuộc trò chuyện
-    const otherUser = getOtherParticipant(activeConversation);
-    if (!otherUser || !otherUser.idUser || !otherUser.idUser._id) {
-      console.error('Không tìm thấy thông tin người dùng khác');
-      setUnfriendDialogOpen(false);
-      return;
-    }
-    
-    // Gọi API để xóa bạn bè
-    SocketService.removeFriend(
-      userId, 
-      otherUser.idUser._id, 
-      activeConversation._id
-    );
-    
-    // Đóng dialog
-    setUnfriendDialogOpen(false);
-    
-    // Cập nhật UI - không đóng cuộc trò chuyện, chỉ cập nhật trạng thái
-    // Cập nhật trạng thái cuộc trò chuyện để hiển thị tag 'Người lạ'
-    setActiveConversation(prev => ({
-      ...prev,
-      isFriendship: false
-    }));
-    
-    // Cập nhật danh sách cuộc trò chuyện
-    fetchConversations();
-  };
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -1123,49 +1002,6 @@ const ChatUI = () => {
       SocketService.removeListener('update_conversation_list');
     };
   }, []);
-  
-  // Xử lý sự kiện xóa bạn bè
-  useEffect(() => {
-    if (!SocketService.socket) return;
-    
-    console.log('🗑️ Thiết lập listener cho sự kiện xóa bạn bè');
-    
-    const handleUnFriendSuccess = (userId) => {
-      console.log('🗑️ Xóa bạn bè thành công:', userId);
-      
-      // Cập nhật danh sách cuộc trò chuyện sau khi xóa bạn bè
-      fetchConversations();
-    };
-    
-    const handleUnFriend = (userId) => {
-      console.log('🗑️ Bạn đã bị xóa khỏi danh sách bạn bè:', userId);
-      
-      // Cập nhật danh sách cuộc trò chuyện
-      fetchConversations();
-      
-      // Nếu đang trong cuộc trò chuyện với người đã xóa bạn bè, cập nhật trạng thái
-      if (activeConversation && activeConversation.members) {
-        const otherUser = getOtherParticipant(activeConversation);
-        if (otherUser && otherUser.idUser && otherUser.idUser._id === userId) {
-          // Cập nhật trạng thái cuộc trò chuyện để hiển thị tag 'Người lạ'
-          setActiveConversation(prev => ({
-            ...prev,
-            isFriendship: false
-          }));
-        }
-      }
-    };
-    
-    // Đăng ký event listener
-    SocketService.onUnFriendSuccess(handleUnFriendSuccess);
-    SocketService.onUnFriend(handleUnFriend);
-    
-    // Cleanup
-    return () => {
-      SocketService.removeListener('un_friend_success');
-      SocketService.removeListener('un_friend');
-    };
-  }, [activeConversation]);
 
   // Hàm xử lý khi nhập tin nhắn (để gửi trạng thái typing)
   const handleMessageTyping = (e) => {
@@ -2088,7 +1924,6 @@ const ChatUI = () => {
               <ListItem
                 key={conversation?._id || `conv-${Math.random()}`}
                 onClick={() => handleConversationSelect(conversation)}
-                onContextMenu={(e) => handleConversationContextMenu(e, conversation)}
                 selected={activeConversation?._id === conversation?._id}
                 sx={{
                   "&:hover": { 
@@ -2207,28 +2042,10 @@ const ChatUI = () => {
                     sx={{ mr: 2 }}
                   />
                   <Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <Typography variant="subtitle1" fontWeight="medium">
-                        {getOtherParticipant(activeConversation)?.idUser?.name ||
-                          "Unknown User"}
-                      </Typography>
-                      {isStranger(activeConversation) && (
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            ml: 1,
-                            px: 0.8,
-                            py: 0.2,
-                            bgcolor: 'grey.200',
-                            borderRadius: 1,
-                            fontSize: '0.7rem',
-                            color: 'text.secondary'
-                          }}
-                        >
-                          Người lạ
-                        </Typography>
-                      )}
-                    </Box>
+                    <Typography variant="subtitle1" fontWeight="medium">
+                      {getOtherParticipant(activeConversation)?.idUser?.name ||
+                        "Unknown User"}
+                    </Typography>
                     <Typography variant="caption" color="text.secondary">
                       Online
                     </Typography>
@@ -2237,23 +2054,9 @@ const ChatUI = () => {
                 <IconButton>
                   <SearchIcon />
                 </IconButton>
-                <IconButton onClick={(e) => handleChatMenuOpen(e)}>
+                <IconButton>
                   <MoreVert />
                 </IconButton>
-                
-                {/* Menu tùy chọn cho cuộc trò chuyện */}
-                <Menu
-                  anchorEl={chatMenuAnchorEl}
-                  open={Boolean(chatMenuAnchorEl)}
-                  onClose={handleChatMenuClose}
-                >
-                  <MenuItem onClick={handleUnfriend}>
-                    <ListItemIcon>
-                      <DeleteOutlineIcon fontSize="small" color="error" />
-                    </ListItemIcon>
-                    <Typography color="error">Xóa bạn bè</Typography>
-                  </MenuItem>
-                </Menu>
               </Toolbar>
             </AppBar>
 
@@ -2950,16 +2753,22 @@ const ChatUI = () => {
         <DialogContent>
           {/* Hiển thị thông tin tin nhắn được chuyển tiếp */}
           {selectedMessage && (
-            <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+            <Box sx={{ mb: 3, p: 2, bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                Tin nhắn được chuyển tiếp:
+              </Typography>
+              
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Avatar
-                  src={selectedMessage.senderInfo?.avatar || ''}
+                <Avatar 
+                  src={selectedMessage.sender?.toString() === userId?.toString() ? 
+                    user.avatar : 
+                    getOtherParticipant(activeConversation)?.idUser?.avatar || ''}
                   sx={{ width: 24, height: 24, mr: 1 }}
                 />
-                <Typography variant="body2" color="text.secondary">
-                  {selectedMessage.senderInfo?.name || 
-                    (selectedMessage.sender?.toString() === userId?.toString() ? user.name : 
-                    getOtherParticipant(activeConversation)?.idUser?.name || 'Unknown User')}
+                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                  {selectedMessage.sender?.toString() === userId?.toString() ? 
+                    user.name : 
+                    getOtherParticipant(activeConversation)?.idUser?.name || 'Unknown User'}
                 </Typography>
               </Box>
               
@@ -2989,7 +2798,7 @@ const ChatUI = () => {
             </Box>
           )}
           
-          <DialogContentText id="forward-dialog-description">
+          <DialogContentText>
             Chọn cuộc trò chuyện để chuyển tiếp tin nhắn này
           </DialogContentText>
           
@@ -3014,29 +2823,7 @@ const ChatUI = () => {
                     />
                   </ListItemAvatar>
                   <ListItemText
-                    primary={
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <Typography variant="body1">
-                          {getOtherParticipant(conversation)?.idUser?.name || 'Unknown User'}
-                        </Typography>
-                        {isStranger(conversation) && (
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              ml: 1,
-                              px: 0.8,
-                              py: 0.2,
-                              bgcolor: 'grey.200',
-                              borderRadius: 1,
-                              fontSize: '0.7rem',
-                              color: 'text.secondary'
-                            }}
-                          >
-                            Người lạ
-                          </Typography>
-                        )}
-                      </Box>
-                    }
+                    primary={getOtherParticipant(conversation)?.idUser?.name || 'Unknown User'}
                     secondary={
                       <Typography variant="caption" color="text.secondary">
                         {conversation.lastMessage ? 
@@ -3064,72 +2851,9 @@ const ChatUI = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      
-      {/* Dialog xác nhận xóa bạn bè */}
-      <Dialog
-        open={unfriendDialogOpen}
-        onClose={handleCancelUnfriend}
-        aria-labelledby="unfriend-dialog-title"
-        aria-describedby="unfriend-dialog-description"
-      >
-        <DialogTitle id="unfriend-dialog-title">Xóa bạn bè</DialogTitle>
-        <DialogContent>
-          <DialogContentText id="unfriend-dialog-description">
-            Bạn có chắc chắn muốn xóa {getOtherParticipant(activeConversation)?.idUser?.name || "người dùng này"} khỏi danh sách bạn bè?
-            <br />
-            <Typography variant="caption" color="text.secondary">
-              * Các tin nhắn vẫn sẽ được giữ lại
-            </Typography>
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCancelUnfriend}>Hủy</Button>
-          <Button onClick={handleConfirmUnfriend} color="error" autoFocus>
-            Xóa
-          </Button>
-        </DialogActions>
-      </Dialog>
-      
-      {/* Dialog xác nhận xóa cuộc trò chuyện */}
-      <Dialog
-        open={deleteConversationDialogOpen}
-        onClose={handleCancelDeleteConversation}
-        aria-labelledby="delete-conversation-dialog-title"
-        aria-describedby="delete-conversation-dialog-description"
-      >
-        <DialogTitle id="delete-conversation-dialog-title">Xóa cuộc trò chuyện</DialogTitle>
-        <DialogContent>
-          <DialogContentText id="delete-conversation-dialog-description">
-            Bạn có chắc chắn muốn xóa cuộc trò chuyện này?
-            <br />
-            <Typography variant="caption" color="text.secondary">
-              * Tất cả tin nhắn sẽ bị xóa và không thể khôi phục
-            </Typography>
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCancelDeleteConversation}>Hủy</Button>
-          <Button onClick={handleConfirmDeleteConversation} color="error" autoFocus>
-            Xóa
-          </Button>
-        </DialogActions>
-      </Dialog>
-      
-      {/* Menu tùy chọn cho cuộc trò chuyện */}
-      <Menu
-        anchorEl={conversationMenuAnchorEl}
-        open={Boolean(conversationMenuAnchorEl)}
-        onClose={handleCloseConversationMenu}
-      >
-        <MenuItem onClick={handleDeleteConversation}>
-          <ListItemIcon>
-            <DeleteOutlineIcon fontSize="small" color="error" />
-          </ListItemIcon>
-          <Typography color="error">Xóa cuộc trò chuyện</Typography>
-        </MenuItem>
-      </Menu>
     </Box>
   );
 };
 
 export default ChatUI;
+

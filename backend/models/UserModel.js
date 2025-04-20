@@ -32,7 +32,6 @@ const UserSchema = new Schema(
     friends: [FriendSchema],
     myRequest: [FriendSchema], 
     peopleRequest: [FriendSchema],
-    strangers: [FriendSchema], // Danh sách người lạ (đã từng là bạn bè nhưng đã bị xóa)
   },
   {
     timestamps: true,

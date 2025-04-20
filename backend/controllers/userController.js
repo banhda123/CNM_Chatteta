@@ -362,18 +362,13 @@ export const DontAcceptFriend = async (userFrom, userTo) => {
 };
 
 export const unFriend = async (userFrom, userTo, idConversation) => {
-  // Không xóa cuộc trò chuyện và tin nhắn, chỉ cập nhật trạng thái cuộc trò chuyện
-  const conversation = await ConversationModel.findById(idConversation);
-  if (conversation) {
-    conversation.isFriendship = false; // Đánh dấu không còn là bạn bè
-    await conversation.save();
-  }
+  await ConversationModel.findByIdAndDelete(idConversation);
+  await MessageModel.deleteMany({ idConversation: idConversation });
 
   const userFromAccount = await UsersModel.findOne({ _id: userFrom });
   const userToAccount = await UsersModel.findOne({ _id: userTo });
 
   if (userFromAccount && userToAccount) {
-    // Xóa khỏi danh sách bạn bè
     userFromAccount.friends = userFromAccount.friends.filter(
       (x) => x.idUser != userTo
     );
@@ -381,31 +376,6 @@ export const unFriend = async (userFrom, userTo, idConversation) => {
     userToAccount.friends = userToAccount.friends.filter(
       (x) => x.idUser != userFrom
     );
-
-    // Thêm vào danh sách người lạ (strangers) nếu chưa có
-    if (!userFromAccount.strangers) {
-      userFromAccount.strangers = [];
-    }
-    if (!userToAccount.strangers) {
-      userToAccount.strangers = [];
-    }
-    
-    // Kiểm tra xem đã có trong danh sách người lạ chưa
-    const isAlreadyStranger = userFromAccount.strangers.some(s => s.idUser.toString() === userTo.toString());
-    if (!isAlreadyStranger) {
-      userFromAccount.strangers.push({
-        idUser: userTo,
-        idConversation: idConversation
-      });
-    }
-    
-    const isAlreadyStrangerForTo = userToAccount.strangers.some(s => s.idUser.toString() === userFrom.toString());
-    if (!isAlreadyStrangerForTo) {
-      userToAccount.strangers.push({
-        idUser: userFrom,
-        idConversation: idConversation
-      });
-    }
 
     await userFromAccount.save();
     await userToAccount.save();

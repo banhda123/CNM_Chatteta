@@ -1,9 +1,143 @@
 import axios from "axios";
-import AuthService from "./AuthService";
+import { getToken } from "./AuthService";
 
 const API_URL = "http://localhost:4000/chat"; // Update with your backend URL
 
 class ChatService {
+  // Create a new group conversation
+  static async createGroupConversation(groupData, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.post(
+        `${API_URL}/group`, 
+        groupData,
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error creating group conversation:", error);
+      throw error;
+    }
+  }
+
+  // Add members to a group
+  static async addMembersToGroup(conversationId, memberIds, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.post(
+        `${API_URL}/group/members/add`, 
+        { conversationId, memberIds },
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error adding members to group:", error);
+      throw error;
+    }
+  }
+
+  // Remove a member from a group
+  static async removeMemberFromGroup(conversationId, memberId, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.post(
+        `${API_URL}/group/members/remove`, 
+        { conversationId, memberId },
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error removing member from group:", error);
+      throw error;
+    }
+  }
+
+  // Leave a group
+  static async leaveGroup(conversationId, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      };
+      
+      const response = await axios.delete(
+        `${API_URL}/group/leave/${conversationId}`,
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error leaving group:", error);
+      throw error;
+    }
+  }
+
+  // Update group information
+  static async updateGroupInfo(groupData, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.put(
+        `${API_URL}/group`, 
+        groupData,
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error updating group info:", error);
+      throw error;
+    }
+  }
+
+  // Delete a group
+  static async deleteGroup(conversationId, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      };
+      
+      const response = await axios.delete(
+        `${API_URL}/group/${conversationId}`,
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error deleting group:", error);
+      throw error;
+    }
+  }
+
   // Get all conversations
   static async getAllConversations() {
     try {
@@ -241,29 +375,6 @@ class ChatService {
       return response.data;
     } catch (error) {
       console.error("Error forwarding message:", error);
-      throw error;
-    }
-  }
-  
-  // Xóa cuộc trò chuyện
-  static async deleteConversation(conversationId) {
-    try {
-      const token = AuthService.getAccessToken();
-      const config = {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      };
-      
-      const response = await axios.delete(
-        `${API_URL}/conversation/${conversationId}`,
-        config
-      );
-      
-      return response.data;
-    } catch (error) {
-      console.error("Error deleting conversation:", error);
       throw error;
     }
   }

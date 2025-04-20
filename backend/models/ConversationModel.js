@@ -8,10 +8,22 @@ const User = new Schema({
 
 const ConversationSchema = new Schema(
   {
-    type: String,
+    type: { 
+      type: String, 
+      enum: ['single', 'group'], 
+      default: 'single' 
+    },
+    name: { 
+      type: String, 
+      default: '' 
+    },
+    avatar: { 
+      type: String, 
+      default: 'https://res.cloudinary.com/daclejcpu/image/upload/v1744812771/avatar-mac-dinh-12_i7jnd3.jpg' 
+    },
     lastMessage: { type: mongoose.Schema.Types.ObjectId, ref: "Message" },
     members: [User],
-    isFriendship: { type: Boolean, default: true }, // Trạng thái bạn bè, mặc định là true
+    admin: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },
   {
     timestamps: true,

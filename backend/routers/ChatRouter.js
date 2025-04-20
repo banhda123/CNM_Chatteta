@@ -9,7 +9,12 @@ import {
   revokeMessage,
   deleteMessage,
   forwardMessage,
-  deleteConversation
+  createGroupConversation,
+  addMemberToGroup,
+  removeMemberFromGroup,
+  leaveGroup,
+  updateGroupInfo,
+  deleteGroup
 } from "../controllers/chatController.js";
 import { isAuth } from "../utils/index.js";
 import multer from "multer";
@@ -48,7 +53,14 @@ ChatRouter.post("/seen/:id", isAuth, seenMessage);
 ChatRouter.post("/message/revoke/:messageId", isAuth, revokeMessage);
 ChatRouter.post("/message/delete/:messageId", isAuth, deleteMessage);
 ChatRouter.post("/message/forward", isAuth, forwardMessage);
-ChatRouter.delete("/conversation/:id", isAuth, deleteConversation);
+
+// Group chat routes
+ChatRouter.post("/group", isAuth, createGroupConversation);
+ChatRouter.post("/group/members/add", isAuth, addMemberToGroup);
+ChatRouter.post("/group/members/remove", isAuth, removeMemberFromGroup);
+ChatRouter.delete("/group/leave/:conversationId", isAuth, leaveGroup);
+ChatRouter.put("/group", isAuth, updateGroupInfo);
+ChatRouter.delete("/group/:conversationId", isAuth, deleteGroup);
 
 ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {
   try {
