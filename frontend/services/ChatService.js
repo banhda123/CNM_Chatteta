@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getToken } from "./AuthService";
+import AuthService from "./AuthService";
 
 const API_URL = "http://localhost:4000/chat"; // Update with your backend URL
 
@@ -241,6 +241,29 @@ class ChatService {
       return response.data;
     } catch (error) {
       console.error("Error forwarding message:", error);
+      throw error;
+    }
+  }
+  
+  // Xóa cuộc trò chuyện
+  static async deleteConversation(conversationId) {
+    try {
+      const token = AuthService.getAccessToken();
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.delete(
+        `${API_URL}/conversation/${conversationId}`,
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error deleting conversation:", error);
       throw error;
     }
   }

@@ -202,6 +202,33 @@ class SocketService {
     }
   }
 
+  static onUpdateConversationList(callback) {
+    if (this.socket) {
+      this.socket.off('update_conversation_list'); // Remove any existing listeners
+      this.socket.on('update_conversation_list', callback);
+    }
+  }
+  
+  static removeFriend(userFrom, userTo, idConversation) {
+    if (this.socket) {
+      this.socket.emit('un_friend', { userFrom, userTo, idConversation });
+    }
+  }
+  
+  static onUnFriendSuccess(callback) {
+    if (this.socket) {
+      this.socket.off('un_friend_success'); // Remove any existing listeners
+      this.socket.on('un_friend_success', callback);
+    }
+  }
+  
+  static onUnFriend(callback) {
+    if (this.socket) {
+      this.socket.off('un_friend'); // Remove any existing listeners
+      this.socket.on('un_friend', callback);
+    }
+  }
+
   static removeListener(event) {
     if (this.socket) {
       this.socket.off(event);

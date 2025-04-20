@@ -14,6 +14,7 @@ import {
   unFriend,
 } from "../controllers/UserController.js";
 import { MessageModel } from "../models/MessageModel.js";
+import { ConversationModel } from "../models/ConversationModel.js";
 
 // Biến để lưu trữ io instance để có thể sử dụng từ các module khác
 let ioInstance = null;
@@ -103,10 +104,31 @@ export const ConnectSocket = (server) => {
         message: newMessage._id,
       });
 
+      // Emit to the conversation room for real-time chat updates
       io.to(newMessage.idConversation.toString()).emit(
         "new_message",
         newMessage
       );
+      
+      // Emit to all users in the conversation to update their conversation list
+      const conversation = await ConversationModel.findById(newMessage.idConversation)
+        .populate({
+          path: "members.idUser",
+          select: { name: 1, avatar: 1 }
+        })
+        .populate("lastMessage");
+        
+      if (conversation && conversation.members) {
+        // Emit to each member of the conversation to update their list
+        conversation.members.forEach(member => {
+          if (member.idUser && member.idUser._id) {
+            io.to(member.idUser._id.toString()).emit("update_conversation_list", {
+              conversation: conversation,
+              newMessage: newMessage
+            });
+          }
+        });
+      }
     });
 
     socket.on("revoke_message", async (data) => {

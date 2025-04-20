@@ -351,3 +351,44 @@ export const forwardMessage = async (req, res) => {
     return res.status(500).json({ error: "Failed to forward message" });
   }
 };
+
+export const deleteConversation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user._id;
+
+    if (!id) {
+      return res.status(400).json({ error: "Conversation ID is required" });
+    }
+
+    // Tìm cuộc trò chuyện
+    const conversation = await ConversationModel.findById(id);
+    
+    if (!conversation) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
+    // Kiểm tra xem người dùng có trong cuộc trò chuyện không
+    const isMember = conversation.members.some(
+      (member) => member.idUser.toString() === userId.toString()
+    );
+
+    if (!isMember) {
+      return res.status(403).json({ error: "You are not a member of this conversation" });
+    }
+
+    // Xóa tất cả tin nhắn trong cuộc trò chuyện
+    await MessageModel.deleteMany({ idConversation: id });
+
+    // Xóa cuộc trò chuyện
+    await ConversationModel.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Conversation and all messages deleted successfully"
+    });
+  } catch (error) {
+    console.error("Error deleting conversation:", error);
+    return res.status(500).json({ error: "Failed to delete conversation" });
+  }
+};
