@@ -22,6 +22,12 @@ import {
   Grid,
   Popover,
   ListItemIcon,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  List,
 } from "@mui/material";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
 import {
@@ -33,6 +39,7 @@ import {
   Notifications as NotificationsIcon,
   Photo as PhotoIcon,
   Slideshow as SlideshowIcon,
+  Share as ShareIcon,
 } from "@mui/icons-material";
 import Button from "@mui/material/Button";
 import AddIcon from "@mui/icons-material/Add";
@@ -50,6 +57,7 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import DescriptionIcon from '@mui/icons-material/Description';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import ForwardIcon from '@mui/icons-material/Forward';
 import RenderFileMessage from "../components/RenderFileMessage";
 import MessageReactions from "../components/MessageReactions";
 
@@ -96,6 +104,8 @@ const ChatUI = () => {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [attachMenuAnchorEl, setAttachMenuAnchorEl] = useState(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
+  const [targetConversation, setTargetConversation] = useState(null);
   
   // List of emojis
   const emojis = [
@@ -1093,14 +1103,11 @@ const ChatUI = () => {
   
   // Xử lý hiển thị menu ngữ cảnh cho tin nhắn
   const handleMessageContextMenu = (event, message) => {
-    // Chỉ cho phép hiển thị menu cho tin nhắn của chính mình
-    if (message.sender?.toString() === userId?.toString() || 
-        message.idUser?.toString() === userId?.toString()) {
-      event.preventDefault();
-      event.stopPropagation();
-      setMessageContextMenu(event.currentTarget);
-      setSelectedMessage(message);
-    }
+    // Cho phép hiển thị menu cho tất cả tin nhắn (cả của mình và người khác)
+    event.preventDefault();
+    event.stopPropagation();
+    setMessageContextMenu(event.currentTarget);
+    setSelectedMessage(message);
   };
   
   // Đóng menu ngữ cảnh tin nhắn
@@ -1108,6 +1115,86 @@ const ChatUI = () => {
     setMessageContextMenu(null);
     setSelectedMessage(null);
   };
+  
+  // Xử lý chuyển tiếp tin nhắn
+  const handleForwardMessage = () => {
+    setForwardDialogOpen(true);
+    setMessageContextMenu(null);
+  };
+  
+  // Xử lý đóng dialog chuyển tiếp tin nhắn
+  const handleCloseForwardDialog = () => {
+    setForwardDialogOpen(false);
+    setTargetConversation(null);
+  };
+  
+  // Xử lý chọn cuộc trò chuyện để chuyển tiếp tin nhắn
+  const handleSelectForwardConversation = (conversation) => {
+    setTargetConversation(conversation);
+  };
+  
+  // Xử lý xác nhận chuyển tiếp tin nhắn
+  const handleConfirmForward = async () => {
+    if (!selectedMessage || !targetConversation) return;
+    
+    try {
+      // Lấy token từ AuthService thay vì sử dụng hàm getToken không tồn tại
+      const userData = AuthService.getUserData();
+      const token = userData?.token;
+      
+      // Sử dụng Socket để chuyển tiếp tin nhắn
+      SocketService.forwardMessage(
+        selectedMessage._id,
+        targetConversation._id,
+        userId
+      );
+      
+      // Đóng dialog
+      setForwardDialogOpen(false);
+      setTargetConversation(null);
+    } catch (error) {
+      console.error("Error forwarding message:", error);
+      Alert.alert("Lỗi", "Không thể chuyển tiếp tin nhắn");
+    }
+  };
+  
+  // Xử lý khi chuyển tiếp tin nhắn thành công
+  const handleForwardMessageSuccess = (message) => {
+    Alert.alert("Thành công", "Tin nhắn đã được chuyển tiếp");
+    
+    // Nếu đang trong cuộc trò chuyện đích, cập nhật danh sách tin nhắn
+    if (activeConversation && activeConversation._id === message.idConversation) {
+      setMessages(prevMessages => [...prevMessages, message]);
+      
+      // Cuộn xuống tin nhắn mới nhất
+      setTimeout(() => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+    }
+  };
+  
+  // Xử lý khi chuyển tiếp tin nhắn gặp lỗi
+  const handleForwardMessageError = (error) => {
+    console.error("Forward message error:", error);
+    Alert.alert("Lỗi", error.error || "Không thể chuyển tiếp tin nhắn");
+  };
+  
+  // Đăng ký các sự kiện socket cho chức năng chuyển tiếp tin nhắn
+  useEffect(() => {
+    // Đăng ký sự kiện khi chuyển tiếp tin nhắn thành công
+    SocketService.onForwardMessageSuccess(handleForwardMessageSuccess);
+    
+    // Đăng ký sự kiện khi chuyển tiếp tin nhắn gặp lỗi
+    SocketService.onForwardMessageError(handleForwardMessageError);
+    
+    // Dọn dẹp khi component bị huỷ
+    return () => {
+      SocketService.removeListener('forward_message_success');
+      SocketService.removeListener('forward_message_error');
+    };
+  }, []);
   
   // Thu hồi tin nhắn
   const handleRevokeMessage = async () => {
@@ -2104,7 +2191,7 @@ const ChatUI = () => {
                                 </Box>
                               ) : (
                                 <>
-                                  {/* Hiển thị tên người gửi cho tin nhắn đối phương */}
+                                  {/* Hiển thị tên người gửi cho tin nhắn đối phương hoặc tin nhắn được chuyển tiếp */}
                                   {!(message?.sender?.toString() === userId?.toString() ||
                                     message?.idUser?.toString() === userId?.toString()) && (
                                     <Typography 
@@ -2118,6 +2205,30 @@ const ChatUI = () => {
                                     >
                                       {getOtherParticipant(activeConversation)?.idUser?.name || "Unknown User"}
                                     </Typography>
+                                  )}
+                                  
+                                  {/* Hiển thị thông tin người gửi gốc nếu là tin nhắn được chuyển tiếp */}
+                                  {message.isForwarded && (
+                                    <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                                      <ForwardIcon fontSize="small" sx={{ mr: 0.5, color: 'text.secondary', fontSize: '0.85rem' }} />
+                                      <Typography 
+                                        variant="caption" 
+                                        sx={{ 
+                                          fontStyle: 'italic',
+                                          color: 'text.secondary',
+                                          display: 'flex',
+                                          alignItems: 'center'
+                                        }}
+                                      >
+                                        Đã chuyển tiếp từ <span style={{ fontWeight: 'bold', marginLeft: '4px' }}>{message.originalSenderName || "Unknown User"}</span>
+                                        {message.originalSenderAvatar && (
+                                          <Avatar 
+                                            src={message.originalSenderAvatar} 
+                                            sx={{ width: 16, height: 16, ml: 0.5 }}
+                                          />
+                                        )}
+                                      </Typography>
+                                    </Box>
                                   )}
                                   
                                   {/* Nội dung tin nhắn */}
@@ -2569,15 +2680,138 @@ const ChatUI = () => {
           'aria-labelledby': selectedMessage ? `message-${selectedMessage._id || 'temp'}` : undefined,
         }}
       >
-        <MenuItem onClick={handleRevokeMessage}>
-          <UndoIcon fontSize="small" sx={{ mr: 1 }} />
-          Thu hồi tin nhắn
-        </MenuItem>
-        <MenuItem onClick={handleDeleteMessage}>
-          <DeleteOutlineIcon fontSize="small" sx={{ mr: 1 }} />
-          Xoá tin nhắn (chỉ ở phía bạn)
+        {/* Chỉ hiển thị tùy chọn thu hồi và xóa cho tin nhắn của chính mình */}
+        {(selectedMessage?.sender?.toString() === userId?.toString() || 
+         selectedMessage?.idUser?.toString() === userId?.toString()) && (
+          <>
+            <MenuItem onClick={handleRevokeMessage}>
+              <UndoIcon fontSize="small" sx={{ mr: 1 }} />
+              Thu hồi tin nhắn
+            </MenuItem>
+            <MenuItem onClick={handleDeleteMessage}>
+              <DeleteOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+              Xoá tin nhắn (chỉ ở phía bạn)
+            </MenuItem>
+          </>
+        )}
+        
+        {/* Luôn hiển thị tùy chọn chuyển tiếp cho mọi tin nhắn */}
+        <MenuItem onClick={handleForwardMessage}>
+          <ShareIcon fontSize="small" sx={{ mr: 1 }} />
+          Chuyển tiếp tin nhắn
         </MenuItem>
       </Menu>
+      
+      {/* Dialog chọn cuộc trò chuyện để chuyển tiếp tin nhắn */}
+      <Dialog
+        open={forwardDialogOpen}
+        onClose={handleCloseForwardDialog}
+        aria-labelledby="forward-dialog-title"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle id="forward-dialog-title">Chuyển tiếp tin nhắn</DialogTitle>
+        <DialogContent>
+          {/* Hiển thị thông tin tin nhắn được chuyển tiếp */}
+          {selectedMessage && (
+            <Box sx={{ mb: 3, p: 2, bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                Tin nhắn được chuyển tiếp:
+              </Typography>
+              
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Avatar 
+                  src={selectedMessage.sender?.toString() === userId?.toString() ? 
+                    user.avatar : 
+                    getOtherParticipant(activeConversation)?.idUser?.avatar || ''}
+                  sx={{ width: 24, height: 24, mr: 1 }}
+                />
+                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                  {selectedMessage.sender?.toString() === userId?.toString() ? 
+                    user.name : 
+                    getOtherParticipant(activeConversation)?.idUser?.name || 'Unknown User'}
+                </Typography>
+              </Box>
+              
+              <Box sx={{ pl: 4 }}>
+                {(selectedMessage.type === 'text' || !selectedMessage.type) && (
+                  <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
+                    {selectedMessage?.content || selectedMessage?.text}
+                  </Typography>
+                )}
+                
+                {(selectedMessage.type === 'image' || selectedMessage.type === 'file' || selectedMessage.type === 'video' || 
+                 selectedMessage.type === 'audio' || selectedMessage.type === 'pdf' || selectedMessage.type === 'doc' || 
+                 selectedMessage.type === 'excel' || selectedMessage.type === 'presentation' || selectedMessage.hasFile) && (
+                  <Typography variant="body2" sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
+                    <AttachFileIcon fontSize="small" sx={{ mr: 0.5 }} />
+                    {selectedMessage.type === 'image' ? 'Hình ảnh' : 
+                     selectedMessage.type === 'video' ? 'Video' : 
+                     selectedMessage.type === 'audio' ? 'Âm thanh' : 
+                     selectedMessage.type === 'pdf' ? 'Tài liệu PDF' : 
+                     selectedMessage.type === 'doc' ? 'Tài liệu Word' : 
+                     selectedMessage.type === 'excel' ? 'Bảng tính Excel' : 
+                     selectedMessage.type === 'presentation' ? 'Bài thuyết trình' : 
+                     'Tệp đính kèm'}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+          )}
+          
+          <DialogContentText>
+            Chọn cuộc trò chuyện để chuyển tiếp tin nhắn này
+          </DialogContentText>
+          
+          <Box sx={{ mt: 2, maxHeight: 300, overflow: 'auto' }}>
+            <List>
+              {conversations.map((conversation) => (
+                <ListItem
+                  key={conversation._id}
+                  button
+                  onClick={() => handleSelectForwardConversation(conversation)}
+                  selected={targetConversation && targetConversation._id === conversation._id}
+                  sx={{
+                    borderRadius: 1,
+                    mb: 0.5,
+                    bgcolor: targetConversation && targetConversation._id === conversation._id ? 'action.selected' : 'transparent'
+                  }}
+                >
+                  <ListItemAvatar>
+                    <Avatar
+                      src={getOtherParticipant(conversation)?.idUser?.avatar || ''}
+                      alt={getOtherParticipant(conversation)?.idUser?.name || 'User'}
+                    />
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={getOtherParticipant(conversation)?.idUser?.name || 'Unknown User'}
+                    secondary={
+                      <Typography variant="caption" color="text.secondary">
+                        {conversation.lastMessage ? 
+                          (conversation.lastMessage.content?.length > 20 ? 
+                            `${conversation.lastMessage.content.substring(0, 20)}...` : 
+                            conversation.lastMessage.content) : 
+                          'Không có tin nhắn'}
+                      </Typography>
+                    }
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseForwardDialog}>Hủy</Button>
+          <Button
+            onClick={handleConfirmForward}
+            color="primary"
+            disabled={!targetConversation}
+            variant="contained"
+          >
+            Chuyển tiếp
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

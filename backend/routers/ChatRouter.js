@@ -7,7 +7,8 @@ import {
   saveMessage,
   seenMessage,
   revokeMessage,
-  deleteMessage
+  deleteMessage,
+  forwardMessage
 } from "../controllers/chatController.js";
 import { isAuth } from "../utils/index.js";
 import multer from "multer";
@@ -45,6 +46,7 @@ ChatRouter.post("/message", isAuth, saveMessage);
 ChatRouter.post("/seen/:id", isAuth, seenMessage);
 ChatRouter.post("/message/revoke/:messageId", isAuth, revokeMessage);
 ChatRouter.post("/message/delete/:messageId", isAuth, deleteMessage);
+ChatRouter.post("/message/forward", isAuth, forwardMessage);
 
 ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {
   try {

@@ -221,6 +221,29 @@ class ChatService {
       throw error;
     }
   }
+  
+  // Chuyển tiếp tin nhắn
+  static async forwardMessage(messageId, conversationId, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.post(
+        `${API_URL}/message/forward`, 
+        { messageId, conversationId },
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error forwarding message:", error);
+      throw error;
+    }
+  }
 }
 
 export default ChatService;

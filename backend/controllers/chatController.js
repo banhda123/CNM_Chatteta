@@ -293,3 +293,61 @@ export const deleteMessage = async (req, res) => {
     return res.status(500).json({ error: "Failed to delete message" });
   }
 };
+
+export const forwardMessage = async (req, res) => {
+  try {
+    const { messageId, conversationId } = req.body;
+    const userId = req.user._id;
+
+    if (!messageId || !conversationId) {
+      return res.status(400).json({ error: "Message ID and Conversation ID are required" });
+    }
+
+    // Tìm tin nhắn gốc
+    const originalMessage = await MessageModel.findById(messageId).populate('sender', 'name avatar');
+    
+    if (!originalMessage) {
+      return res.status(404).json({ error: "Original message not found" });
+    }
+
+    // Tạo tin nhắn mới với nội dung được chuyển tiếp
+    const forwardedMessage = new MessageModel({
+      idConversation: conversationId,
+      content: originalMessage.content,
+      type: originalMessage.type,
+      seen: false,
+      sender: userId,
+      fileUrl: originalMessage.fileUrl,
+      fileName: originalMessage.fileName,
+      fileType: originalMessage.fileType,
+      isForwarded: true,
+      originalMessage: originalMessage._id,
+      forwardedBy: userId,
+      originalSender: originalMessage.sender._id,
+      originalSenderName: originalMessage.sender.name,
+      originalSenderAvatar: originalMessage.sender.avatar
+    });
+
+    const savedMessage = await forwardedMessage.save();
+    
+    // Cập nhật tin nhắn cuối cùng cho cuộc trò chuyện
+    await updateLastMesssage({ 
+      idConversation: conversationId, 
+      message: savedMessage._id 
+    });
+
+    // Populate thông tin người gửi để trả về đầy đủ thông tin
+    const populatedMessage = await MessageModel.findById(savedMessage._id)
+      .populate('sender', 'name avatar')
+      .populate('originalSender', 'name avatar');
+
+    return res.status(200).json({
+      success: true,
+      message: "Message forwarded successfully",
+      forwardedMessage: populatedMessage
+    });
+  } catch (error) {
+    console.error("Error forwarding message:", error);
+    return res.status(500).json({ error: "Failed to forward message" });
+  }
+};

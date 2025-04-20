@@ -236,6 +236,24 @@ class SocketService {
       this.socket.on('message_reaction', callback);
     }
   }
+  
+  static forwardMessage(messageId, conversationId, userId) {
+    if (this.socket && messageId && conversationId && userId) {
+      this.socket.emit('forward_message', { messageId, conversationId, userId });
+    }
+  }
+  
+  static onForwardMessageSuccess(callback) {
+    if (this.socket) {
+      this.socket.on('forward_message_success', callback);
+    }
+  }
+  
+  static onForwardMessageError(callback) {
+    if (this.socket) {
+      this.socket.on('forward_message_error', callback);
+    }
+  }
 }
 
 export default SocketService; 

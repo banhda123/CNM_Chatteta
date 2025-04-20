@@ -295,6 +295,62 @@ export const ConnectSocket = (server) => {
       }
     });
 
+    // Xử lý chuyển tiếp tin nhắn
+    socket.on("forward_message", async (data) => {
+      try {
+        const { messageId, conversationId, userId } = data;
+        
+        // Tìm tin nhắn gốc và populate thông tin người gửi
+        const originalMessage = await MessageModel.findById(messageId).populate('sender', 'name avatar');
+        
+        if (!originalMessage) {
+          socket.emit("forward_message_error", { error: "Message not found" });
+          return;
+        }
+
+        // Tạo tin nhắn mới với nội dung được chuyển tiếp
+        const forwardedMessage = new MessageModel({
+          idConversation: conversationId,
+          content: originalMessage.content,
+          type: originalMessage.type,
+          seen: false,
+          sender: userId,
+          fileUrl: originalMessage.fileUrl,
+          fileName: originalMessage.fileName,
+          fileType: originalMessage.fileType,
+          isForwarded: true,
+          originalMessage: originalMessage._id,
+          forwardedBy: userId,
+          originalSender: originalMessage.sender._id,
+          originalSenderName: originalMessage.sender.name,
+          originalSenderAvatar: originalMessage.sender.avatar
+        });
+
+        const savedMessage = await forwardedMessage.save();
+        
+        // Cập nhật tin nhắn cuối cùng cho cuộc trò chuyện
+        await updateLastMesssage({ 
+          idConversation: conversationId, 
+          message: savedMessage._id 
+        });
+
+        // Populate thông tin người gửi để trả về đầy đủ thông tin
+        const populatedMessage = await MessageModel.findById(savedMessage._id)
+          .populate('sender', 'name avatar')
+          .populate('originalSender', 'name avatar');
+
+        // Gửi tin nhắn mới đến tất cả người dùng trong cuộc trò chuyện
+        io.to(conversationId).emit("new_message", populatedMessage);
+        
+        // Thông báo thành công cho người gửi
+        socket.emit("forward_message_success", populatedMessage);
+        
+      } catch (error) {
+        console.error("Error forwarding message:", error);
+        socket.emit("forward_message_error", { error: "Failed to forward message" });
+      }
+    });
+    
     socket.on("disconnect", () => {
       console.log(`${socket.id} disconnected`);
     });

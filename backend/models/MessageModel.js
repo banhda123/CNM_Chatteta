@@ -43,6 +43,33 @@ const MessageSchema = new Schema(
     reactions: {
       type: Object,
       default: {}
+    },
+    isForwarded: {
+      type: Boolean,
+      default: false
+    },
+    originalMessage: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Message",
+      default: null
+    },
+    forwardedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null
+    },
+    originalSender: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null
+    },
+    originalSenderName: {
+      type: String,
+      default: null
+    },
+    originalSenderAvatar: {
+      type: String,
+      default: null
     }
   },
   {
