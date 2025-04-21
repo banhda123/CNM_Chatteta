@@ -14,7 +14,10 @@ import {
   removeMemberFromGroup,
   leaveGroup,
   updateGroupInfo,
-  deleteGroup
+  deleteGroup,
+  setAdmin2,
+  removeAdmin2,
+  updateGroupPermissions
 } from "../controllers/chatController.js";
 import { isAuth } from "../utils/index.js";
 import multer from "multer";
@@ -56,11 +59,16 @@ ChatRouter.post("/message/forward", isAuth, forwardMessage);
 
 // Group chat routes
 ChatRouter.post("/group", isAuth, createGroupConversation);
-ChatRouter.post("/group/members/add", isAuth, addMemberToGroup);
-ChatRouter.post("/group/members/remove", isAuth, removeMemberFromGroup);
-ChatRouter.delete("/group/leave/:conversationId", isAuth, leaveGroup);
 ChatRouter.put("/group", isAuth, updateGroupInfo);
 ChatRouter.delete("/group/:conversationId", isAuth, deleteGroup);
+ChatRouter.post("/group/members", isAuth, addMemberToGroup);
+ChatRouter.delete("/group/members", isAuth, removeMemberFromGroup);
+ChatRouter.post("/group/leave/:conversationId", isAuth, leaveGroup);
+
+// Admin2 and permissions routes
+ChatRouter.post("/group/admin2", isAuth, setAdmin2);
+ChatRouter.delete("/group/admin2", isAuth, removeAdmin2);
+ChatRouter.put("/group/permissions", isAuth, updateGroupPermissions);
 
 ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {
   try {

@@ -935,3 +935,292 @@ export const deleteGroup = async (req, res) => {
     });
   }
 };
+
+export const setAdmin2 = async (req, res) => {
+  try {
+    const { conversationId, memberId } = req.body;
+    const userId = req.user._id;
+
+    if (!conversationId || !memberId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Conversation ID and member ID are required" 
+      });
+    }
+
+    // Find the conversation
+    const conversation = await ConversationModel.findById(conversationId);
+
+    if (!conversation) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Conversation not found" 
+      });
+    }
+
+    // Check if it's a group conversation
+    if (conversation.type !== "group") {
+      return res.status(400).json({ 
+        success: false, 
+        message: "This operation is only allowed for group conversations" 
+      });
+    }
+
+    // Check if the user is admin
+    const isAdmin = conversation.admin && conversation.admin.toString() === userId.toString();
+
+    if (!isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Only the group admin can set admin2" 
+      });
+    }
+
+    // Check if the member exists in the group
+    const memberIndex = conversation.members.findIndex(member => 
+      member.idUser.toString() === memberId
+    );
+
+    if (memberIndex === -1) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Member not found in the group" 
+      });
+    }
+
+    // Set the member as admin2
+    conversation.members[memberIndex].role = "admin2";
+    conversation.admin2 = memberId;
+
+    await conversation.save();
+
+    // Create system message about the change
+    const member = await UsersModel.findById(memberId);
+    const systemMessage = new MessageModel({
+      idConversation: conversationId,
+      content: `${req.user.name} đã đặt ${member.name} làm phó nhóm`,
+      type: 'system',
+      seen: false,
+      sender: userId,
+    });
+    
+    const savedMessage = await systemMessage.save();
+    
+    // Update last message
+    await updateLastMesssage({ 
+      idConversation: conversationId, 
+      message: savedMessage._id 
+    });
+
+    // Get updated conversation with populated members
+    const updatedConversation = await ConversationModel.findById(conversationId)
+      .populate({
+        path: "members.idUser",
+        select: "name avatar"
+      })
+      .populate("admin", "name avatar")
+      .populate("admin2", "name avatar");
+
+    return res.status(200).json({
+      success: true,
+      message: "Admin2 set successfully",
+      conversation: updatedConversation
+    });
+  } catch (error) {
+    console.error("Error setting admin2:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Failed to set admin2", 
+      error: error.message 
+    });
+  }
+};
+
+export const removeAdmin2 = async (req, res) => {
+  try {
+    const { conversationId } = req.body;
+    const userId = req.user._id;
+
+    if (!conversationId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Conversation ID is required" 
+      });
+    }
+
+    // Find the conversation
+    const conversation = await ConversationModel.findById(conversationId);
+
+    if (!conversation) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Conversation not found" 
+      });
+    }
+
+    // Check if it's a group conversation
+    if (conversation.type !== "group") {
+      return res.status(400).json({ 
+        success: false, 
+        message: "This operation is only allowed for group conversations" 
+      });
+    }
+
+    // Check if the user is admin
+    const isAdmin = conversation.admin && conversation.admin.toString() === userId.toString();
+
+    if (!isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Only the group admin can remove admin2" 
+      });
+    }
+
+    // Find the admin2 member
+    const admin2Index = conversation.members.findIndex(member => 
+      member.role === "admin2"
+    );
+
+    if (admin2Index === -1) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "No admin2 found in the group" 
+      });
+    }
+
+    // Remove admin2 role
+    conversation.members[admin2Index].role = "member";
+    conversation.admin2 = null;
+
+    await conversation.save();
+
+    // Create system message about the change
+    const admin2User = await UsersModel.findById(conversation.members[admin2Index].idUser);
+    const systemMessage = new MessageModel({
+      idConversation: conversationId,
+      content: `${req.user.name} đã gỡ ${admin2User.name} khỏi vị trí phó nhóm`,
+      type: 'system',
+      seen: false,
+      sender: userId,
+    });
+    
+    const savedMessage = await systemMessage.save();
+    
+    // Update last message
+    await updateLastMesssage({ 
+      idConversation: conversationId, 
+      message: savedMessage._id 
+    });
+
+    // Get updated conversation with populated members
+    const updatedConversation = await ConversationModel.findById(conversationId)
+      .populate({
+        path: "members.idUser",
+        select: "name avatar"
+      })
+      .populate("admin", "name avatar")
+      .populate("admin2", "name avatar");
+
+    return res.status(200).json({
+      success: true,
+      message: "Admin2 removed successfully",
+      conversation: updatedConversation
+    });
+  } catch (error) {
+    console.error("Error removing admin2:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Failed to remove admin2", 
+      error: error.message 
+    });
+  }
+};
+
+export const updateGroupPermissions = async (req, res) => {
+  try {
+    const { conversationId, permissions } = req.body;
+    const userId = req.user._id;
+
+    if (!conversationId || !permissions) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Conversation ID and permissions are required" 
+      });
+    }
+
+    // Find the conversation
+    const conversation = await ConversationModel.findById(conversationId);
+
+    if (!conversation) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Conversation not found" 
+      });
+    }
+
+    // Check if it's a group conversation
+    if (conversation.type !== "group") {
+      return res.status(400).json({ 
+        success: false, 
+        message: "This operation is only allowed for group conversations" 
+      });
+    }
+
+    // Check if the user is admin
+    const isAdmin = conversation.admin && conversation.admin.toString() === userId.toString();
+
+    if (!isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Only the group admin can update permissions" 
+      });
+    }
+
+    // Update permissions
+    conversation.permissions = {
+      ...conversation.permissions,
+      ...permissions
+    };
+
+    await conversation.save();
+
+    // Create system message about the change
+    const systemMessage = new MessageModel({
+      idConversation: conversationId,
+      content: `${req.user.name} đã cập nhật quyền hạn của nhóm`,
+      type: 'system',
+      seen: false,
+      sender: userId,
+    });
+    
+    const savedMessage = await systemMessage.save();
+    
+    // Update last message
+    await updateLastMesssage({ 
+      idConversation: conversationId, 
+      message: savedMessage._id 
+    });
+
+    // Get updated conversation with populated members
+    const updatedConversation = await ConversationModel.findById(conversationId)
+      .populate({
+        path: "members.idUser",
+        select: "name avatar"
+      })
+      .populate("admin", "name avatar")
+      .populate("admin2", "name avatar");
+
+    return res.status(200).json({
+      success: true,
+      message: "Group permissions updated successfully",
+      conversation: updatedConversation
+    });
+  } catch (error) {
+    console.error("Error updating group permissions:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Failed to update group permissions", 
+      error: error.message 
+    });
+  }
+};

@@ -18,7 +18,9 @@ import {
   Divider,
   CircularProgress,
   Menu,
-  MenuItem
+  MenuItem,
+  FormControlLabel,
+  Switch
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -38,11 +40,15 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin2, setIsAdmin2] = useState(false);
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [selectedMember, setSelectedMember] = useState(null);
   const [addMembersDialogOpen, setAddMembersDialogOpen] = useState(false);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmSetAdmin2Open, setConfirmSetAdmin2Open] = useState(false);
+  const [confirmRemoveAdmin2Open, setConfirmRemoveAdmin2Open] = useState(false);
+  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
@@ -58,14 +64,60 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     const userData = AuthService.getUserData();
     setCurrentUser(userData);
     
-    // Check if current user is admin
-    const isUserAdmin = conversation.admin && userData && 
-      conversation.admin._id === userData._id;
-    setIsAdmin(isUserAdmin);
+    console.log('=== Conversation Data ===');
+    console.log('Full conversation:', conversation);
+    console.log('Admin:', conversation.admin);
+    console.log('Admin2:', conversation.admin2);
+    console.log('Members:', conversation.members);
+    console.log('Current user:', userData);
     
-    // Set members
+    // Check if current user is admin or admin2
+    const isUserAdmin = conversation.admin && userData && 
+      (conversation.admin._id === userData._id || conversation.admin === userData._id);
+    const isUserAdmin2 = conversation.admin2 && userData &&
+      (conversation.admin2._id === userData._id || conversation.admin2 === userData._id);
+    setIsAdmin(isUserAdmin);
+    setIsAdmin2(isUserAdmin2);
+    
+    console.log('=== Role Checks ===');
+    console.log('Is user admin:', isUserAdmin);
+    console.log('Is user admin2:', isUserAdmin2);
+    
+    // Set members with correct roles
     if (conversation.members) {
-      setMembers(conversation.members);
+      const updatedMembers = conversation.members.map(member => {
+        console.log('Processing member:', member);
+        
+        // Get the actual user ID (handle both direct ID and nested idUser._id)
+        const memberId = member.idUser?._id || member.idUser || member._id;
+        console.log('Member ID:', memberId);
+        
+        // Set role based on admin/admin2 status
+        if (conversation.admin) {
+          const adminId = conversation.admin._id || conversation.admin;
+          console.log('Admin ID:', adminId);
+          if (memberId === adminId) {
+            console.log('Setting role to admin for member:', memberId);
+            return { ...member, role: "admin" };
+          }
+        }
+        
+        if (conversation.admin2) {
+          const admin2Id = conversation.admin2._id || conversation.admin2;
+          console.log('Admin2 ID:', admin2Id);
+          if (memberId === admin2Id) {
+            console.log('Setting role to admin2 for member:', memberId);
+            return { ...member, role: "admin2" };
+          }
+        }
+        
+        console.log('Setting role to member for:', memberId);
+        return { ...member, role: "member" };
+      });
+      
+      console.log('=== Final Members ===');
+      console.log('Updated members:', updatedMembers);
+      setMembers(updatedMembers);
     }
   };
 
@@ -77,6 +129,119 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
   const handleMenuClose = () => {
     setMenuAnchorEl(null);
     setSelectedMember(null);
+  };
+
+  const handleSetAdmin2 = async () => {
+    if (!selectedMember || !conversation) return;
+    
+    try {
+      setActionLoading(true);
+      const token = AuthService.getAccessToken();
+      
+      const response = await ChatService.setAdmin2(
+        conversation._id,
+        selectedMember.idUser._id,
+        token
+      );
+      
+      if (response.success) {
+        // Update local members list
+        setMembers(prevMembers => 
+          prevMembers.map(m => 
+            m.idUser._id === selectedMember.idUser._id 
+              ? { ...m, role: "admin2" }
+              : m
+          )
+        );
+        
+        // Notify parent component
+        if (onGroupUpdated) {
+          onGroupUpdated(response.conversation);
+        }
+        
+        handleMenuClose();
+      } else {
+        setError(response.message || 'Failed to set admin2');
+      }
+    } catch (error) {
+      console.error('Error setting admin2:', error);
+      setError('Failed to set admin2. Please try again.');
+    } finally {
+      setActionLoading(false);
+      setConfirmSetAdmin2Open(false);
+    }
+  };
+
+  const handleRemoveAdmin2 = async () => {
+    if (!conversation) return;
+    
+    try {
+      setActionLoading(true);
+      const token = AuthService.getAccessToken();
+      
+      const response = await ChatService.removeAdmin2(
+        conversation._id,
+        token
+      );
+      
+      if (response.success) {
+        // Update local members list
+        setMembers(prevMembers => 
+          prevMembers.map(m => 
+            m.role === "admin2"
+              ? { ...m, role: "member" }
+              : m
+          )
+        );
+        
+        // Notify parent component
+        if (onGroupUpdated) {
+          onGroupUpdated(response.conversation);
+        }
+        
+        handleMenuClose();
+      } else {
+        setError(response.message || 'Failed to remove admin2');
+      }
+    } catch (error) {
+      console.error('Error removing admin2:', error);
+      setError('Failed to remove admin2. Please try again.');
+    } finally {
+      setActionLoading(false);
+      setConfirmRemoveAdmin2Open(false);
+    }
+  };
+
+  const handleUpdatePermissions = async (permissions) => {
+    if (!conversation) return;
+    
+    try {
+      setActionLoading(true);
+      const userData = AuthService.getUserData();
+      const token = userData.token;
+      
+      const response = await ChatService.updateGroupPermissions(
+        conversation._id,
+        permissions,
+        token
+      );
+      
+      if (response.success) {
+        // Notify parent component
+        if (onGroupUpdated) {
+          onGroupUpdated(response.conversation);
+        }
+        
+        setPermissionsDialogOpen(false);
+      } else {
+        setError(response.message || 'Failed to update permissions');
+      }
+    } catch (error) {
+      console.error('Error updating permissions:', error);
+      setError('Failed to update permissions. Please try again.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleRemoveMember = async () => {
@@ -204,6 +369,9 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     setSelectedMember(null);
     setConfirmLeaveOpen(false);
     setConfirmDeleteOpen(false);
+    setConfirmSetAdmin2Open(false);
+    setConfirmRemoveAdmin2Open(false);
+    setPermissionsDialogOpen(false);
     onClose();
   };
 
@@ -211,85 +379,44 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     <>
       <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
         <DialogTitle>
-          Group Members
-          <IconButton
-            aria-label="close"
-            onClick={handleClose}
-            sx={{ position: 'absolute', right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">Group Members</Typography>
+            <IconButton onClick={handleClose} disabled={actionLoading}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
         </DialogTitle>
-        
-        <DialogContent dividers>
-          {conversation && (
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                {conversation.name}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {members.length} members
-              </Typography>
-            </Box>
-          )}
-          
-          {isAdmin && (
-            <Box sx={{ mb: 2 }}>
-              <Button
-                variant="outlined"
-                startIcon={<PersonAddIcon />}
-                onClick={handleAddMembers}
-                fullWidth
-              >
-                Add Members
-              </Button>
-            </Box>
-          )}
-          
-          <Divider sx={{ my: 1 }} />
-          
+        <DialogContent>
           {loading ? (
-            <Box display="flex" justifyContent="center" my={3}>
-              <CircularProgress size={40} />
+            <Box display="flex" justifyContent="center" p={3}>
+              <CircularProgress />
             </Box>
-          ) : members.length === 0 ? (
-            <Typography color="text.secondary" align="center" sx={{ my: 2 }}>
-              No members found
-            </Typography>
           ) : (
-            <List sx={{ maxHeight: 300, overflow: 'auto' }}>
+            <List>
               {members.map((member) => (
                 <ListItem key={member.idUser._id}>
                   <ListItemAvatar>
-                    <Avatar src={member.idUser.avatar} alt={member.idUser.name} />
+                    <Avatar src={member.idUser.avatar} />
                   </ListItemAvatar>
-                  <ListItemText 
-                    primary={
-                      <Box component="span" sx={{ display: 'flex', alignItems: 'center' }}>
-                        {member.idUser.name}
-                        {conversation.admin && conversation.admin._id === member.idUser._id && (
-                          <Typography 
-                            variant="caption" 
-                            color="primary" 
-                            sx={{ ml: 1, bgcolor: 'primary.light', color: 'primary.contrastText', px: 1, borderRadius: 1 }}
-                          >
-                            Admin
-                          </Typography>
-                        )}
-                      </Box>
+                  <ListItemText
+                    primary={member.idUser.name}
+                    secondary={
+                      member.idUser._id === conversation.admin._id
+                        ? "Admin"
+                        : member.role === "admin2"
+                        ? "Phó nhóm"
+                        : "Thành viên"
                     }
-                    secondary={member.idUser.phone}
                   />
-                  
-                  {/* Only show options for other members if admin, or for self */}
-                  {((isAdmin && currentUser._id !== member.idUser._id) || 
-                    (!isAdmin && currentUser._id === member.idUser._id)) && (
-                    <ListItemSecondaryAction>
-                      <IconButton edge="end" onClick={(e) => handleMenuOpen(e, member)}>
-                        <MoreVertIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  )}
+                  <ListItemSecondaryAction>
+                    <IconButton
+                      edge="end"
+                      onClick={(e) => handleMenuOpen(e, member)}
+                      disabled={actionLoading}
+                    >
+                      <MoreVertIcon />
+                    </IconButton>
+                  </ListItemSecondaryAction>
                 </ListItem>
               ))}
             </List>
@@ -304,17 +431,40 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
           <Divider sx={{ my: 2 }} />
           
           <Box sx={{ mt: 2 }}>
-            {isAdmin ? (
-              <Button
-                variant="outlined"
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={() => setConfirmDeleteOpen(true)}
-                fullWidth
-              >
-                Delete Group
-              </Button>
-            ) : (
+            {isAdmin && (
+              <>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<PersonAddIcon />}
+                  onClick={handleAddMembers}
+                  fullWidth
+                  sx={{ mb: 1 }}
+                >
+                  Add Members
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<EditIcon />}
+                  onClick={() => setPermissionsDialogOpen(true)}
+                  fullWidth
+                  sx={{ mb: 1 }}
+                >
+                  Manage Permissions
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteIcon />}
+                  onClick={() => setConfirmDeleteOpen(true)}
+                  fullWidth
+                >
+                  Delete Group
+                </Button>
+              </>
+            )}
+            {!isAdmin && (
               <Button
                 variant="outlined"
                 color="error"
@@ -336,12 +486,30 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
         onClose={handleMenuClose}
       >
         {isAdmin && selectedMember && currentUser._id !== selectedMember.idUser._id && (
-          <MenuItem onClick={handleRemoveMember} disabled={actionLoading}>
-            <ListItemIcon>
-              <DeleteIcon fontSize="small" />
-            </ListItemIcon>
-            Remove from group
-          </MenuItem>
+          <>
+            {selectedMember.role !== "admin2" && (
+              <MenuItem onClick={() => setConfirmSetAdmin2Open(true)} disabled={actionLoading}>
+                <ListItemIcon>
+                  <EditIcon fontSize="small" />
+                </ListItemIcon>
+                Set as admin2
+              </MenuItem>
+            )}
+            {selectedMember.role === "admin2" && (
+              <MenuItem onClick={() => setConfirmRemoveAdmin2Open(true)} disabled={actionLoading}>
+                <ListItemIcon>
+                  <EditIcon fontSize="small" />
+                </ListItemIcon>
+                Remove admin2
+              </MenuItem>
+            )}
+            <MenuItem onClick={handleRemoveMember} disabled={actionLoading}>
+              <ListItemIcon>
+                <DeleteIcon fontSize="small" />
+              </ListItemIcon>
+              Remove from group
+            </MenuItem>
+          </>
         )}
         
         {!isAdmin && selectedMember && currentUser._id === selectedMember.idUser._id && (
@@ -353,6 +521,121 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
           </MenuItem>
         )}
       </Menu>
+      
+      {/* Confirm dialogs */}
+      <Dialog open={confirmSetAdmin2Open} onClose={() => setConfirmSetAdmin2Open(false)}>
+        <DialogTitle>Set Admin2</DialogTitle>
+        <DialogContent>
+          <Typography>Are you sure you want to set {selectedMember?.idUser?.name} as admin2?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmSetAdmin2Open(false)} disabled={actionLoading}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSetAdmin2} 
+            color="primary" 
+            variant="contained"
+            disabled={actionLoading}
+          >
+            {actionLoading ? <CircularProgress size={24} /> : 'Set Admin2'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      <Dialog open={confirmRemoveAdmin2Open} onClose={() => setConfirmRemoveAdmin2Open(false)}>
+        <DialogTitle>Remove Admin2</DialogTitle>
+        <DialogContent>
+          <Typography>Are you sure you want to remove {selectedMember?.idUser?.name} from admin2 position?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmRemoveAdmin2Open(false)} disabled={actionLoading}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleRemoveAdmin2} 
+            color="primary" 
+            variant="contained"
+            disabled={actionLoading}
+          >
+            {actionLoading ? <CircularProgress size={24} /> : 'Remove Admin2'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Permissions dialog */}
+      <Dialog open={permissionsDialogOpen} onClose={() => setPermissionsDialogOpen(false)}>
+        <DialogTitle>Group Permissions</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  defaultChecked={conversation?.permissions?.changeName}
+                  onChange={(e) => handleUpdatePermissions({
+                    ...conversation.permissions,
+                    changeName: e.target.checked
+                  })}
+                />
+              }
+              label="Allow changing group name"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  defaultChecked={conversation?.permissions?.changeAvatar}
+                  onChange={(e) => handleUpdatePermissions({
+                    ...conversation.permissions,
+                    changeAvatar: e.target.checked
+                  })}
+                />
+              }
+              label="Allow changing group avatar"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  defaultChecked={conversation?.permissions?.addMembers}
+                  onChange={(e) => handleUpdatePermissions({
+                    ...conversation.permissions,
+                    addMembers: e.target.checked
+                  })}
+                />
+              }
+              label="Allow adding members"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  defaultChecked={conversation?.permissions?.removeMembers}
+                  onChange={(e) => handleUpdatePermissions({
+                    ...conversation.permissions,
+                    removeMembers: e.target.checked
+                  })}
+                />
+              }
+              label="Allow removing members"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  defaultChecked={conversation?.permissions?.deleteGroup}
+                  onChange={(e) => handleUpdatePermissions({
+                    ...conversation.permissions,
+                    deleteGroup: e.target.checked
+                  })}
+                />
+              }
+              label="Allow deleting group"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPermissionsDialogOpen(false)}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
       
       {/* Confirm leave dialog */}
       <Dialog open={confirmLeaveOpen} onClose={() => setConfirmLeaveOpen(false)}>

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getToken } from "./AuthService";
+import AuthService from "./AuthService";
 
 const API_URL = "http://localhost:4000/chat"; // Update with your backend URL
 
@@ -19,6 +19,18 @@ class ChatService {
         groupData,
         config
       );
+      
+      // Ensure the response includes the admin role
+      if (response.data && response.data.conversation) {
+        const userData = AuthService.getUserData();
+        if (userData) {
+          response.data.conversation.admin = {
+            _id: userData._id,
+            name: userData.name,
+            avatar: userData.avatar
+          };
+        }
+      }
       
       return response.data;
     } catch (error) {
@@ -375,6 +387,75 @@ class ChatService {
       return response.data;
     } catch (error) {
       console.error("Error forwarding message:", error);
+      throw error;
+    }
+  }
+
+  // Set admin2
+  static async setAdmin2(conversationId, memberId, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.post(
+        `${API_URL}/group/admin2`,
+        { conversationId, memberId },
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error setting admin2:", error);
+      throw error;
+    }
+  }
+
+  // Remove admin2
+  static async removeAdmin2(conversationId, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.delete(
+        `${API_URL}/group/admin2`,
+        { data: { conversationId } },
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error removing admin2:", error);
+      throw error;
+    }
+  }
+
+  // Update group permissions
+  static async updateGroupPermissions(conversationId, permissions, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.put(
+        `${API_URL}/group/permissions`,
+        { conversationId, permissions },
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error updating group permissions:", error);
       throw error;
     }
   }
