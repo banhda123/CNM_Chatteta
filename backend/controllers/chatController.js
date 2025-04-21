@@ -569,7 +569,7 @@ export const addMemberToGroup = async (req, res) => {
 
 export const removeMemberFromGroup = async (req, res) => {
   try {
-    const { conversationId, memberId } = req.body;
+    const { conversationId, memberId } = req.params;
     const userId = req.user._id;
 
     if (!conversationId || !memberId) {
@@ -1078,9 +1078,20 @@ export const removeAdmin2 = async (req, res) => {
       });
     }
 
+    // Check if there's an admin2
+    if (!conversation.admin2) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "No admin2 found in the group" 
+      });
+    }
+
+    // Get admin2 ID in string format for comparison
+    const admin2Id = conversation.admin2._id ? conversation.admin2._id.toString() : conversation.admin2.toString();
+
     // Find the admin2 member
     const admin2Member = conversation.members.find(member => 
-      member.idUser._id.toString() === conversation.admin2?.toString()
+      member.idUser._id.toString() === admin2Id
     );
 
     if (!admin2Member) {

@@ -82,22 +82,37 @@ class ChatService {
   // Remove a member from a group
   static async removeMemberFromGroup(conversationId, memberId, token) {
     try {
+      const cleanToken = token.replace('Bearer ', '');
+      console.log('Clean token:', cleanToken); // Debug log
+      
       const config = {
         headers: {
-          Authorization: `Bearer ${token}`,
+          'Authorization': `Bearer ${cleanToken}`,
           'Content-Type': 'application/json'
         }
       };
+
+      console.log('Request config:', config); // Debug log
+      console.log('Removing member from conversation:', conversationId); // Debug log
+      console.log('Member to remove:', memberId); // Debug log
       
-      const response = await axios.post(
-        `${API_URL}/group/members/remove`, 
-        { conversationId, memberId },
+      const response = await axios.delete(
+        `${API_URL}/group/${conversationId}/members/${memberId}`,
         config
       );
       
+      console.log('Response data:', response.data); // Debug log
+      console.log('Response status:', response.status); // Debug log
+      console.log('Response headers:', response.headers); // Debug log
+      
       return response.data;
     } catch (error) {
-      console.error("Error removing member from group:", error);
+      console.error('Error removing member from group:', error);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+        console.error('Response headers:', error.response.headers);
+      }
       throw error;
     }
   }
@@ -166,11 +181,23 @@ class ChatService {
   // Delete a group
   static async deleteGroup(conversationId, token) {
     try {
+      if (!token) {
+        throw new Error('No token provided');
+      }
+
+      // Remove 'Bearer ' if it's already included in the token
+      const cleanToken = token.replace('Bearer ', '');
+      
+      console.log('Clean token:', cleanToken); // Debug log
+      
       const config = {
         headers: {
-          Authorization: `Bearer ${token}`
+          'Authorization': `Bearer ${cleanToken}`,
+          'Content-Type': 'application/json'
         }
       };
+      
+      console.log('Request config:', config); // Debug log
       
       const response = await axios.delete(
         `${API_URL}/group/${conversationId}`,
@@ -180,6 +207,11 @@ class ChatService {
       return response.data;
     } catch (error) {
       console.error("Error deleting group:", error);
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+        console.error("Response status:", error.response.status);
+        console.error("Response headers:", error.response.headers);
+      }
       throw error;
     }
   }
@@ -468,11 +500,14 @@ class ChatService {
       };
       
       console.log('Request config:', config); // Debug log
+      console.log('Removing admin2 from conversation:', conversationId); // Debug log
       
-      const response = await axios.delete(
-        `${API_URL}/group/admin2/${conversationId}`,
-        config
-      );
+      // Make sure we're using the correct URL format
+      const response = await axios({
+        method: 'delete',
+        url: `${API_URL}/group/admin2/${conversationId}`,
+        headers: config.headers
+      });
       
       return response.data;
     } catch (error) {

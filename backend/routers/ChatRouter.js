@@ -62,7 +62,7 @@ ChatRouter.post("/group", isAuth, createGroupConversation);
 ChatRouter.put("/group", isAuth, updateGroupInfo);
 ChatRouter.delete("/group/:conversationId", isAuth, deleteGroup);
 ChatRouter.post("/group/members", isAuth, addMemberToGroup);
-ChatRouter.delete("/group/members", isAuth, removeMemberFromGroup);
+ChatRouter.delete("/group/:conversationId/members/:memberId", isAuth, removeMemberFromGroup);
 ChatRouter.post("/group/leave/:conversationId", isAuth, leaveGroup);
 
 // Admin2 and permissions routes

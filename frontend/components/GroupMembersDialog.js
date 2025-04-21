@@ -174,6 +174,18 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     if (!conversation) return;
     
     try {
+      // Check if there's an admin2 in the conversation
+      if (!conversation.admin2) {
+        console.log('Current conversation:', conversation); // Debug log
+        setError('There is no admin2 in this group');
+        return;
+      }
+
+      // Get admin2 ID whether it's a string or an object
+      const admin2Id = typeof conversation.admin2 === 'string' 
+        ? conversation.admin2 
+        : conversation.admin2._id;
+
       setActionLoading(true);
       const token = AuthService.getAccessToken();
       if (!token) {
@@ -182,6 +194,9 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       }
       
       console.log('Token being used:', token); // Debug log
+      console.log('Conversation:', conversation); // Debug log
+      console.log('Admin2 ID:', admin2Id); // Debug log
+      console.log('Attempting to remove admin2 from conversation:', conversation._id); // Debug log
       
       const response = await ChatService.removeAdmin2(
         conversation._id,
@@ -192,15 +207,23 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
         // Update local members list
         setMembers(prevMembers => 
           prevMembers.map(m => 
-            m.role === "admin2"
+            m.idUser._id === admin2Id
               ? { ...m, role: "member" }
               : m
           )
         );
         
-        // Notify parent component
+        // Update conversation in parent component
         if (onGroupUpdated) {
-          onGroupUpdated(response.conversation);
+          onGroupUpdated({
+            ...conversation,
+            admin2: null,
+            members: conversation.members.map(m => 
+              m.idUser._id === admin2Id
+                ? { ...m, role: "member" }
+                : m
+            )
+          });
         }
         
         handleMenuClose();
@@ -212,8 +235,8 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       if (error.response) {
         console.error('Response status:', error.response.status);
         console.error('Response data:', error.response.data);
-      }
-      if (error.message === 'No token provided') {
+        setError(error.response.data.message || 'Failed to remove admin2. Please try again.');
+      } else if (error.message === 'No token provided') {
         setError('You are not authenticated. Please log in again.');
       } else {
         setError('Failed to remove admin2. Please try again.');
@@ -261,8 +284,12 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     
     try {
       setActionLoading(true);
-      const userData = AuthService.getUserData();
-      const token = userData.token;
+      const token = localStorage.getItem('accessToken');
+      
+      if (!token) {
+        setError('No authentication token found. Please log in again.');
+        return;
+      }
       
       const response = await ChatService.removeMemberFromGroup(
         conversation._id,
@@ -330,8 +357,13 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     
     try {
       setActionLoading(true);
-      const userData = AuthService.getUserData();
-      const token = userData.token;
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        setError('You are not authenticated. Please log in again.');
+        return;
+      }
+      
+      console.log('Token being used:', token); // Debug log
       
       const response = await ChatService.deleteGroup(
         conversation._id,
@@ -350,7 +382,15 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       }
     } catch (error) {
       console.error('Error deleting group:', error);
-      setError('Failed to delete group. Please try again.');
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
+      if (error.message === 'No token provided') {
+        setError('You are not authenticated. Please log in again.');
+      } else {
+        setError('Failed to delete group. Please try again.');
+      }
     } finally {
       setActionLoading(false);
       setConfirmDeleteOpen(false);

@@ -97,7 +97,7 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
       if (error.message === 'No token provided') {
         setError('You are not authenticated. Please log in again.');
       } else {
-        setError('Failed to update group. Please try again.');
+      setError('Failed to update group. Please try again.');
       }
     } finally {
       setLoading(false);
