@@ -85,6 +85,37 @@ class SocketService {
       this.socket.emit('join_all_conversation', conversationIds);
     }
   }
+  
+  // Group chat methods
+  static createGroupConversation(groupData) {
+    if (this.socket) {
+      this.socket.emit('create_group', groupData);
+    }
+  }
+  
+  static addMemberToGroup(groupId, memberId) {
+    if (this.socket) {
+      this.socket.emit('add_member_to_group', { groupId, memberId });
+    }
+  }
+  
+  static removeMemberFromGroup(groupId, memberId) {
+    if (this.socket) {
+      this.socket.emit('remove_member_from_group', { groupId, memberId });
+    }
+  }
+  
+  static leaveGroup(groupId, userId) {
+    if (this.socket) {
+      this.socket.emit('leave_group', { groupId, userId });
+    }
+  }
+  
+  static updateGroupInfo(groupId, groupData) {
+    if (this.socket) {
+      this.socket.emit('update_group_info', { groupId, ...groupData });
+    }
+  }
 
   static leaveConversation(conversationId) {
     if (this.socket && conversationId) {
@@ -206,6 +237,49 @@ class SocketService {
     if (this.socket) {
       this.socket.off('update_conversation_list'); // Remove any existing listeners
       this.socket.on('update_conversation_list', callback);
+    }
+  }
+  
+  // Group chat event listeners
+  static onGroupCreated(callback) {
+    if (this.socket) {
+      this.socket.off('group_created'); // Remove any existing listeners
+      this.socket.on('group_created', callback);
+    }
+  }
+  
+  static onGroupUpdated(callback) {
+    if (this.socket) {
+      this.socket.off('group_updated'); // Remove any existing listeners
+      this.socket.on('group_updated', callback);
+    }
+  }
+  
+  static onMemberAdded(callback) {
+    if (this.socket) {
+      this.socket.off('member_added'); // Remove any existing listeners
+      this.socket.on('member_added', callback);
+    }
+  }
+  
+  static onMemberRemoved(callback) {
+    if (this.socket) {
+      this.socket.off('member_removed'); // Remove any existing listeners
+      this.socket.on('member_removed', callback);
+    }
+  }
+  
+  static onGroupLeft(callback) {
+    if (this.socket) {
+      this.socket.off('group_left'); // Remove any existing listeners
+      this.socket.on('group_left', callback);
+    }
+  }
+  
+  static onGroupDeleted(callback) {
+    if (this.socket) {
+      this.socket.off('group_deleted'); // Remove any existing listeners
+      this.socket.on('group_deleted', callback);
     }
   }
 

@@ -1,0 +1,183 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Typography,
+  Box,
+  Avatar,
+  IconButton,
+  CircularProgress
+} from '@mui/material';
+import { Close as CloseIcon, PhotoCamera as PhotoCameraIcon } from '@mui/icons-material';
+import ChatService from '../services/ChatService';
+import AuthService from '../services/AuthService';
+
+const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
+  const [groupName, setGroupName] = useState('');
+  const [groupAvatar, setGroupAvatar] = useState('');
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open && conversation) {
+      setGroupName(conversation.name || '');
+      setGroupAvatar(conversation.avatar || '');
+      setAvatarPreview(conversation.avatar || '');
+    }
+  }, [open, conversation]);
+
+  const handleAvatarChange = (event) => {
+    if (event.target.files && event.target.files[0]) {
+      const file = event.target.files[0];
+      setAvatarFile(file);
+      
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setAvatarPreview(e.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!groupName.trim()) {
+      setError('Group name is required');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      
+      const userData = AuthService.getUserData();
+      const token = userData.token;
+      
+      // If there's a new avatar file, upload it first
+      let avatarUrl = groupAvatar;
+      if (avatarFile) {
+        // Here you would upload the avatar file to your server/cloud storage
+        // and get back a URL. For now, we'll simulate this with the preview URL.
+        avatarUrl = avatarPreview; // In a real app, replace with actual upload logic
+      }
+      
+      const groupData = {
+        conversationId: conversation._id,
+        name: groupName.trim(),
+        avatar: avatarUrl
+      };
+
+      const response = await ChatService.updateGroupInfo(groupData, token);
+      
+      if (response.success) {
+        onGroupUpdated(response.conversation);
+        handleClose();
+      } else {
+        setError(response.message || 'Failed to update group');
+      }
+    } catch (error) {
+      console.error('Error updating group:', error);
+      setError('Failed to update group. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClose = () => {
+    setError('');
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+      <DialogTitle>
+        Edit Group
+        <IconButton
+          aria-label="close"
+          onClick={handleClose}
+          sx={{ position: 'absolute', right: 8, top: 8 }}
+        >
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+      
+      <DialogContent dividers>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
+          <Box sx={{ position: 'relative', mb: 2 }}>
+            <Avatar
+              src={avatarPreview}
+              alt={groupName}
+              sx={{ width: 100, height: 100 }}
+            />
+            <input
+              accept="image/*"
+              style={{ display: 'none' }}
+              id="avatar-upload"
+              type="file"
+              onChange={handleAvatarChange}
+            />
+            <label htmlFor="avatar-upload">
+              <IconButton
+                color="primary"
+                aria-label="upload picture"
+                component="span"
+                sx={{
+                  position: 'absolute',
+                  right: -10,
+                  bottom: -10,
+                  bgcolor: 'background.paper',
+                  boxShadow: 1,
+                  '&:hover': { bgcolor: 'background.default' }
+                }}
+              >
+                <PhotoCameraIcon />
+              </IconButton>
+            </label>
+          </Box>
+          
+          <Typography variant="caption" color="text.secondary">
+            Click the camera icon to change group avatar
+          </Typography>
+        </Box>
+        
+        <TextField
+          autoFocus
+          margin="dense"
+          label="Group Name"
+          type="text"
+          fullWidth
+          value={groupName}
+          onChange={(e) => setGroupName(e.target.value)}
+          error={!!error && !groupName.trim()}
+          helperText={!groupName.trim() && error ? 'Group name is required' : ''}
+        />
+        
+        {error && !error.includes('Group name') && (
+          <Typography color="error" variant="body2" sx={{ mt: 2 }}>
+            {error}
+          </Typography>
+        )}
+      </DialogContent>
+      
+      <DialogActions>
+        <Button onClick={handleClose}>Cancel</Button>
+        <Button 
+          onClick={handleSave} 
+          color="primary" 
+          variant="contained"
+          disabled={loading || !groupName.trim()}
+        >
+          {loading ? <CircularProgress size={24} /> : 'Save Changes'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+export default EditGroupDialog;

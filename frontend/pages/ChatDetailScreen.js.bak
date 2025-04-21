@@ -2436,110 +2436,97 @@ const ChatUI = () => {
                     sx={{
                       pt: 2,
                       pb: 2,
-                      px: { xs: 0.5, sm: 2 },
+                      px: { xs: 1, sm: 3 },
                       borderRadius: 2,
                       bgcolor: 'rgba(255, 255, 255, 0.05)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      width: '100%',
                     }}
                   >
                     {messages.map((message, index) => (
                       <Box
                         key={message?._id || index}
                         sx={{
-                          mb: 2,
                           display: "flex",
-                          justifyContent: message.type === 'system' 
+                          flexDirection: "column",
+                          alignItems: message.type === 'system'
                             ? "center"
                             : (message?.sender?.toString() === userId?.toString() ||
-                              message?.idUser?.toString() === userId?.toString())
-                              ? "flex-end"
-                              : "flex-start",
+                                message?.idUser?.toString() === userId?.toString())
+                                  ? "flex-end"
+                                  : "flex-start",
+                          justifyContent: "flex-start",
                           width: "100%",
+                          mb: message.type === 'system' ? 4 : 1,
+                          mt: message.type === 'system' ? 4 : 1,
+                          position: message.type === 'system' ? "relative" : "static",
                         }}
                       >
                         {message.type === 'system' ? (
-                          // System message centered
-                          <Box
-                            sx={{
-                              maxWidth: "80%",
-                              textAlign: "center",
-                            }}
-                          >
-                            <Paper
-                              elevation={0}
-                              sx={{
-                                p: 1.5,
-                                borderRadius: 1,
-                                bgcolor: "rgba(0, 0, 0, 0.04)",
-                                width: "auto",
-                                wordBreak: "break-word",
-                                position: "relative",
-                                boxShadow: "none",
+                          // System message - special styling completely separate from regular messages
+                          <Box sx={{ width: "100%", textAlign: "center", my: 1 }}>
+                            <Typography 
+                              variant="body2" 
+                              align="center"
+                              sx={{ 
+                                color: 'text.secondary',
+                                fontSize: '0.85rem',
+                                fontStyle: 'italic',
+                                opacity: 0.7,
+                                display: "inline-block",
+                                maxWidth: '80%',
+                                px: 3,
+                                py: 1.5,
+                                mx: 'auto',
+                                textAlign: 'center',
+                                borderRadius: 0,
+                                backgroundColor: 'transparent',
                               }}
                             >
-                              <Typography 
-                                variant="body2" 
-                                align="center"
-                                sx={{ 
-                                  color: 'text.secondary',
-                                  fontSize: '0.85rem',
+                              {message?.content || message?.text}
+                              <Box
+                                sx={{
+                                  mt: 0.5,
+                                  fontSize: '0.75rem',
+                                  opacity: 0.7,
                                 }}
                               >
-                                {message?.content || message?.text}
-                              </Typography>
-                            </Paper>
-                            <Box
-                              sx={{
-                                display: "flex",
-                                justifyContent: "center",
-                                mt: 0.5,
-                                opacity: 0.7,
-                                fontSize: '0.75rem',
-                                color: 'text.secondary',
-                              }}
-                            >
-                              {formatChatTime(message?.createdAt)}
-                            </Box>
+                                {formatChatTime(message?.createdAt)}
+                              </Box>
+                            </Typography>
                           </Box>
                         ) : (
-                          // Normal message with left/right alignment
+                          // Regular message
                           <Box
                             sx={{
                               display: "flex",
-                              flexDirection:
-                                (message?.sender?.toString() === userId?.toString() ||
-                                message?.idUser?.toString() === userId?.toString())
-                                  ? "row-reverse"
-                                  : "row",
+                              flexDirection: "row",
                               alignItems: "flex-end",
-                              maxWidth: {
-                                xs: "85%",
-                                sm: "70%",
-                              },
+                              justifyContent: (message?.sender?.toString() === userId?.toString() ||
+                                message?.idUser?.toString() === userId?.toString())
+                                    ? "flex-end"
+                                    : "flex-start",
+                              width: "100%",
                             }}
                           >
-                            {/* Hiển thị avatar bên tin nhắn của đối phương */}
+                            {/* Avatar - only for received messages */}
                             {!(message?.sender?.toString() === userId?.toString() ||
-                              message?.idUser?.toString() === userId?.toString()) && (
-                              <Avatar
-                                src={getOtherParticipant(activeConversation)?.idUser?.avatar ||
-                                  "/static/images/avatar/2.jpg"}
+                              message?.idUser?.toString() === userId?.toString()) && 
+                              <Avatar 
+                                src={message?.sender?.avatar || defaultAvatar}
                                 sx={{ 
                                   width: 28, 
                                   height: 28, 
-                                  mr: 1, 
-                                  mb: 1,
-                                  display: { xs: 'none', sm: 'flex' }
-                                }}
+                                  mr: 1,
+                                  mb: 0.5,
+                                  display: message.isRevoked ? 'none' : 'block'
+                                }} 
                               />
-                            )}
+                            }
+                            
                             <Box
                               sx={{
                                 maxWidth: {
-                                  xs: "100%",
-                                  sm: "90%",
+                                  xs: "80%",
+                                  sm: "60%",
                                 },
                                 minWidth: "120px",
                                 position: "relative",
@@ -2553,14 +2540,13 @@ const ChatUI = () => {
                               <Paper
                                 elevation={0}
                                 sx={{
-                                  p: 1.5,
-                                  borderRadius: message.type === 'system' ? 1 : 2,
-                                  maxWidth: (message.type === 'image' || message.type === 'video' || message.type === 'file' || 
-                                            message.hasFile) ? "250px" : "100%",
-                                  width: "auto",
+                                  p: message.type === 'system' ? 0 : 1.5,
+                                  borderRadius: message.type === 'system' ? 0 : 2,
+                                  maxWidth: message.type === 'system' ? "100%" : "70%",
+                                  width: message.type === 'system' ? "100%" : 'auto',
                                   wordBreak: "break-word",
                                   bgcolor: message.type === 'system' 
-                                    ? "rgba(0, 0, 0, 0.04)" // Light gray background for system messages
+                                    ? "transparent"
                                     : (message?.sender?.toString() === userId?.toString() ||
                                       message?.idUser?.toString() === userId?.toString())
                                         ? "#d9fdd3"
@@ -2585,7 +2571,7 @@ const ChatUI = () => {
                                         ? "none"
                                         : "1px solid #f0f2f5"),
                                   '&::before': message.type === 'system' 
-                                    ? {} // No pseudo-element for system messages
+                                    ? {} 
                                     : {
                                       content: '""',
                                       position: 'absolute',
@@ -2670,35 +2656,35 @@ const ChatUI = () => {
                                     {message.isForwarded && (
                                       <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
                                         <ForwardIcon fontSize="small" sx={{ mr: 0.5, color: 'text.secondary', fontSize: '0.85rem' }} />
-                                         <Box sx={{ 
-                                             display: 'flex',
-                                             alignItems: 'center',
-                                             fontStyle: 'italic',
-                                             color: 'text.secondary',
-                                             fontSize: '0.75rem' // Equivalent to caption variant
-                                           }}
-                                         >
-                                           <Typography 
-                                             variant="caption" 
-                                             component="span"
-                                             sx={{ fontStyle: 'italic', color: 'text.secondary' }}
-                                           >
-                                             Đã chuyển tiếp từ 
-                                           </Typography>
-                                           <Typography 
-                                             variant="caption" 
-                                             component="span"
-                                             sx={{ fontWeight: 'bold', ml: 0.5, color: 'text.secondary' }}
-                                           >
-                                             {message.originalSenderName || "Unknown User"}
-                                           </Typography>
-                                           {message.originalSenderAvatar && (
-                                             <Avatar 
-                                               src={message.originalSenderAvatar} 
-                                               sx={{ width: 16, height: 16, ml: 0.5 }}
-                                             />
-                                           )}
-                                         </Box>
+                                        <Box sx={{ 
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            fontStyle: 'italic',
+                                            color: 'text.secondary',
+                                            fontSize: '0.75rem' // Equivalent to caption variant
+                                          }}
+                                        >
+                                          <Typography 
+                                            variant="caption" 
+                                            component="span"
+                                            sx={{ fontStyle: 'italic', color: 'text.secondary' }}
+                                          >
+                                            Đã chuyển tiếp từ 
+                                          </Typography>
+                                          <Typography 
+                                            variant="caption" 
+                                            component="span"
+                                            sx={{ fontWeight: 'bold', ml: 0.5, color: 'text.secondary' }}
+                                          >
+                                            {message.originalSenderName || "Unknown User"}
+                                          </Typography>
+                                          {message.originalSenderAvatar && (
+                                            <Avatar 
+                                              src={message.originalSenderAvatar} 
+                                              sx={{ width: 16, height: 16, ml: 0.5 }}
+                                            />
+                                          )}
+                                        </Box>
                                       </Box>
                                     )}
                                     
@@ -2711,13 +2697,16 @@ const ChatUI = () => {
                                         sx={{ 
                                           color: 'text.secondary',
                                           fontSize: '0.85rem',
+                                          fontStyle: 'italic',
+                                          opacity: 0.7,
                                           px: 3,
-                                          py: 1,
+                                          py: 1.5,
                                           width: '100%',
-                                          maxWidth: '80%',
-                                          borderRadius: '8px',
-                                          bgcolor: 'rgba(0, 0, 0, 0.04)',
-                                          mx: 'auto'
+                                          mx: 'auto',
+                                          my: 1.5,
+                                          borderRadius: 0,
+                                          // Remove background and border to make it more distinct from user messages
+                                          bgcolor: 'transparent',
                                         }}
                                       >
                                         {message?.content || message?.text}
@@ -2730,453 +2719,198 @@ const ChatUI = () => {
                                   </>
                                 )}
                               </Paper>
+                              
+                              {/* Message time and read receipt - for regular messages */}
                               <Box
                                 sx={{
                                   display: "flex",
-                                  flexDirection: "column", // Use column for system messages to center them properly
-                                  alignItems: message.type === 'system' ? "center" : 
-                                    (message?.sender?.toString() === userId?.toString() ||
-                                    message?.idUser?.toString() === userId?.toString())
-                                      ? "flex-end"
-                                      : "flex-start", // Align based on sender
-                                  justifyContent: message.type === 'system'
-                                    ? "center" // Center system messages
-                                    : (message?.sender?.toString() === userId?.toString() ||
-                                      message?.idUser?.toString() === userId?.toString())
-                                        ? "flex-end"
-                                        : "flex-start",
-                                  width: message.type === 'system' ? "100%" : "auto", // Full width for system messages
-                                  mb: 1.5,
+                                  justifyContent: "flex-end",
+                                  alignItems: "center", 
+                                  mt: 0.5,
+                                  opacity: 0.7,
+                                  transition: "opacity 0.2s",
+                                  fontSize: '0.75rem',
+                                  color: 'text.secondary',
+                                  ml: 1,
+                                  mr: 1
                                 }}
-                                key={message?._id || index}
                               >
-                                {/* Message time display - special styling for system messages */}
-                                {message.type === 'system' ? (
-                                  <Box
-                                    sx={{
-                                      display: "flex",
-                                      justifyContent: "center",
-                                      mt: 0.5,
-                                      opacity: 0.7,
-                                      transition: "opacity 0.2s",
-                                      fontSize: '0.75rem',
-                                      color: 'text.secondary',
-                                      width: '100%',
-                                      textAlign: 'center'
-                                    }}
-                                  >
-                                    {formatChatTime(message?.createdAt)}
-                                  </Box>
-                                ) : (
-                                  <Box
-                                    className="message-time"
-                                    sx={{
-                                      display: "flex",
-                                      justifyContent: "flex-end",
-                                      mt: 0.5,
-                                      opacity: { xs: 0.7, sm: 0.5 },
-                                      transition: "opacity 0.2s",
-                                      fontSize: '0.75rem',
-                                      color: 'text.secondary',
-                                      ml: 1,
-                                      mr: 1
-                                    }}
-                                  >
-                                    {formatChatTime(message?.createdAt)}
-                                    {/* Read receipt indicator - only for user's messages */}
-                                    {message.type !== 'system' && (message?.sender?.toString() === userId?.toString() || 
-                                      message?.idUser?.toString() === userId?.toString()) && (
-                                      <Box
-                                        sx={{ display: "flex", alignItems: "center", ml: 0.5 }}
-                                      >
-                                        {message?.seen || message?.read ? (
-                                          <DoneAllIcon
-                                            fontSize="small"
-                                            color="primary"
-                                          />
-                                        ) : (
-                                          <DoneAllIcon
-                                            fontSize="small"
-                                            color="disabled"
-                                          />
-                                        )}
-                                      </Box>
-                                    )}
-                                  </Box>
-                                )}
+                                {formatChatTime(message?.createdAt)}
                                 
-                                {/* Add MessageReactions component - only for non-system messages */}
-                                {!message.isRevoked && message.type !== 'system' && (
-                                  <MessageReactions 
-                                    message={message} 
-                                    userId={userId} 
-                                    onAddReaction={handleAddReaction} 
-                                  />
-                                )}
-                              </Box>
+                                {/* Read receipt indicator */}
+                                {(message?.sender?.toString() === userId?.toString() || 
+                            >
+                              {/* Display file if message has file */}
+                              {!message.isRevoked && (
+                                message.type === 'image' || message.type === 'file' || message.type === 'video' || message.type === 'audio' || 
+                                message.type === 'pdf' || message.type === 'doc' || message.type === 'excel' || message.type === 'presentation' || 
+                                message.hasFile
+                              ) && (
+                                <RenderFileMessage message={message} handleOpenFile={handleOpenFile} />
+                              )}
+                              
+                              {/* Hiển thị nội dung tin nhắn */}
+                              {message.isRevoked ? (
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                  <UndoIcon fontSize="small" sx={{ color: 'text.disabled', mr: 1 }} />
+                                  <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.disabled' }}>
+                                    {(message.type === 'image') 
+                                      ? "Hình ảnh đã bị thu hồi" 
+                                      : (message.type === 'video')
+                                        ? "Video đã bị thu hồi"
+                                        : (message.type === 'audio')
+                                          ? "Âm thanh đã bị thu hồi"
+                                          : (message.type === 'pdf')
+                                            ? "Tài liệu PDF đã bị thu hồi"
+                                            : (message.type === 'doc')
+                                              ? "Tài liệu Word đã bị thu hồi"
+                                              : (message.type === 'excel')
+                                                ? "Bảng tính Excel đã bị thu hồi"
+                                                : (message.type === 'presentation')
+                                                  ? "Bài thuyết trình đã bị thu hồi"
+                                                  : (message.type === 'file')
+                                                    ? "Tệp đính kèm đã bị thu hồi"
+                                                    : "Tin nhắn đã bị thu hồi"}
+                                  </Typography>
+                                </Box>
+                              ) : (
+                                <>
+                                  {/* Hiển thị tên người gửi cho tin nhắn đối phương hoặc tin nhắn được chuyển tiếp */}
+                                  {!(message?.sender?.toString() === userId?.toString() ||
+                                    message?.idUser?.toString() === userId?.toString()) && (
+                                    <Typography 
+                                      variant="subtitle2" 
+                                      sx={{ 
+                                        fontSize: '0.75rem',
+                                        fontWeight: 'bold', 
+                                        color: '#00a884',
+                                        mb: 0.5
+                                      }}
+                                    >
+                                      {getOtherParticipant(activeConversation)?.idUser?.name || "Unknown User"}
+                                    </Typography>
+                                  )}
+                                  
+                                  {/* Hiển thị thông tin người gửi gốc nếu là tin nhắn được chuyển tiếp */}
+                                  {message.isForwarded && (
+                                    <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                                      <ForwardIcon fontSize="small" sx={{ mr: 0.5, color: 'text.secondary', fontSize: '0.85rem' }} />
+                                       <Box sx={{ 
+                                           display: 'flex',
+                                           alignItems: 'center',
+                                           fontStyle: 'italic',
+                                           color: 'text.secondary',
+                                           fontSize: '0.75rem' // Equivalent to caption variant
+                                         }}
+                                       >
+                                         <Typography 
+                                           variant="caption" 
+                                           component="span"
+                                           sx={{ fontStyle: 'italic', color: 'text.secondary' }}
+                                         >
+                                           Đã chuyển tiếp từ 
+                                         </Typography>
+                                         <Typography 
+                                           variant="caption" 
+                                           component="span"
+                                           sx={{ fontWeight: 'bold', ml: 0.5, color: 'text.secondary' }}
+                                         >
+                                           {message.originalSenderName || "Unknown User"}
+                                         </Typography>
+                                         {message.originalSenderAvatar && (
+                                           <Avatar 
+                                             src={message.originalSenderAvatar} 
+                                             sx={{ width: 16, height: 16, ml: 0.5 }}
+                                           />
+                                         )}
+                                       </Box>
+                                    </Box>
+                                  )}
+                                  
+                                  {/* Nội dung tin nhắn */}
+                                  {message.type === 'system' ? (
+                                    // System message - centered, subtle styling like a notification
+                                    <Typography 
+                                      variant="body2" 
+                                      align="center"
+                                      sx={{ 
+                                        color: 'text.secondary',
+                                        fontSize: '0.85rem',
+                                        fontStyle: 'italic',
+                                        opacity: 0.7,
+                                        px: 3,
+                                        py: 1.5,
+                                        width: '100%',
+                                        mx: 'auto',
+                                        my: 1.5,
+                                        borderRadius: 0,
+                                        // Remove background and border to make it more distinct from user messages
+                                        bgcolor: 'transparent',
+                                      }}
+                                    >
+                                      {message?.content || message?.text}
+                                    </Typography>
+                                  ) : (message.type === 'text' || !message.type) && (
+                                    <Typography variant="body1">
+                                      {message?.content || message?.text}
+                                    </Typography>
+                                  )}
+                                </>
+                              )}
                             </Box>
+                            
+                            {/* Message time and read receipt - for regular messages */}
+                            <Box
+                              sx={{
+                                display: "flex",
+                                justifyContent: "flex-end",
+                                alignItems: "center", 
+                                mt: 0.5,
+                                opacity: 0.7,
+                                transition: "opacity 0.2s",
+                                fontSize: '0.75rem',
+                                color: 'text.secondary',
+                                ml: 1,
+                                mr: 1
+                              }}
+                            >
+                              {formatChatTime(message?.createdAt)}
+                              
+                              {/* Read receipt indicator */}
+                              {(message?.sender?.toString() === userId?.toString() || 
+                                message?.idUser?.toString() === userId?.toString()) && (
+                                <Box
+                                  sx={{ display: "flex", alignItems: "center", ml: 0.5 }}
+                                >
+                                  {message?.seen || message?.read ? (
+                                    <DoneAllIcon
+                                      fontSize="small"
+                                      color="primary"
+                                    />
+                                  ) : (
+                                    <DoneAllIcon
+                                      fontSize="small"
+                                      color="disabled"
+                                    />
+                                  )}
+                                </Box>
+                              )}
+                            </Box>
+                              
+                            {/* Message reactions - for regular messages */}
+                            {!message.isRevoked && (
+                              <MessageReactions 
+                                message={message} 
+                                userId={userId} 
+                                onAddReaction={handleAddReaction} 
+                              />
+                            )}
                           </Box>
                         )}
                       </Box>
                     ))}
                   </Box>
                 ) : (
-                  <Typography
-                    variant="body1"
-                    color="text.secondary"
-                    textAlign="center"
-                    pt={4}
-                  >
-                    No messages yet. Start the conversation!
-                  </Typography>
-                )}
-                <div ref={messagesEndRef} />
-                
-                {/* Typing indicator - Chuyển xuống cuối box chat */}
-                {Object.keys(typingUsers).length > 0 && (
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "flex-start",
-                      position: "sticky",
-                      bottom: 0,
-                      mt: 2,
-                      mb: 1,
-                      ml: 2,
-                      zIndex: 1,
-                    }}
-                  >
-                    {/* Hiển thị avatar của người đang nhập */}
-                    {Object.keys(typingUsers).length === 1 && (
-                      <Avatar
-                        src={
-                          activeConversation?.members?.find(
-                            m => m.idUser?._id === Object.keys(typingUsers)[0]
-                          )?.idUser?.avatar || "/static/images/avatar/2.jpg"
-                        }
-                        sx={{
-                          width: 28,
-                          height: 28,
-                          mr: 1
-                        }}
-                      />
-                    )}
-                    
-                    <Paper
-                      elevation={0}
-                      sx={{
-                        p: 1,
-                        pl: 2,
-                        pr: 2,
-                        borderRadius: "18px 18px 18px 4px",
-                        bgcolor: "rgba(230, 230, 230, 0.9)",
-                        maxWidth: "75%",
-                        display: "flex",
-                        alignItems: "center"
-                      }}
-                    >
-                      <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', fontSize: '0.85rem' }}>
-                        {Object.keys(typingUsers).length === 1 
-                          ? `${typingUsers[Object.keys(typingUsers)[0]]} đang nhập...`
-                          : 'Có người đang nhập...'}
-                      </Typography>
-                      <span className="typing-animation">
-                        <span className="dot"></span>
-                        <span className="dot"></span>
-                        <span className="dot"></span>
-                      </span>
-                    </Paper>
-                  </Box>
-                )}
-              </Container>
-            </Box>
-
-            {/* Message Input */}
-            <Box
-              sx={{
-                p: 2,
-                borderTop: "1px solid",
-                borderColor: "divider",
-                bgcolor: "background.paper",
-                position: "sticky", 
-                bottom: 0,
-                zIndex: 5,
-                boxShadow: "0px -1px 4px rgba(0, 0, 0, 0.05)",
-              }}
-            >
-              <Container maxWidth="md" disableGutters>
-                {selectedFilePreview && (
-                  <Box 
-                    sx={{ 
-                      mb: 2, 
-                      position: 'relative',
-                      display: 'inline-block', 
-                      borderRadius: 2,
-                      overflow: 'hidden',
-                      boxShadow: 2
-                    }}
-                  >
-                    <img 
-                      src={selectedFilePreview} 
-                      alt="Selected file preview" 
-                      style={{ 
-                        maxHeight: '200px',
-                        maxWidth: '100%',
-                        display: 'block'
-                      }} 
-                    />
-                    <IconButton
-                      size="small"
-                      sx={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 8,
-                        bgcolor: 'rgba(0,0,0,0.5)',
-                        color: 'white',
-                        '&:hover': {
-                          bgcolor: 'rgba(0,0,0,0.7)'
-                        }
-                      }}
-                      onClick={handleCancelFileSelection}
-                    >
-                      <CancelIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                )}
-                
-                {selectedFile && !selectedFilePreview && (
-                  <Box 
-                    sx={{ 
-                      mb: 2, 
-                      position: 'relative',
-                      display: 'inline-block', 
-                      borderRadius: 2,
-                      padding: 2,
-                      backgroundColor: 'rgba(0,0,0,0.04)',
-                      minWidth: 200
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      {selectedFile.type.startsWith('video/') ? (
-                        <VideocamIcon fontSize="large" sx={{ mr: 2, color: '#f44336' }} />
-                      ) : selectedFile.type.startsWith('audio/') ? (
-                        <AudiotrackIcon fontSize="large" sx={{ mr: 2, color: '#9c27b0' }} />
-                      ) : selectedFile.type.includes('pdf') ? (
-                        <PictureAsPdfIcon fontSize="large" sx={{ mr: 2, color: '#f44336' }} />
-                      ) : selectedFile.type.includes('word') || selectedFile.type.includes('document') ? (
-                        <DescriptionIcon fontSize="large" sx={{ mr: 2, color: '#2196f3' }} />
-                      ) : selectedFile.type.includes('excel') || selectedFile.type.includes('sheet') ? (
-                        <TableChartIcon fontSize="large" sx={{ mr: 2, color: '#4caf50' }} />
-                      ) : (
-                        <InsertDriveFileIcon fontSize="large" sx={{ mr: 2, color: '#607d8b' }} />
-                      )}
-                      <Box sx={{ overflow: 'hidden' }}>
-                        <Typography noWrap variant="body2" sx={{ fontWeight: 'medium', maxWidth: '180px' }}>
-                          {selectedFile.name}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {(selectedFile.size / 1024).toFixed(1)} KB
-                        </Typography>
-                      </Box>
-                    </Box>
-                    
-                    <IconButton
-                      size="small"
-                      sx={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 8,
-                        bgcolor: 'rgba(0,0,0,0.1)',
-                        color: 'text.secondary',
-                        '&:hover': {
-                          bgcolor: 'rgba(0,0,0,0.2)'
-                        }
-                      }}
-                      onClick={handleCancelFileSelection}
-                    >
-                      <CancelIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                )}
-                
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <IconButton onClick={handleEmojiOpen}>
-                    <MoodIcon />
-                  </IconButton>
-                  
-                  {/* File input */}
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                    onChange={handleFileSelect}
-                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
-                  />
-                  <IconButton 
-                    onClick={(event) => {
-                      setAttachMenuAnchorEl(event.currentTarget);
-                      setAttachMenuOpen(true);
-                    }}
-                    aria-controls={attachMenuOpen ? 'attach-menu' : undefined}
-                    aria-haspopup="true"
-                    aria-expanded={attachMenuOpen ? 'true' : undefined}
-                  >
-                    <AttachFileIcon />
-                  </IconButton>
-                  
-                  {/* Menu cho loại file đính kèm */}
-                  <Menu
-                    id="attach-menu"
-                    anchorEl={attachMenuAnchorEl}
-                    open={Boolean(attachMenuAnchorEl)}
-                    onClose={() => setAttachMenuAnchorEl(null)}
-                    anchorOrigin={{
-                      vertical: 'top',
-                      horizontal: 'center',
-                    }}
-                    transformOrigin={{
-                      vertical: 'bottom',
-                      horizontal: 'center',
-                    }}
-                  >
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "image/*";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <PhotoIcon fontSize="small" sx={{ color: '#4caf50' }} />
-                      </ListItemIcon>
-                      <Typography>Hình ảnh</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "video/*";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <VideocamIcon fontSize="small" sx={{ color: '#f44336' }} />
-                      </ListItemIcon>
-                      <Typography>Video</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "application/pdf";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <PictureAsPdfIcon fontSize="small" sx={{ color: '#f44336' }} />
-                      </ListItemIcon>
-                      <Typography>PDF</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <DescriptionIcon fontSize="small" sx={{ color: '#2196f3' }} />
-                      </ListItemIcon>
-                      <Typography>Word</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <TableChartIcon fontSize="small" sx={{ color: '#4caf50' }} />
-                      </ListItemIcon>
-                      <Typography>Excel</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "*";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <AttachFileIcon fontSize="small" sx={{ color: '#607d8b' }} />
-                      </ListItemIcon>
-                      <Typography>Tệp khác</Typography>
-                    </MenuItem>
-                  </Menu>
-                  
-                  <TextField
-                    fullWidth
-                    variant="outlined"
-                    placeholder={selectedFile ? 
-                      (selectedFile.type.startsWith('image/') ? "Thêm chú thích cho ảnh (không bắt buộc)..." : "Thêm mô tả cho file...") : 
-                      "Nhập tin nhắn..."}
-                    multiline
-                    maxRows={4}
-                    value={newMessage}
-                    onChange={handleMessageTyping}
-                    onKeyPress={handleKeyPress}
-                    inputRef={inputRef}
-                    sx={{
-                      "& .MuiOutlinedInput-root": {
-                        borderRadius: "24px",
-                        bgcolor: "background.default",
-                      },
-                    }}
-                  />
-                  <IconButton
-                    color="primary"
-                    onClick={handleSendMessage}
-                    disabled={!selectedFile && !newMessage.trim()}
-                    sx={{
-                      bgcolor: "primary.main",
-                      color: "white",
-                      "&:hover": { bgcolor: "primary.dark" },
-                      "&:disabled": { bgcolor: "action.disabledBackground" },
-                    }}
-                  >
-                    <SendIcon />
-                  </IconButton>
-                </Box>
-              </Container>
-            </Box>
-
-            {/* Emoji Picker */}
-            <Popover
-              open={showEmojiPicker}
-              anchorEl={emojiAnchorEl}
-              onClose={handleEmojiClose}
-              anchorOrigin={{
-                vertical: 'top',
-                horizontal: 'left',
-              }}
-              transformOrigin={{
-                vertical: 'bottom',
-                horizontal: 'left',
-              }}
-              keepMounted={false}
-              disablePortal
-              aria-labelledby="emoji-picker-title"
-            >
-              <Box sx={{ p: 2, width: 280, height: 200, overflow: 'auto' }}>
-                <Typography id="emoji-picker-title" variant="subtitle2" sx={{ mb: 1 }}>
-                  Chọn emoji
-                </Typography>
-                <Grid container spacing={1}>
-                  {emojis.map((emoji, index) => (
-                    <Grid item key={index}>
-                      <IconButton 
-                        onClick={() => {
-                          insertEmoji(emoji);
-                          handleEmojiClose();
-                        }}
-                        size="small"
-                        sx={{ fontSize: '1.5rem' }}
-                        aria-label={`Emoji ${emoji}`}
-                      >
-                        {emoji}
-                      </IconButton>
-                    </Grid>
-                  ))}
-                </Grid>
-              </Box>
             </Popover>
           </>
         ) : (

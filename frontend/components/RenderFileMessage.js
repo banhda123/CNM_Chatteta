@@ -28,18 +28,24 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
   switch (message.type) {
     case 'image':
       return (
-        <Box 
+        <Box
           sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            width: '100%',
             position: 'relative',
-            width: 'fit-content',
-            maxWidth: '100%'
+            maxWidth: '250px',
           }}
         >
           <Box
-            sx={{
+            sx={{ 
               position: 'relative',
+              width: '100%',
+              paddingBottom: '100%',
+              minHeight: '150px',
               borderRadius: '8px',
-              overflow: 'hidden'
+              overflow: 'hidden',
+              backgroundColor: 'rgba(0, 0, 0, 0.05)',
             }}
           >
             <Box 
@@ -47,8 +53,11 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
               src={message.fileUrl}
               alt="Image attachment"
               sx={{ 
-                maxWidth: '100%',
-                maxHeight: '250px',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
                 borderRadius: '8px',
                 cursor: isSending ? 'default' : 'pointer',
                 opacity: isSending ? 0.7 : 1,

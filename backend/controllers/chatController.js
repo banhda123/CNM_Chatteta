@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { ConversationModel } from "../models/ConversationModel.js";
 import { MessageModel } from "../models/MessageModel.js";
 
@@ -27,12 +28,12 @@ export const createGroupConversation = async (req, res) => {
       });
     }
     
-    // Create new group conversation
+    // Create new group conversation - don't set lastMessage initially
     const newGroupConversation = new ConversationModel({
       type: "group",
       name: name,
       avatar: avatar || "https://res.cloudinary.com/daclejcpu/image/upload/v1744812771/avatar-mac-dinh-12_i7jnd3.jpg",
-      lastMessage: "",
+      // Remove the empty string for lastMessage
       members: [],
       admin: creatorId
     });
@@ -44,10 +45,51 @@ export const createGroupConversation = async (req, res) => {
     
     // Add all members to the conversation
     for (const memberId of members) {
-      newGroupConversation.members.push({ idUser: memberId });
+      try {
+        // Convert string ID to MongoDB ObjectID
+        const objectId = new mongoose.Types.ObjectId(memberId);
+        newGroupConversation.members.push({ idUser: objectId });
+      } catch (error) {
+        console.error(`Invalid ObjectID format for member: ${memberId}`, error);
+        // Skip invalid IDs instead of failing the whole operation
+      }
     }
     
+    // Save the conversation without lastMessage first
     await newGroupConversation.save();
+    
+    // Get member names for the welcome message
+    const memberIds = members.filter(id => id !== creatorId.toString());
+    let memberNames = [];
+    
+    try {
+      // Find user information for each member
+      const { UsersModel } = await import("../models/UserModel.js");
+      const users = await UsersModel.find({ _id: { $in: memberIds } }, 'name');
+      memberNames = users.map(user => user.name);
+    } catch (error) {
+      console.error("Error fetching member names:", error);
+      // Continue with empty names if there's an error
+    }
+    
+    // Create a welcome message with member information
+    const welcomeMessage = new MessageModel({
+      idConversation: newGroupConversation._id,
+      content: memberNames.length > 0 
+        ? `${req.user.name} đã tạo nhóm và mời ${memberNames.join(', ')} vào nhóm`
+        : `${req.user.name} đã tạo nhóm ${name}`,
+      type: 'system', // Now using system type for centered, subtle messages
+      seen: false,
+      sender: creatorId,
+    });
+    
+    const savedMessage = await welcomeMessage.save();
+    
+    // Now update the conversation with the lastMessage ID
+    await ConversationModel.findByIdAndUpdate(
+      newGroupConversation._id,
+      { lastMessage: savedMessage._id }
+    );
     
     // Populate member information for response
     const populatedConversation = await ConversationModel.findById(newGroupConversation._id)
@@ -56,23 +98,6 @@ export const createGroupConversation = async (req, res) => {
         select: { name: 1, avatar: 1 }
       })
       .populate("admin", "name avatar");
-    
-    // Create a welcome message
-    const welcomeMessage = new MessageModel({
-      idConversation: newGroupConversation._id,
-      content: `${req.user.name} created group ${name}`,
-      type: 'system',
-      seen: false,
-      sender: creatorId,
-    });
-    
-    const savedMessage = await welcomeMessage.save();
-    
-    // Update last message
-    await updateLastMesssage({ 
-      idConversation: newGroupConversation._id, 
-      message: savedMessage._id 
-    });
     
     return res.status(201).json({
       success: true,
