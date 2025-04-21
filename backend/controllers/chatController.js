@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { ConversationModel } from "../models/ConversationModel.js";
 import { MessageModel } from "../models/MessageModel.js";
+import { UsersModel } from "../models/UserModel.js";
 
 export const createConversation = async (userFrom, userTo) => {
   console.log(userFrom, userTo);
@@ -941,64 +942,61 @@ export const setAdmin2 = async (req, res) => {
     const { conversationId, memberId } = req.body;
     const userId = req.user._id;
 
+    // Validate input
     if (!conversationId || !memberId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Conversation ID and member ID are required" 
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields"
       });
     }
 
     // Find the conversation
-    const conversation = await ConversationModel.findById(conversationId);
+    const conversation = await ConversationModel.findById(conversationId)
+      .populate("admin", "name avatar")
+      .populate("admin2", "name avatar")
+      .populate({
+        path: "members.idUser",
+        select: "name avatar"
+      });
 
     if (!conversation) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Conversation not found" 
+      return res.status(404).json({
+        success: false,
+        message: "Conversation not found"
       });
     }
 
-    // Check if it's a group conversation
-    if (conversation.type !== "group") {
-      return res.status(400).json({ 
-        success: false, 
-        message: "This operation is only allowed for group conversations" 
+    // Check if the requester is the admin
+    if (!conversation.admin || conversation.admin._id.toString() !== userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Only admin can set admin2"
       });
     }
 
-    // Check if the user is admin
-    const isAdmin = conversation.admin && conversation.admin.toString() === userId.toString();
-
-    if (!isAdmin) {
-      return res.status(403).json({ 
-        success: false, 
-        message: "Only the group admin can set admin2" 
-      });
-    }
-
-    // Check if the member exists in the group
-    const memberIndex = conversation.members.findIndex(member => 
-      member.idUser.toString() === memberId
+    // Check if the member exists in the conversation
+    const memberToPromote = conversation.members.find(
+      member => member.idUser._id.toString() === memberId
     );
 
-    if (memberIndex === -1) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Member not found in the group" 
+    if (!memberToPromote) {
+      return res.status(404).json({
+        success: false,
+        message: "Member not found in conversation"
       });
     }
 
-    // Set the member as admin2
-    conversation.members[memberIndex].role = "admin2";
+    // Set the admin2 role
     conversation.admin2 = memberId;
+    memberToPromote.role = "admin2";
 
+    // Save the conversation
     await conversation.save();
 
     // Create system message about the change
-    const member = await UsersModel.findById(memberId);
     const systemMessage = new MessageModel({
       idConversation: conversationId,
-      content: `${req.user.name} đã đặt ${member.name} làm phó nhóm`,
+      content: `${req.user.name} đã đặt ${memberToPromote.idUser.name} làm phó nhóm`,
       type: 'system',
       seen: false,
       sender: userId,
@@ -1012,14 +1010,14 @@ export const setAdmin2 = async (req, res) => {
       message: savedMessage._id 
     });
 
-    // Get updated conversation with populated members
+    // Get updated conversation with populated fields
     const updatedConversation = await ConversationModel.findById(conversationId)
+      .populate("admin", "name avatar")
+      .populate("admin2", "name avatar")
       .populate({
         path: "members.idUser",
         select: "name avatar"
-      })
-      .populate("admin", "name avatar")
-      .populate("admin2", "name avatar");
+      });
 
     return res.status(200).json({
       success: true,
@@ -1028,17 +1026,17 @@ export const setAdmin2 = async (req, res) => {
     });
   } catch (error) {
     console.error("Error setting admin2:", error);
-    return res.status(500).json({ 
-      success: false, 
-      message: "Failed to set admin2", 
-      error: error.message 
+    return res.status(500).json({
+      success: false,
+      message: "Failed to set admin2",
+      error: error.message
     });
   }
 };
 
 export const removeAdmin2 = async (req, res) => {
   try {
-    const { conversationId } = req.body;
+    const { conversationId } = req.params;
     const userId = req.user._id;
 
     if (!conversationId) {
@@ -1049,7 +1047,13 @@ export const removeAdmin2 = async (req, res) => {
     }
 
     // Find the conversation
-    const conversation = await ConversationModel.findById(conversationId);
+    const conversation = await ConversationModel.findById(conversationId)
+      .populate("admin", "name avatar")
+      .populate("admin2", "name avatar")
+      .populate({
+        path: "members.idUser",
+        select: "name avatar"
+      });
 
     if (!conversation) {
       return res.status(404).json({ 
@@ -1067,9 +1071,7 @@ export const removeAdmin2 = async (req, res) => {
     }
 
     // Check if the user is admin
-    const isAdmin = conversation.admin && conversation.admin.toString() === userId.toString();
-
-    if (!isAdmin) {
+    if (!conversation.admin || conversation.admin._id.toString() !== userId.toString()) {
       return res.status(403).json({ 
         success: false, 
         message: "Only the group admin can remove admin2" 
@@ -1077,28 +1079,31 @@ export const removeAdmin2 = async (req, res) => {
     }
 
     // Find the admin2 member
-    const admin2Index = conversation.members.findIndex(member => 
-      member.role === "admin2"
+    const admin2Member = conversation.members.find(member => 
+      member.idUser._id.toString() === conversation.admin2?.toString()
     );
 
-    if (admin2Index === -1) {
+    if (!admin2Member) {
       return res.status(404).json({ 
         success: false, 
         message: "No admin2 found in the group" 
       });
     }
 
+    // Store admin2 name before removing role
+    const admin2Name = admin2Member.idUser.name;
+
     // Remove admin2 role
-    conversation.members[admin2Index].role = "member";
+    admin2Member.role = "member";
     conversation.admin2 = null;
 
+    // Save the conversation
     await conversation.save();
 
     // Create system message about the change
-    const admin2User = await UsersModel.findById(conversation.members[admin2Index].idUser);
     const systemMessage = new MessageModel({
       idConversation: conversationId,
-      content: `${req.user.name} đã gỡ ${admin2User.name} khỏi vị trí phó nhóm`,
+      content: `${req.user.name} đã gỡ ${admin2Name} khỏi vị trí phó nhóm`,
       type: 'system',
       seen: false,
       sender: userId,
@@ -1112,14 +1117,14 @@ export const removeAdmin2 = async (req, res) => {
       message: savedMessage._id 
     });
 
-    // Get updated conversation with populated members
+    // Get updated conversation with populated fields
     const updatedConversation = await ConversationModel.findById(conversationId)
+      .populate("admin", "name avatar")
+      .populate("admin2", "name avatar")
       .populate({
         path: "members.idUser",
         select: "name avatar"
-      })
-      .populate("admin", "name avatar")
-      .populate("admin2", "name avatar");
+      });
 
     return res.status(200).json({
       success: true,

@@ -67,7 +67,7 @@ ChatRouter.post("/group/leave/:conversationId", isAuth, leaveGroup);
 
 // Admin2 and permissions routes
 ChatRouter.post("/group/admin2", isAuth, setAdmin2);
-ChatRouter.delete("/group/admin2", isAuth, removeAdmin2);
+ChatRouter.delete("/group/admin2/:conversationId", isAuth, removeAdmin2);
 ChatRouter.put("/group/permissions", isAuth, updateGroupPermissions);
 
 ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {

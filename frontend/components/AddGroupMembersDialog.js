@@ -71,7 +71,7 @@ const AddGroupMembersDialog = ({ open, onClose, conversation, onMembersAdded }) 
         throw new Error('User not authenticated');
       }
 
-      const response = await UserService.getFriends(userData._id);
+      const response = await UserService.getAllFriends(userData._id);
       setFriends(response || []);
       setFilteredFriends(response || []);
     } catch (error) {
@@ -102,8 +102,13 @@ const AddGroupMembersDialog = ({ open, onClose, conversation, onMembersAdded }) 
       setAdding(true);
       setError('');
       
-      const userData = AuthService.getUserData();
-      const token = userData.token;
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        setError('You are not authenticated. Please log in again.');
+        return;
+      }
+      
+      console.log('Token being used:', token); // Debug log
       
       const response = await ChatService.addMembersToGroup(
         conversation._id,
@@ -119,7 +124,15 @@ const AddGroupMembersDialog = ({ open, onClose, conversation, onMembersAdded }) 
       }
     } catch (error) {
       console.error('Error adding members:', error);
-      setError('Failed to add members. Please try again.');
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
+      if (error.message === 'No token provided') {
+        setError('You are not authenticated. Please log in again.');
+      } else {
+        setError('Failed to add members. Please try again.');
+      }
     } finally {
       setAdding(false);
     }

@@ -42,15 +42,27 @@ class ChatService {
   // Add members to a group
   static async addMembersToGroup(conversationId, memberIds, token) {
     try {
+      if (!token) {
+        throw new Error('No token provided');
+      }
+
+      // Remove 'Bearer ' if it's already included in the token
+      const cleanToken = token.replace('Bearer ', '');
+      
+      console.log('Clean token:', cleanToken); // Debug log
+      
       const config = {
         headers: {
-          Authorization: `Bearer ${token}`,
+          'Authorization': `Bearer ${cleanToken}`,
           'Content-Type': 'application/json'
         }
       };
       
+      console.log('Request config:', config); // Debug log
+      console.log('Request payload:', { conversationId, memberIds }); // Debug log
+      
       const response = await axios.post(
-        `${API_URL}/group/members/add`, 
+        `${API_URL}/group/members`, 
         { conversationId, memberIds },
         config
       );
@@ -58,6 +70,11 @@ class ChatService {
       return response.data;
     } catch (error) {
       console.error("Error adding members to group:", error);
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+        console.error("Response status:", error.response.status);
+        console.error("Response headers:", error.response.headers);
+      }
       throw error;
     }
   }
@@ -109,12 +126,24 @@ class ChatService {
   // Update group information
   static async updateGroupInfo(groupData, token) {
     try {
+      if (!token) {
+        throw new Error('No token provided');
+      }
+
+      // Remove 'Bearer ' if it's already included in the token
+      const cleanToken = token.replace('Bearer ', '');
+      
+      console.log('Clean token:', cleanToken); // Debug log
+      
       const config = {
         headers: {
-          Authorization: `Bearer ${token}`,
+          'Authorization': `Bearer ${cleanToken}`,
           'Content-Type': 'application/json'
         }
       };
+      
+      console.log('Request config:', config); // Debug log
+      console.log('Group data:', groupData); // Debug log
       
       const response = await axios.put(
         `${API_URL}/group`, 
@@ -125,6 +154,11 @@ class ChatService {
       return response.data;
     } catch (error) {
       console.error("Error updating group info:", error);
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+        console.error("Response status:", error.response.status);
+        console.error("Response headers:", error.response.headers);
+      }
       throw error;
     }
   }
@@ -417,22 +451,37 @@ class ChatService {
   // Remove admin2
   static async removeAdmin2(conversationId, token) {
     try {
+      if (!token) {
+        throw new Error('No token provided');
+      }
+
+      // Remove 'Bearer ' if it's already included in the token
+      const cleanToken = token.replace('Bearer ', '');
+      
+      console.log('Clean token:', cleanToken); // Debug log
+      
       const config = {
         headers: {
-          Authorization: `Bearer ${token}`,
+          'Authorization': `Bearer ${cleanToken}`,
           'Content-Type': 'application/json'
         }
       };
       
+      console.log('Request config:', config); // Debug log
+      
       const response = await axios.delete(
-        `${API_URL}/group/admin2`,
-        { data: { conversationId } },
+        `${API_URL}/group/admin2/${conversationId}`,
         config
       );
       
       return response.data;
     } catch (error) {
       console.error("Error removing admin2:", error);
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+        console.error("Response status:", error.response.status);
+        console.error("Response headers:", error.response.headers);
+      }
       throw error;
     }
   }
@@ -440,9 +489,11 @@ class ChatService {
   // Update group permissions
   static async updateGroupPermissions(conversationId, permissions, token) {
     try {
+      console.log('Making request with token:', token); // Debug log
+      
       const config = {
         headers: {
-          Authorization: `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       };

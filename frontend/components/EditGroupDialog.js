@@ -56,8 +56,13 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
       setLoading(true);
       setError('');
       
-      const userData = AuthService.getUserData();
-      const token = userData.token;
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        setError('You are not authenticated. Please log in again.');
+        return;
+      }
+      
+      console.log('Token being used:', token); // Debug log
       
       // If there's a new avatar file, upload it first
       let avatarUrl = groupAvatar;
@@ -73,6 +78,8 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
         avatar: avatarUrl
       };
 
+      console.log('Sending group data:', groupData); // Debug log
+
       const response = await ChatService.updateGroupInfo(groupData, token);
       
       if (response.success) {
@@ -83,7 +90,15 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
       }
     } catch (error) {
       console.error('Error updating group:', error);
-      setError('Failed to update group. Please try again.');
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
+      if (error.message === 'No token provided') {
+        setError('You are not authenticated. Please log in again.');
+      } else {
+        setError('Failed to update group. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

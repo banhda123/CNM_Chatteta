@@ -93,26 +93,24 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
         console.log('Member ID:', memberId);
         
         // Set role based on admin/admin2 status
+        let role = "member";
+        
         if (conversation.admin) {
           const adminId = conversation.admin._id || conversation.admin;
-          console.log('Admin ID:', adminId);
           if (memberId === adminId) {
-            console.log('Setting role to admin for member:', memberId);
-            return { ...member, role: "admin" };
+            role = "admin";
           }
         }
         
         if (conversation.admin2) {
           const admin2Id = conversation.admin2._id || conversation.admin2;
-          console.log('Admin2 ID:', admin2Id);
           if (memberId === admin2Id) {
-            console.log('Setting role to admin2 for member:', memberId);
-            return { ...member, role: "admin2" };
+            role = "admin2";
           }
         }
         
-        console.log('Setting role to member for:', memberId);
-        return { ...member, role: "member" };
+        console.log('Setting role to', role, 'for member:', memberId);
+        return { ...member, role };
       });
       
       console.log('=== Final Members ===');
@@ -178,6 +176,12 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     try {
       setActionLoading(true);
       const token = AuthService.getAccessToken();
+      if (!token) {
+        setError('You are not authenticated. Please log in again.');
+        return;
+      }
+      
+      console.log('Token being used:', token); // Debug log
       
       const response = await ChatService.removeAdmin2(
         conversation._id,
@@ -205,7 +209,15 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       }
     } catch (error) {
       console.error('Error removing admin2:', error);
-      setError('Failed to remove admin2. Please try again.');
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
+      if (error.message === 'No token provided') {
+        setError('You are not authenticated. Please log in again.');
+      } else {
+        setError('Failed to remove admin2. Please try again.');
+      }
     } finally {
       setActionLoading(false);
       setConfirmRemoveAdmin2Open(false);
@@ -217,8 +229,8 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     
     try {
       setActionLoading(true);
-      const userData = AuthService.getUserData();
-      const token = userData.token;
+      const token = AuthService.getAccessToken();
+      console.log('Token being used:', token); // Debug log
       
       const response = await ChatService.updateGroupPermissions(
         conversation._id,
@@ -401,9 +413,9 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                   <ListItemText
                     primary={member.idUser.name}
                     secondary={
-                      member.idUser._id === conversation.admin._id
+                      member.idUser._id === (conversation.admin?._id || conversation.admin)
                         ? "Admin"
-                        : member.role === "admin2"
+                        : member.idUser._id === (conversation.admin2?._id || conversation.admin2)
                         ? "Phó nhóm"
                         : "Thành viên"
                     }
@@ -464,7 +476,19 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                 </Button>
               </>
             )}
-            {!isAdmin && (
+            {isAdmin2 && !isAdmin && (
+              <Button
+                variant="outlined"
+                color="primary"
+                startIcon={<PersonAddIcon />}
+                onClick={handleAddMembers}
+                fullWidth
+                sx={{ mb: 1 }}
+              >
+                Add Members
+              </Button>
+            )}
+            {!isAdmin && !isAdmin2 && (
               <Button
                 variant="outlined"
                 color="error"
@@ -485,6 +509,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
         open={Boolean(menuAnchorEl)}
         onClose={handleMenuClose}
       >
+        {/* Admin options */}
         {isAdmin && selectedMember && currentUser._id !== selectedMember.idUser._id && (
           <>
             {selectedMember.role !== "admin2" && (
@@ -511,8 +536,24 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
             </MenuItem>
           </>
         )}
+
+        {/* Admin2 options */}
+        {isAdmin2 && !isAdmin && selectedMember && currentUser._id !== selectedMember.idUser._id && (
+          <>
+            {/* Admin2 can't remove admin or other admin2 */}
+            {selectedMember.role !== "admin" && selectedMember.role !== "admin2" && (
+              <MenuItem onClick={handleRemoveMember} disabled={actionLoading}>
+                <ListItemIcon>
+                  <DeleteIcon fontSize="small" />
+                </ListItemIcon>
+                Remove from group
+              </MenuItem>
+            )}
+          </>
+        )}
         
-        {!isAdmin && selectedMember && currentUser._id === selectedMember.idUser._id && (
+        {/* Regular member options */}
+        {!isAdmin && !isAdmin2 && selectedMember && currentUser._id === selectedMember.idUser._id && (
           <MenuItem onClick={() => setConfirmLeaveOpen(true)} disabled={actionLoading}>
             <ListItemIcon>
               <ExitToAppIcon fontSize="small" />
