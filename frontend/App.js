@@ -7,6 +7,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ChatUI from "./pages/ChatDetailScreen";
 import ProfileScreen from "./pages/ProfileScreen";
+import GeminiChatPage from "./pages/GeminiChatPage";
 import AuthService from './services/AuthService';
 import { CircularProgress, Box } from '@mui/material';
 
@@ -92,6 +93,11 @@ export default function App() {
           <Stack.Screen 
             name="Profile" 
             component={ProfileScreen} 
+          />
+          <Stack.Screen 
+            name="GeminiChat" 
+            component={GeminiChatPage} 
+            options={{ title: 'Gemini AI Assistant' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

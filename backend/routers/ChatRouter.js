@@ -27,6 +27,7 @@ import { emitNewMessage } from "../config/Socket.js";
 import fs from "fs";
 import path from "path";
 import { MessageModel } from "../models/MessageModel.js";
+import { processGeminiMessage } from "../controllers/geminiController.js";
 
 const ChatRouter = express.Router();
 
@@ -78,6 +79,9 @@ ChatRouter.delete("/group/admin2/:conversationId", isAuth, removeAdmin2);
 ChatRouter.put("/group/permissions", isAuth, updateGroupPermissions);
 
 ChatRouter.post("/upload", isAuth, upload.single('file'), uploadFile);
+
+// Gemini AI route - handle messages sent to Gemini AI
+ChatRouter.post("/gemini/message", isAuth, processGeminiMessage);
 
 // API thêm cảm xúc vào tin nhắn
 ChatRouter.post("/message/reaction", isAuth, async (req, res) => {

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Alert } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
+import GeminiIndicator from "../components/GeminiIndicator";
 import {
   Box,
   AppBar,
@@ -2034,6 +2035,17 @@ const ChatUI = () => {
             </Typography>
           </Box>
           <Box>
+            <IconButton 
+              onClick={() => navigation.navigate('GeminiChat')}
+              aria-label="Gemini AI Assistant"
+              sx={{ mr: 1 }}
+              color="primary"
+            >
+              <Avatar
+                src="https://storage.googleapis.com/gweb-uniblog-publish-prod/images/gemini_1.width-1000.format-webp.webp"
+                sx={{ width: 24, height: 24 }}
+              />
+            </IconButton>
             <IconButton onClick={handleNotificationMenuOpen} id="notification-button" aria-label="Friend requests">
               <Badge badgeContent={friendRequests.length} color="error">
                 <NotificationsIcon />
@@ -2482,6 +2494,13 @@ const ChatUI = () => {
                         <Typography variant="caption" color="text.secondary">
                           Online
                         </Typography>
+                        
+                        {/* Display Gemini indicator if conversation is with Gemini AI */}
+                        {isGeminiConversation() && (
+                          <Box sx={{ mt: 1 }}>
+                            <GeminiIndicator />
+                          </Box>
+                        )}
                       </Box>
                     </>
                   )}
