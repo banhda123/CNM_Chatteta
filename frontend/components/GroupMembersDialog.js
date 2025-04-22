@@ -62,6 +62,11 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       // Clean up socket listeners when component unmounts or dialog closes
       SocketService.removeListener('member_added');
       SocketService.removeListener('member_removed');
+      SocketService.removeListener('member_removed_from_group');
+      SocketService.removeListener('member_left_group');
+      SocketService.removeListener('group_left');
+      SocketService.removeListener('update_conversation_list');
+      SocketService.leaveConversation(conversation?._id);
     };
   }, [open, conversation]);
   
@@ -109,6 +114,56 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
           if (onGroupUpdated && data.conversation) {
             onGroupUpdated(data.conversation);
           }
+
+          // If the current user is the one being removed, close the dialog and trigger necessary updates
+          if (currentUser && currentUser._id === removedMemberId) {
+            handleClose();
+            if (onGroupLeft) {
+              onGroupLeft(conversation._id);
+            }
+          }
+        }
+      }
+    });
+
+    // Listen for member left group event
+    SocketService.onMemberLeftGroup((data) => {
+      console.log('Socket: Member left group', data);
+      if (data.conversationId === conversation._id) {
+        // Remove the member from local state
+        setMembers(prevMembers => 
+          prevMembers.filter(m => m.idUser._id !== data.memberId)
+        );
+      }
+    });
+
+    // Listen for group left event (for the user who left)
+    SocketService.onGroupLeft((data) => {
+      console.log('Socket: Group left', data);
+      if (data.conversationId === conversation._id && 
+          currentUser && currentUser._id === data.userId) {
+        handleClose();
+        if (onGroupLeft) {
+          onGroupLeft(conversation._id);
+        }
+      }
+    });
+
+    // Listen for conversation list updates
+    SocketService.onUpdateConversationList((data) => {
+      console.log('Socket: Conversation list updated', data);
+      if (data.conversation && data.conversation._id === conversation._id) {
+        // Update members list with new conversation data
+        const updatedMembers = data.conversation.members.map(member => ({
+          ...member,
+          role: member.idUser._id === data.conversation.admin?._id ? 'admin' :
+                member.idUser._id === data.conversation.admin2?._id ? 'admin2' : 'member'
+        }));
+        setMembers(updatedMembers);
+
+        // Update conversation in parent component
+        if (onGroupUpdated) {
+          onGroupUpdated(data.conversation);
         }
       }
     });
@@ -389,84 +444,62 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
   };
 
   const handleRemoveMember = async () => {
-    if (!selectedMember || !conversation) return;
-    
-    // Store the member to be removed for potential rollback
-    const memberToRemove = selectedMember;
-    
+    if (!selectedMember || actionLoading) return;
+
     try {
-      // Immediately update UI first for better user experience
-      // This creates an optimistic UI update before the API call completes
-      setMembers(prevMembers => 
-        prevMembers.filter(m => m.idUser._id !== memberToRemove.idUser._id)
-      );
-      
-      // Close menu immediately for better UX
-      handleMenuClose();
-      
-      // Start loading state
       setActionLoading(true);
-      const token = localStorage.getItem('accessToken');
-      
+      const token = AuthService.getAccessToken();
       if (!token) {
-        setError('No authentication token found. Please log in again.');
-        // Revert the optimistic update if token is missing
-        setMembers(prevMembers => [...prevMembers, memberToRemove]);
-        setActionLoading(false);
+        setError('You are not authenticated. Please log in again.');
         return;
       }
+
+      // Store member info before removal
+      const memberToRemove = selectedMember;
       
-      // Add logging to debug user roles
-      console.log('=== Remove Member Debug ===');
-      console.log('Current user:', currentUser);
-      console.log('Is admin:', isAdmin);
-      console.log('Is admin2:', isAdmin2);
-      console.log('Selected member:', memberToRemove);
-      console.log('Selected member role:', memberToRemove.role);
-      
-      // Emit socket event for real-time updates to other users
-      // This ensures other users see the member removal immediately
-      SocketService.removeMemberFromGroup(
-        conversation._id,
-        memberToRemove.idUser._id
-      );
-      
-      // Make API call to remove the member
+      // Close the menu first
+      handleMenuClose();
+
+      // Clear any existing error before attempting removal
+      setError('');
+
+      // Emit socket event before making the API call
+      // This ensures real-time notification for the removed member
+      SocketService.emitMemberRemovedFromGroup({
+        conversationId: conversation._id,
+        memberId: memberToRemove.idUser._id,
+        removedBy: currentUser._id
+      });
+
       const response = await ChatService.removeMemberFromGroup(
         conversation._id,
         memberToRemove.idUser._id,
         token
       );
+
+      // Update members list
+      setMembers(prevMembers => 
+        prevMembers.filter(m => m.idUser._id !== memberToRemove.idUser._id)
+      );
       
-      if (response.success) {
-        console.log('Member removed successfully:', response);
-        
-        // Update conversation with the updated data from response
-        if (response.conversation) {
-          console.log('Updating conversation with new data');
-          // Update the conversation object with the latest data
-          if (onGroupUpdated) {
-            onGroupUpdated(response.conversation);
-          }
+      // Update conversation if available in response
+      if (response?.conversation) {
+        if (onGroupUpdated) {
+          onGroupUpdated(response.conversation);
         }
-        
-        // Notify parent component about member removal
-        if (onMemberRemoved) {
-          onMemberRemoved(memberToRemove, response.conversation);
-        }
-      } else {
-        console.error('Failed to remove member:', response.message);
-        setError(response.message || 'Không thể xóa thành viên');
-        
-        // Revert the optimistic update if API call fails
-        setMembers(prevMembers => [...prevMembers, memberToRemove]);
       }
+      
+      // Notify parent component about member removal
+      if (onMemberRemoved) {
+        onMemberRemoved(memberToRemove, response?.conversation);
+      }
+
     } catch (error) {
       console.error('Error removing member:', error);
-      setError('Không thể xóa thành viên. Vui lòng thử lại.');
-      
-      // Revert the optimistic update if there's an error
-      setMembers(prevMembers => [...prevMembers, memberToRemove]);
+      // Only set error if the operation actually failed
+      if (error.response?.status === 400 || error.response?.status === 403) {
+        setError(error.response.data.message || 'Không thể xóa thành viên. Vui lòng thử lại.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -484,12 +517,8 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
         return;
       }
       
-      // Emit socket event for real-time updates to other users
-      // This ensures other users see the member leaving immediately
-      if (currentUser && currentUser._id) {
-        console.log('Emitting leave_group event for user:', currentUser._id);
-        SocketService.leaveGroup(conversation._id, currentUser._id);
-      }
+      // Emit socket event for real-time updates
+      SocketService.leaveGroup(conversation._id, currentUser._id);
       
       const response = await ChatService.leaveGroup(conversation._id, token);
       

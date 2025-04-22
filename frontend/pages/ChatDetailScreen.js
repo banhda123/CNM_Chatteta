@@ -31,6 +31,8 @@ import {
   List,
   Tooltip,
   AvatarGroup,
+  Switch,
+  FormControlLabel,
 } from "@mui/material";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
 import {
@@ -49,6 +51,8 @@ import {
   GroupAdd as GroupAddIcon,
   People as PeopleIcon,
   ExitToApp as ExitToAppIcon,
+  DarkMode as DarkModeIcon,
+  LightMode as LightModeIcon,
 } from "@mui/icons-material";
 import Button from "@mui/material/Button";
 import AddIcon from "@mui/icons-material/Add";
@@ -77,6 +81,7 @@ import GifIcon from '@mui/icons-material/Gif';
 import PinnedMessageBanner from "../components/PinnedMessageBanner";
 import PinnedMessagesDialog from "../components/PinnedMessagesDialog";
 import PinMessageButton from "../components/PinMessageButton";
+import { useTheme } from '../contexts/ThemeContext';
 
 const ChatUI = () => {
   const route = useRoute();
@@ -120,6 +125,8 @@ const ChatUI = () => {
   // State for pinned messages functionality
   const [pinnedMessagesDialogOpen, setPinnedMessagesDialogOpen] = useState(false);
   const [selectedPinnedMessage, setSelectedPinnedMessage] = useState(null);
+
+  const { isDarkMode, toggleTheme } = useTheme();
 
   // Function to check if the current conversation is with Gemini AI
   const isGeminiConversation = () => {
@@ -1710,31 +1717,53 @@ const ChatUI = () => {
   };
 
   const handleMemberAdded = (updatedConversation) => {
-    // Update the conversation in the list
-    setConversations(prev => 
-      prev.map(conv => 
+    // Update conversation in list
+    setConversations(prev =>
+      prev.map(conv =>
         conv._id === updatedConversation._id ? updatedConversation : conv
       )
     );
-    
+
     // Update active conversation if it's the one that was updated
     if (activeConversation && activeConversation._id === updatedConversation._id) {
       setActiveConversation(updatedConversation);
     }
+
+    // Add system message about new member
+    const systemMessage = {
+      type: 'system',
+      systemType: 'member_added',
+      content: `${updatedConversation.lastMessage.content}`,
+      conversationId: updatedConversation._id,
+      createdAt: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, systemMessage]);
   };
 
   const handleMemberRemoved = (updatedConversation) => {
-    // Update the conversation in the list
-    setConversations(prev => 
-      prev.map(conv => 
+    // Update conversation in list
+    setConversations(prev =>
+      prev.map(conv =>
         conv._id === updatedConversation._id ? updatedConversation : conv
       )
     );
-    
+
     // Update active conversation if it's the one that was updated
     if (activeConversation && activeConversation._id === updatedConversation._id) {
       setActiveConversation(updatedConversation);
     }
+
+    // Add system message about member removal
+    const systemMessage = {
+      type: 'system',
+      systemType: 'member_removed',
+      content: `${updatedConversation.lastMessage.content}`,
+      conversationId: updatedConversation._id,
+      createdAt: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, systemMessage]);
   };
 
   const handleLeaveGroup = async (groupId) => {
@@ -1780,24 +1809,57 @@ const ChatUI = () => {
 
 
   const handleGroupLeft = (conversationId) => {
-    // Remove the conversation from the list
-    setConversations(prev => 
+    // Remove conversation from list
+    setConversations(prev =>
       prev.filter(conv => conv._id !== conversationId)
     );
-    
+
     // Clear active conversation if it's the one that was left
     if (activeConversation && activeConversation._id === conversationId) {
       setActiveConversation(null);
       setMessages([]);
     }
+
+    // Add system message about leaving group
+    const systemMessage = {
+      type: 'system',
+      systemType: 'group_left',
+      content: 'Bạn đã rời khỏi nhóm',
+      conversationId: conversationId,
+      createdAt: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, systemMessage]);
     
     // Close the dialog
     setGroupMembersDialogOpen(false);
   };
 
   const handleGroupDeleted = (conversationId) => {
-    // Same behavior as leaving a group
-    handleGroupLeft(conversationId);
+    // Remove conversation from list
+    setConversations(prev =>
+      prev.filter(conv => conv._id !== conversationId)
+    );
+
+    // Clear active conversation if it's the one that was deleted
+    if (activeConversation && activeConversation._id === conversationId) {
+      setActiveConversation(null);
+      setMessages([]);
+    }
+
+    // Add system message about group deletion
+    const systemMessage = {
+      type: 'system',
+      systemType: 'group_deleted',
+      content: 'Nhóm đã bị xóa',
+      conversationId: conversationId,
+      createdAt: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, systemMessage]);
+    
+    // Close the dialog
+    setGroupMembersDialogOpen(false);
   };
 
   // Xử lý chọn cuộc trò chuyện để chuyển tiếp tin nhắn
@@ -2315,21 +2377,25 @@ const ChatUI = () => {
               onClick={() => setShowProfile(true)}
             />
             <Typography variant="h6" sx={{ ml: 2 }}>
-              Chats
+              {user?.name || "User"}
             </Typography>
           </Box>
           <Box>
-            <IconButton 
-              onClick={() => navigation.navigate('GeminiChat')}
-              aria-label="Gemini AI Assistant"
-              sx={{ mr: 1 }}
-              color="primary"
-            >
-              <Avatar
-                src="https://storage.googleapis.com/gweb-uniblog-publish-prod/images/gemini_1.width-1000.format-webp.webp"
-                sx={{ width: 24, height: 24 }}
-              />
-            </IconButton>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mr: 1 }}>
+              <IconButton 
+                onClick={() => navigation.navigate('GeminiChat')}
+                aria-label="Gemini AI Assistant"
+                color="primary"
+              >
+                <Avatar
+                  src="https://storage.googleapis.com/gweb-uniblog-publish-prod/images/gemini_1.width-1000.format-webp.webp"
+                  sx={{ width: 24, height: 24 }}
+                />
+              </IconButton>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                Gemini AI
+              </Typography>
+            </Box>
             <IconButton onClick={handleNotificationMenuOpen} id="notification-button" aria-label="Friend requests">
               <Badge badgeContent={friendRequests.length} color="error">
                 <NotificationsIcon />
@@ -2480,6 +2546,22 @@ const ChatUI = () => {
                 'aria-labelledby': 'settings-button',
               }}
             >
+              <MenuItem>
+                <ListItemIcon>
+                  {isDarkMode ? <DarkModeIcon /> : <LightModeIcon />}
+                </ListItemIcon>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={isDarkMode}
+                      onChange={toggleTheme}
+                      name="theme-toggle"
+                    />
+                  }
+                  label={isDarkMode ? "Chế độ tối" : "Chế độ sáng"}
+                  sx={{ m: 0 }}
+                />
+              </MenuItem>
               <MenuItem onClick={handleCreateGroup}>
                 <ListItemIcon>
                   <GroupAddIcon fontSize="small" />
@@ -3559,10 +3641,17 @@ const ChatUI = () => {
                     onKeyPress={handleKeyPress}
                     inputRef={inputRef}
                     sx={{
+                      flex: "1 1 auto",
+                      minWidth: 0,
+                      mx: 1,
                       "& .MuiOutlinedInput-root": {
                         borderRadius: "24px",
                         bgcolor: "background.default",
+                        width: "100%"
                       },
+                      "& .MuiInputBase-input": {
+                        width: "100%"
+                      }
                     }}
                   />
                   <IconButton

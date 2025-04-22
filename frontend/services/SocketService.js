@@ -269,10 +269,32 @@ class SocketService {
     }
   }
   
+  // Add new method for handling member removed from group
+  static onMemberRemovedFromGroup(callback) {
+    if (this.socket) {
+      this.socket.off('member_removed_from_group'); // Remove any existing listeners
+      this.socket.on('member_removed_from_group', callback);
+    }
+  }
+  
+  // Add new method for emitting member removed from group event
+  static emitMemberRemovedFromGroup(data) {
+    if (this.socket) {
+      this.socket.emit('member_removed_from_group', data);
+    }
+  }
+  
   static onGroupLeft(callback) {
     if (this.socket) {
       this.socket.off('group_left'); // Remove any existing listeners
       this.socket.on('group_left', callback);
+    }
+  }
+  
+  static onMemberLeftGroup(callback) {
+    if (this.socket) {
+      this.socket.off('member_left_group'); // Remove any existing listeners
+      this.socket.on('member_left_group', callback);
     }
   }
   

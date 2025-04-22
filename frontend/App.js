@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -10,24 +10,32 @@ import ProfileScreen from "./pages/ProfileScreen";
 import GeminiChatPage from "./pages/GeminiChatPage";
 import AuthService from './services/AuthService';
 import { CircularProgress, Box } from '@mui/material';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { useTheme } from './contexts/ThemeContext';
 
 const Stack = createNativeStackNavigator();
 
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
-    },
-  },
-});
-
-export default function App() {
+const AppContent = () => {
+  const { isDarkMode } = useTheme();
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userId, setUserId] = useState(null);
+
+  const theme = createTheme({
+    palette: {
+      mode: isDarkMode ? 'dark' : 'light',
+      primary: {
+        main: '#1976d2',
+      },
+      secondary: {
+        main: '#dc004e',
+      },
+      background: {
+        default: isDarkMode ? '#121212' : '#fff',
+        paper: isDarkMode ? '#1e1e1e' : '#fff',
+      },
+    },
+  });
 
   useEffect(() => {
     // Kiểm tra xác thực khi tải ứng dụng
@@ -63,7 +71,8 @@ export default function App() {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        height: '100vh'
+        height: '100vh',
+        bgcolor: 'background.default'
       }}>
         <CircularProgress />
       </Box>
@@ -71,7 +80,7 @@ export default function App() {
   }
 
   return (
-    <ThemeProvider theme={theme}>
+    <MuiThemeProvider theme={theme}>
       <CssBaseline />
       <NavigationContainer>
         <Stack.Navigator initialRouteName={isAuthenticated ? "Chat" : "Login"}>
@@ -89,6 +98,7 @@ export default function App() {
             name="Chat" 
             component={ChatUI} 
             initialParams={{ userId: userId }}
+            options={{ headerShown: false }}
           />
           <Stack.Screen 
             name="Profile" 
@@ -101,6 +111,14 @@ export default function App() {
           />
         </Stack.Navigator>
       </NavigationContainer>
+    </MuiThemeProvider>
+  );
+};
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
     </ThemeProvider>
   );
 }

@@ -21,7 +21,7 @@ const MessageSchema = new Schema(
     },
     systemType: {
       type: String,
-      enum: ["pin_message", "unpin_message", "add_member", "remove_member", "leave_group", "change_group_name", "change_group_avatar"],
+      enum: ["pin_message", "unpin_message", "add_member", "remove_member", "leave_group", "change_group_name", "change_group_avatar", "set_admin2", "remove_admin2"],
       required: function() {
         return this.type === 'system';
       }

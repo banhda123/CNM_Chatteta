@@ -558,6 +558,7 @@ export const addMemberToGroup = async (req, res) => {
       idConversation: conversationId,
       content: `${req.user.name} đã thêm ${addedNames} vào nhóm`,
       type: 'system',
+      systemType: 'add_member',
       seen: false,
       sender: userId,
     });
@@ -623,12 +624,14 @@ export const removeMemberFromGroup = async (req, res) => {
       });
     }
 
-    // Find the conversation
+    // Find the conversation and populate necessary fields
     const conversation = await ConversationModel.findById(conversationId)
       .populate({
         path: "members.idUser",
         select: "name avatar"
-      });
+      })
+      .populate("admin", "name")
+      .populate("admin2", "name");
 
     if (!conversation) {
       return res.status(404).json({ 
@@ -645,53 +648,53 @@ export const removeMemberFromGroup = async (req, res) => {
       });
     }
 
-    // Check if the user is admin or admin2
-    const isAdmin = conversation.admin && conversation.admin.toString() === userId.toString();
-    const isAdmin2 = conversation.admin2 && conversation.admin2.toString() === userId.toString();
-    
-    console.log('User ID:', userId.toString());
-    console.log('Admin ID:', conversation.admin ? conversation.admin.toString() : 'None');
-    console.log('Admin2 ID:', conversation.admin2 ? conversation.admin2.toString() : 'None');
-    console.log('Is Admin:', isAdmin);
-    console.log('Is Admin2:', isAdmin2);
+    // Check permissions
+    const isAdmin = conversation.admin && conversation.admin._id.toString() === userId.toString();
+    const isAdmin2 = conversation.admin2 && conversation.admin2._id.toString() === userId.toString();
     
     // Check if the member being removed is admin or admin2
-    const isRemovingAdmin = conversation.admin && conversation.admin.toString() === memberId;
-    const isRemovingAdmin2 = conversation.admin2 && conversation.admin2.toString() === memberId;
-    
-    // Admin can remove anyone, admin2 can remove regular members but not admin
-    // Members can remove themselves
-    if (
-      (!isAdmin && !isAdmin2 && memberId !== userId.toString()) || // Not admin/admin2 and not removing self
-      (isAdmin2 && isRemovingAdmin) // Admin2 trying to remove admin
-    ) {
+    const isRemovingAdmin = conversation.admin && conversation.admin._id.toString() === memberId;
+    const isRemovingAdmin2 = conversation.admin2 && conversation.admin2._id.toString() === memberId;
+
+    // Validate permissions
+    if (!isAdmin && !isAdmin2) {
       return res.status(403).json({ 
         success: false, 
-        message: "You don't have permission to remove this member" 
+        message: "Only admin or admin2 can remove members" 
       });
     }
 
-    // Check if the member exists in the group
-    const memberIndex = conversation.members.findIndex(member => 
+    // Admin2 cannot remove admin or other admin2
+    if (isAdmin2 && (isRemovingAdmin || isRemovingAdmin2)) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Admin2 cannot remove admin or other admin2" 
+      });
+    }
+
+    // Find the member to be removed
+    const memberToRemove = conversation.members.find(member => 
       member.idUser._id.toString() === memberId
     );
 
-    if (memberIndex === -1) {
+    if (!memberToRemove) {
       return res.status(404).json({ 
         success: false, 
         message: "Member not found in the group" 
       });
     }
 
-    // Get member name before removing
-    const memberName = conversation.members[memberIndex].idUser.name;
+    // Store member info before removing
+    const removedMemberName = memberToRemove.idUser.name;
 
     // Remove the member
-    conversation.members.splice(memberIndex, 1);
+    conversation.members = conversation.members.filter(member => 
+      member.idUser._id.toString() !== memberId
+    );
 
-    // If admin is removed, assign a new admin if there are members left
-    if (memberId === conversation.admin.toString() && conversation.members.length > 0) {
-      conversation.admin = conversation.members[0].idUser._id;
+    // If removing admin2, clear the admin2 field
+    if (isRemovingAdmin2) {
+      conversation.admin2 = null;
     }
 
     await conversation.save();
@@ -699,33 +702,14 @@ export const removeMemberFromGroup = async (req, res) => {
     // Create system message about member removal
     const systemMessage = new MessageModel({
       idConversation: conversationId,
-      content: memberId === userId.toString() 
-        ? `${memberName} đã rời khỏi nhóm` 
-        : `${req.user.name} đã xóa ${memberName} khỏi nhóm`,
+      content: `${req.user.name} đã xóa ${removedMemberName} khỏi nhóm`,
       type: 'system',
+      systemType: 'remove_member',
       seen: false,
       sender: userId,
     });
     
     const savedMessage = await systemMessage.save();
-    
-    // Emit socket event to notify the removed user
-    const io = req.app.get('io');
-    if (io) {
-      // Emit to the room of the removed user
-      io.to(memberId).emit('member_removed', { 
-        conversation: conversation.toObject(), 
-        memberId, 
-        memberName 
-      });
-      
-      // Emit to the conversation room for other members
-      io.to(conversationId).emit('member_removed', { 
-        conversation: conversation.toObject(), 
-        memberId, 
-        memberName 
-      });
-    }
     
     // Update last message
     await updateLastMesssage({ 
@@ -733,13 +717,38 @@ export const removeMemberFromGroup = async (req, res) => {
       message: savedMessage._id 
     });
 
-    // Get updated conversation with populated members
+    // Get updated conversation with populated fields
     const updatedConversation = await ConversationModel.findById(conversationId)
       .populate({
         path: "members.idUser",
         select: "name avatar"
       })
-      .populate("admin", "name avatar");
+      .populate("admin", "name avatar")
+      .populate("admin2", "name avatar");
+
+    // Get socket.io instance
+    const io = getIO();
+    
+    if (io) {
+      // Emit to all remaining members about the update
+      io.to(conversationId).emit('group_updated', {
+        conversation: updatedConversation,
+        systemMessage: savedMessage
+      });
+
+      // Emit to the removed member
+      io.to(memberId).emit('removed_from_group', {
+        conversationId: conversationId,
+        groupName: conversation.name,
+        removedBy: req.user.name,
+        message: `Bạn đã bị ${req.user.name} xóa khỏi nhóm "${conversation.name}"`
+      });
+
+      // Remove the conversation from removed member's list
+      io.to(memberId).emit('conversation_deleted', {
+        conversationId: conversationId
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -831,6 +840,7 @@ export const leaveGroup = async (req, res) => {
       idConversation: conversationId,
       content: `${userName} đã rời khỏi nhóm`,
       type: 'system',
+      systemType: 'leave_group',
       seen: false,
       sender: userId,
     });
@@ -1122,6 +1132,7 @@ export const setAdmin2 = async (req, res) => {
       idConversation: conversationId,
       content: `${req.user.name} đã giao quyền phó nhóm cho ${memberToPromote.idUser.name}`,
       type: 'system',
+      systemType: 'set_admin2',
       seen: false,
       sender: userId,
     });
@@ -1255,6 +1266,7 @@ export const removeAdmin2 = async (req, res) => {
       idConversation: conversationId,
       content: `${req.user.name} đã gỡ ${admin2Name} khỏi vị trí phó nhóm`,
       type: 'system',
+      systemType: 'remove_admin2',
       seen: false,
       sender: userId,
     });

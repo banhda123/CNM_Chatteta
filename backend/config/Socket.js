@@ -505,6 +505,101 @@ export const ConnectSocket = (server) => {
       }
     });
     
+    socket.on("remove_member_from_group", async (data) => {
+      try {
+        const { groupId, memberId } = data;
+        io.to(groupId).emit("member_removed", { groupId, memberId });
+      } catch (error) {
+        console.error("Error removing member from group:", error);
+      }
+    });
+
+    // Add new handler for member_removed_from_group
+    socket.on("member_removed_from_group", async (data) => {
+      try {
+        const { conversationId, memberId, removedBy } = data;
+        
+        console.log(`🚫 Member removal event - Conversation: ${conversationId}, Member: ${memberId}, RemovedBy: ${removedBy}`);
+        
+        // Emit to the specific member that was removed
+        io.to(memberId).emit("member_removed_from_group", {
+          conversationId,
+          memberId,
+          removedBy
+        });
+        
+        // Get the updated conversation data
+        const conversation = await ConversationModel.findById(conversationId)
+          .populate({
+            path: "members.idUser",
+            select: { name: 1, avatar: 1 }
+          })
+          .populate("lastMessage");
+
+        if (conversation) {
+          // Emit to all members in the conversation
+          conversation.members.forEach(member => {
+            if (member.idUser && member.idUser._id) {
+              io.to(member.idUser._id.toString()).emit("update_conversation_list", {
+                conversation: conversation
+              });
+            }
+          });
+
+          // Also emit member_removed event with full conversation data
+          io.to(conversationId).emit("member_removed", {
+            conversation: conversation,
+            memberId
+          });
+        }
+        
+      } catch (error) {
+        console.error("Error handling member removal:", error);
+      }
+    });
+
+    socket.on("leave_group", async (data) => {
+      try {
+        const { groupId, userId } = data;
+        console.log(`👋 User ${userId} is leaving group ${groupId}`);
+
+        // Emit to the specific user who left
+        io.to(userId).emit("group_left", {
+          conversationId: groupId,
+          userId: userId
+        });
+
+        // Emit to all members in the conversation
+        io.to(groupId).emit("member_left_group", {
+          conversationId: groupId,
+          memberId: userId,
+          type: 'leave'
+        });
+
+        // Get the conversation to update all members' conversation list
+        const conversation = await ConversationModel.findById(groupId)
+          .populate({
+            path: "members.idUser",
+            select: { name: 1, avatar: 1 }
+          })
+          .populate("lastMessage");
+
+        if (conversation) {
+          // Emit update_conversation_list to all members
+          conversation.members.forEach(member => {
+            if (member.idUser && member.idUser._id) {
+              io.to(member.idUser._id.toString()).emit("update_conversation_list", {
+                conversation: conversation
+              });
+            }
+          });
+        }
+
+      } catch (error) {
+        console.error("Error handling group leave:", error);
+      }
+    });
+
     socket.on("disconnect", () => {
       console.log(`${socket.id} disconnected`);
     });
