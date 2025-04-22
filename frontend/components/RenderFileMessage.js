@@ -7,7 +7,8 @@ import {
   Slideshow as SlideshowIcon,
   Videocam as VideocamIcon,
   AudioTrack as AudiotrackIcon,
-  InsertDriveFile as InsertDriveFileIcon
+  InsertDriveFile as InsertDriveFileIcon,
+  Gif as GifIcon
 } from '@mui/icons-material';
 
 const RenderFileMessage = ({ message, handleOpenFile }) => {
@@ -605,6 +606,110 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
               </Box>
             )}
           </Box>
+        </Box>
+      );
+    
+    case 'gif':
+      return (
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            width: '100%',
+            position: 'relative',
+            maxWidth: '280px',
+          }}
+        >
+          <Box 
+            sx={{
+              position: 'relative',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              backgroundColor: 'rgba(0, 0, 0, 0.03)',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              border: '1px solid rgba(0, 0, 0, 0.08)',
+            }}
+          >
+            <Box 
+              component="img"
+              src={message.fileUrl}
+              alt="GIF"
+              sx={{ 
+                display: 'block',
+                width: '100%',
+                maxHeight: '250px',
+                objectFit: 'contain',
+                borderRadius: '8px',
+                cursor: isSending ? 'default' : 'pointer',
+                opacity: isSending ? 0.7 : 1,
+                bgcolor: 'white'
+              }}
+              onClick={() => message.fileUrl && !isSending && 
+                window.open(message.fileUrl, '_blank')}
+              onError={(e) => {
+                console.error('🚫 GIF failed to load:', message.fileUrl);
+                e.target.src = 'https://via.placeholder.com/150?text=GIF+Error';
+              }}
+            />
+            
+            {/* Ghi chú nếu có */}
+            {message.content && message.content.trim() !== '' && (
+              <Box sx={{ 
+                p: 1.5, 
+                borderTop: '1px solid rgba(0, 0, 0, 0.08)',
+                bgcolor: 'white' 
+              }}>
+                <Typography variant="body2">
+                  {message.content}
+                </Typography>
+              </Box>
+            )}
+            
+            {/* Download icon for GIFs */}
+            {message.fileUrl && !isSending && !message.fileUrl.startsWith('temp_file_') && (
+              <IconButton 
+                size="small" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenFile(message.fileUrl, message.fileName || 'animation.gif', message.fileType);
+                }}
+                sx={{ 
+                  position: 'absolute',
+                  bottom: 8,
+                  right: 8,
+                  bgcolor: 'rgba(0,0,0,0.5)',
+                  color: 'white',
+                  '&:hover': {
+                    bgcolor: 'rgba(0,0,0,0.7)'
+                  },
+                  width: 32,
+                  height: 32
+                }}
+              >
+                <Box component="span" sx={{ fontSize: '1.1rem', fontWeight: 'bold' }}>↓</Box>
+              </IconButton>
+            )}
+          </Box>
+          
+          {isSending && (
+            <Box 
+              sx={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                backgroundColor: 'rgba(0,0,0,0.3)',
+                borderRadius: '50%',
+                width: 40,
+                height: 40,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <CircularProgress size={24} color="inherit" />
+            </Box>
+          )}
         </Box>
       );
     

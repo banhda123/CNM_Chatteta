@@ -142,6 +142,9 @@ ChatRouter.post("/upload", isAuth, upload.single('file'), async (req, res) => {
                req.file.originalname.endsWith('.ppt') || 
                req.file.originalname.endsWith('.pptx')) {
       messageType = 'presentation';
+    } else if (req.file.mimetype === 'image/gif' || 
+               req.file.originalname.endsWith('.gif')) {
+      messageType = 'gif';
     }
     
     const messageData = {

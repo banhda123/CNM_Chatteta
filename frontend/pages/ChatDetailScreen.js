@@ -71,6 +71,8 @@ import MessageReactions from "../components/MessageReactions";
 import CreateGroupDialog from "../components/CreateGroupDialog";
 import GroupMembersDialog from "../components/GroupMembersDialog";
 import EditGroupDialog from "../components/EditGroupDialog";
+import GifGallery from "../components/GifGallery"; // Import GifGallery component
+import GifIcon from '@mui/icons-material/Gif';
 
 const ChatUI = () => {
   const route = useRoute();
@@ -105,6 +107,8 @@ const ChatUI = () => {
   });
   const [emojiAnchorEl, setEmojiAnchorEl] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showGifGallery, setShowGifGallery] = useState(false);
+  const [activeTab, setActiveTab] = useState('emoji'); // Track active tab: 'emoji' or 'gif'
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedFilePreview, setSelectedFilePreview] = useState(null);
   const fileInputRef = useRef(null);
@@ -823,16 +827,66 @@ const ChatUI = () => {
   const handleEmojiOpen = (event) => {
     setEmojiAnchorEl(event.currentTarget);
     setShowEmojiPicker(true);
+    setActiveTab('emoji'); // Default to emoji tab
   };
 
   const handleEmojiClose = () => {
     setEmojiAnchorEl(null);
     setShowEmojiPicker(false);
+    setShowGifGallery(false);
+  };
+
+  const handleTabChange = (tab) => {
+    if (typeof tab === 'object') { // If it's an event from IconButton click
+      setEmojiAnchorEl(tab.currentTarget);
+      setActiveTab('gif');
+      setShowEmojiPicker(false);
+      setShowGifGallery(true);
+    } else {
+      setActiveTab(tab);
+      setShowEmojiPicker(tab === 'emoji');
+      setShowGifGallery(tab === 'gif');
+    }
   };
 
   const insertEmoji = (emoji) => {
     setNewMessage(prevMessage => prevMessage + emoji);
     inputRef.current?.focus();
+  };
+
+  const handleSendGif = async (gif) => {
+    try {
+      if (!activeConversation?._id || !userId) return;
+      
+      // Lấy token xác thực
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        throw new Error("Không có token xác thực");
+      }
+      
+      // Lấy nội dung chú thích nếu có
+      const caption = newMessage.trim();
+      
+      // Send GIF message
+      await ChatService.sendGifMessage(
+        activeConversation._id,
+        userId,
+        gif.url,
+        token,
+        caption
+      );
+      
+      // Xóa tin nhắn chú thích sau khi gửi
+      if (caption) {
+        setNewMessage("");
+      }
+      
+      // Close the GIF gallery
+      handleEmojiClose();
+    } catch (error) {
+      console.error('Error sending GIF:', error);
+      Alert.alert('Error', 'Failed to send GIF');
+    }
   };
 
   const handleFileSelect = (event) => {
@@ -2555,8 +2609,11 @@ const ChatUI = () => {
                                 sx={{
                                   p: 1.5,
                                   borderRadius: message.type === 'system' ? 1 : 2,
-                                  maxWidth: (message.type === 'image' || message.type === 'video' || message.type === 'file' || 
-                                            message.hasFile) ? "250px" : "100%",
+                                  maxWidth: (message.type === 'gif') 
+                                    ? "350px" // Rộng hơn cho GIF
+                                    : (message.type === 'image' || message.type === 'video' || message.type === 'file' || message.hasFile) 
+                                      ? "250px" 
+                                      : "100%",
                                   width: "auto",
                                   wordBreak: "break-word",
                                   bgcolor: message.type === 'system' 
@@ -2570,20 +2627,20 @@ const ChatUI = () => {
                                     ? "none"
                                     : ((message?.sender?.toString() === userId?.toString() ||
                                       message?.idUser?.toString() === userId?.toString())
-                                        ? "0 1px 0.5px rgba(0, 0, 0, 0.13)"
-                                        : "0 1px 0.5px rgba(0, 0, 0, 0.13)"),
+                                      ? "0 1px 0.5px rgba(0, 0, 0, 0.13)"
+                                      : "0 1px 0.5px rgba(0, 0, 0, 0.13)"),
                                   borderLeft: message.type === 'system'
                                     ? "none"
                                     : ((message?.sender?.toString() === userId?.toString() ||
                                       message?.idUser?.toString() === userId?.toString())
-                                        ? "none"
-                                        : "3px solid #00a884"),
+                                      ? "none"
+                                      : "3px solid #00a884"),
                                   borderBottom: message.type === 'system'
                                     ? "none"
                                     : ((message?.sender?.toString() === userId?.toString() ||
                                       message?.idUser?.toString() === userId?.toString())
-                                        ? "none"
-                                        : "1px solid #f0f2f5"),
+                                      ? "none"
+                                      : "1px solid #f0f2f5"),
                                   '&::before': message.type === 'system' 
                                     ? {} // No pseudo-element for system messages
                                     : {
@@ -2619,6 +2676,7 @@ const ChatUI = () => {
                                 {!message.isRevoked && (
                                   message.type === 'image' || message.type === 'file' || message.type === 'video' || message.type === 'audio' || 
                                   message.type === 'pdf' || message.type === 'doc' || message.type === 'excel' || message.type === 'presentation' || 
+                                  message.type === 'gif' || 
                                   message.hasFile
                                 ) && (
                                   <RenderFileMessage message={message} handleOpenFile={handleOpenFile} />
@@ -2643,9 +2701,11 @@ const ChatUI = () => {
                                                   ? "Bảng tính Excel đã bị thu hồi"
                                                   : (message.type === 'presentation')
                                                     ? "Bài thuyết trình đã bị thu hồi"
-                                                    : (message.type === 'file')
-                                                      ? "Tệp đính kèm đã bị thu hồi"
-                                                      : "Tin nhắn đã bị thu hồi"}
+                                                    : (message.type === 'gif')
+                                                      ? "GIF đã bị thu hồi"
+                                                      : (message.type === 'file')
+                                                        ? "Tệp đính kèm đã bị thu hồi"
+                                                        : "Tin nhắn đã bị thu hồi"}
                                     </Typography>
                                   </Box>
                                 ) : (
@@ -3001,8 +3061,16 @@ const ChatUI = () => {
                 )}
                 
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <IconButton onClick={handleEmojiOpen}>
+                  <IconButton onClick={handleEmojiOpen} aria-label="Emoji">
                     <MoodIcon />
+                  </IconButton>
+                  
+                  <IconButton 
+                    onClick={handleTabChange}
+                    aria-label="GIF" 
+                    sx={{ color: activeTab === 'gif' ? 'primary.main' : 'inherit' }}
+                  >
+                    <GifIcon />
                   </IconButton>
                   
                   {/* File input */}
@@ -3140,7 +3208,7 @@ const ChatUI = () => {
 
             {/* Emoji Picker */}
             <Popover
-              open={showEmojiPicker}
+              open={showEmojiPicker || showGifGallery}
               anchorEl={emojiAnchorEl}
               onClose={handleEmojiClose}
               anchorOrigin={{
@@ -3154,29 +3222,46 @@ const ChatUI = () => {
               keepMounted={false}
               disablePortal
               aria-labelledby="emoji-picker-title"
+              PaperProps={{
+                sx: {
+                  overflow: 'hidden',
+                  borderRadius: 1,
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.2)'
+                }
+              }}
             >
-              <Box sx={{ p: 2, width: 280, height: 200, overflow: 'auto' }}>
-                <Typography id="emoji-picker-title" variant="subtitle2" sx={{ mb: 1 }}>
-                  Chọn emoji
-                </Typography>
-                <Grid container spacing={1}>
-                  {emojis.map((emoji, index) => (
-                    <Grid item key={index}>
-                      <IconButton 
-                        onClick={() => {
-                          insertEmoji(emoji);
-                          handleEmojiClose();
-                        }}
-                        size="small"
-                        sx={{ fontSize: '1.5rem' }}
-                        aria-label={`Emoji ${emoji}`}
-                      >
-                        {emoji}
-                      </IconButton>
-                    </Grid>
-                  ))}
-                </Grid>
-              </Box>
+              {/* Content based on active tab */}
+              {activeTab === 'emoji' && (
+                <Box sx={{ p: 2, width: 280, height: 200, overflow: 'auto', bgcolor: 'background.paper' }}>
+                  <Typography id="emoji-picker-title" variant="subtitle2" sx={{ mb: 1 }}>
+                    Chọn emoji
+                  </Typography>
+                  <Grid container spacing={1}>
+                    {emojis.map((emoji, index) => (
+                      <Grid item key={index}>
+                        <IconButton 
+                          onClick={() => {
+                            insertEmoji(emoji);
+                            handleEmojiClose();
+                          }}
+                          size="small"
+                          sx={{ fontSize: '1.5rem' }}
+                          aria-label={`Emoji ${emoji}`}
+                        >
+                          {emoji}
+                        </IconButton>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Box>
+              )}
+              
+              {activeTab === 'gif' && (
+                <GifGallery
+                  onSelectGif={handleSendGif}
+                  onClose={handleEmojiClose}
+                />
+              )}
             </Popover>
           </>
         ) : (
@@ -3268,7 +3353,7 @@ const ChatUI = () => {
                 
                 {(selectedMessage.type === 'image' || selectedMessage.type === 'file' || selectedMessage.type === 'video' || 
                  selectedMessage.type === 'audio' || selectedMessage.type === 'pdf' || selectedMessage.type === 'doc' || 
-                 selectedMessage.type === 'excel' || selectedMessage.type === 'presentation' || selectedMessage.hasFile) && (
+                 selectedMessage.type === 'excel' || selectedMessage.type === 'presentation' || selectedMessage.type === 'gif' || selectedMessage.hasFile) && (
                   <Typography variant="body2" sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
                     <AttachFileIcon fontSize="small" sx={{ mr: 0.5 }} />
                     {selectedMessage.type === 'image' ? 'Hình ảnh' : 
@@ -3278,6 +3363,7 @@ const ChatUI = () => {
                      selectedMessage.type === 'doc' ? 'Tài liệu Word' : 
                      selectedMessage.type === 'excel' ? 'Bảng tính Excel' : 
                      selectedMessage.type === 'presentation' ? 'Bài thuyết trình' : 
+                     selectedMessage.type === 'gif' ? 'GIF' : 
                      'Tệp đính kèm'}
                   </Typography>
                 )}

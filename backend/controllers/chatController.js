@@ -218,7 +218,13 @@ export const saveMessage = async (dataOrReq, res) => {
     }
     if (fileType) {
       messageData.fileType = fileType;
-      console.log("📊 Setting fileType:", fileType);
+      console.log("🏷️ Setting fileType:", fileType);
+    }
+    
+    // Handle GIF type specifically
+    if (type === 'gif' && fileUrl) {
+      console.log("🎭 Processing GIF message with URL:", fileUrl);
+      messageData.type = 'gif';
     }
 
     // Log để kiểm tra dữ liệu trước khi lưu

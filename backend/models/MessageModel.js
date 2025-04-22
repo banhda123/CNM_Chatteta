@@ -16,7 +16,7 @@ const MessageSchema = new Schema(
     content: String,
     type: {
       type: String,
-      enum: ["text", "file", "image", "audio", "video", "pdf", "doc", "excel", "presentation", "system"],
+      enum: ["text", "file", "image", "audio", "video", "pdf", "doc", "excel", "presentation", "system", "gif"],
       default: "text"
     },
     seen: Boolean,

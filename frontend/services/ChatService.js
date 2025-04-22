@@ -1,5 +1,6 @@
 import axios from "axios";
 import AuthService from "./AuthService";
+import SocketService from "./SocketService";
 
 const API_URL = "http://localhost:4000/chat"; // Update with your backend URL
 
@@ -542,6 +543,59 @@ class ChatService {
       return response.data;
     } catch (error) {
       console.error("Error updating group permissions:", error);
+      throw error;
+    }
+  }
+
+  // Send GIF message using Cloudinary URL
+  static async sendGifMessage(conversationId, senderId, gifUrl, token, caption = '') {
+    try {
+      if (!conversationId || !senderId || !gifUrl) {
+        throw new Error("Missing required data for sending GIF");
+      }
+      
+      // Create message data for GIF
+      const messageData = {
+        idConversation: conversationId,
+        sender: senderId,
+        fileUrl: gifUrl, 
+        type: 'gif',
+        content: caption
+      };
+      
+      // Lưu tin nhắn vào cơ sở dữ liệu trước
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token || AuthService.getAccessToken()}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      // Gửi HTTP request để lưu tin nhắn
+      const response = await axios.post(
+        `${API_URL}/message`, 
+        messageData,
+        config
+      );
+      
+      // Gửi qua socket để tất cả người dùng nhận được ngay lập tức
+      SocketService.sendMessage(messageData);
+      
+      return response.data || messageData;
+    } catch (error) {
+      console.error("Error sending GIF message:", error);
+      // Vẫn gửi qua socket ngay cả khi HTTP request lỗi
+      try {
+        SocketService.sendMessage({
+          idConversation: conversationId,
+          sender: senderId,
+          fileUrl: gifUrl,
+          type: 'gif',
+          content: caption
+        });
+      } catch (socketError) {
+        console.error("Failed to send GIF via socket after HTTP error:", socketError);
+      }
       throw error;
     }
   }
