@@ -97,7 +97,7 @@ export default function App() {
           <Stack.Screen 
             name="GeminiChat" 
             component={GeminiChatPage} 
-            options={{ title: 'Gemini AI Assistant' }}
+            options={{ headerShown: false }}
           />
         </Stack.Navigator>
       </NavigationContainer>

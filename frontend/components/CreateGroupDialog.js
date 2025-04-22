@@ -115,11 +115,11 @@ const CreateGroupDialog = ({ open, onClose, onGroupCreated }) => {
         onGroupCreated(response.conversation);
         handleClose();
       } else {
-        setError(response.message || 'Failed to create group');
+        setError(response.message || 'Không thể tạo nhóm');
       }
     } catch (error) {
       console.error('Error creating group:', error);
-      setError('Failed to create group. Please try again.');
+      setError('Không thể tạo nhóm. Vui lòng thử lại.');
     } finally {
       setCreating(false);
     }
@@ -136,7 +136,7 @@ const CreateGroupDialog = ({ open, onClose, onGroupCreated }) => {
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <DialogTitle>
-        Create New Group
+        Tạo nhóm mới
         <IconButton
           aria-label="close"
           onClick={handleClose}
@@ -248,7 +248,7 @@ const CreateGroupDialog = ({ open, onClose, onGroupCreated }) => {
           variant="contained"
           disabled={creating || selectedFriends.length < 2 || !groupName.trim()}
         >
-          {creating ? <CircularProgress size={24} /> : 'Create Group'}
+          {creating ? <CircularProgress size={24} /> : 'Tạo nhóm'}
         </Button>
       </DialogActions>
     </Dialog>

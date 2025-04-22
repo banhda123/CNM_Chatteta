@@ -2,37 +2,40 @@ import React from 'react';
 import {
   Box,
   Container,
-  Typography,
-  Paper,
-  Divider,
-  IconButton
+  AppBar,
+  Toolbar,
+  IconButton,
+  Typography
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import { useNavigation } from '@react-navigation/native';
 import GeminiChatBox from '../components/GeminiChatBox';
 
 const GeminiChatPage = () => {
   const navigation = useNavigation();
 
+  const handleBack = () => {
+    navigation.goBack();
+  };
+
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <Paper 
-        elevation={2} 
-        sx={{ 
-          p: 2, 
-          display: 'flex', 
-          alignItems: 'center',
-          borderRadius: 0
-        }}
-      >
-        <IconButton onClick={() => navigation.navigate('Chat')} sx={{ mr: 2 }}>
-          <ArrowBackIcon />
-        </IconButton>
-        <Typography variant="h6">Gemini AI Assistant</Typography>
-      </Paper>
-      
-      <Divider />
+      {/* Header with Back Button */}
+      <AppBar position="static" color="primary">
+        <Toolbar>
+          <IconButton
+            edge="start"
+            color="inherit"
+            onClick={handleBack}
+            aria-label="quay lại"
+          >
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            Trò chuyện với Gemini AI
+          </Typography>
+        </Toolbar>
+      </AppBar>
       
       {/* Main Content */}
       <Box sx={{ flexGrow: 1, overflow: 'hidden', p: 2, bgcolor: '#f5f5f5' }}>
@@ -40,20 +43,6 @@ const GeminiChatPage = () => {
           <GeminiChatBox />
         </Container>
       </Box>
-      
-      {/* Footer */}
-      <Paper 
-        elevation={2} 
-        sx={{ 
-          p: 1, 
-          textAlign: 'center',
-          borderRadius: 0
-        }}
-      >
-        <Typography variant="caption" color="text.secondary">
-          Gemini AI được cung cấp bởi Google. Sử dụng Gemini AI tuân theo các điều khoản dịch vụ của Google.
-        </Typography>
-      </Paper>
     </Box>
   );
 };

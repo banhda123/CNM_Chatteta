@@ -32,6 +32,7 @@ import {
 } from '@mui/icons-material';
 import ChatService from '../services/ChatService';
 import AuthService from '../services/AuthService';
+import SocketService from '../services/SocketService';
 import AddGroupMembersDialog from './AddGroupMembersDialog';
 
 const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGroupLeft, onGroupDeleted, onGroupUpdated }) => {
@@ -54,8 +55,64 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
   useEffect(() => {
     if (open && conversation) {
       prepareData();
+      setupSocketListeners();
     }
+    
+    return () => {
+      // Clean up socket listeners when component unmounts or dialog closes
+      SocketService.removeListener('member_added');
+      SocketService.removeListener('member_removed');
+    };
   }, [open, conversation]);
+  
+  // Setup socket listeners for real-time updates
+  const setupSocketListeners = () => {
+    // Ensure socket is connected
+    SocketService.connect();
+    
+    // Join the conversation room to receive updates
+    if (conversation && conversation._id) {
+      SocketService.joinConversation(conversation._id);
+    }
+    
+    // Listen for member added event
+    SocketService.onMemberAdded((data) => {
+      console.log('Socket: Member added to group', data);
+      if (data.conversation && data.conversation._id === conversation._id) {
+        // Update the local state with the new member
+        const newMember = data.member;
+        if (newMember && !members.some(m => m.idUser._id === newMember.idUser._id)) {
+          // Add role to the new member
+          const memberWithRole = { ...newMember, role: 'member' };
+          setMembers(prevMembers => [...prevMembers, memberWithRole]);
+          
+          // Update the conversation object if needed
+          if (onGroupUpdated && data.conversation) {
+            onGroupUpdated(data.conversation);
+          }
+        }
+      }
+    });
+    
+    // Listen for member removed event
+    SocketService.onMemberRemoved((data) => {
+      console.log('Socket: Member removed from group', data);
+      if (data.conversation && data.conversation._id === conversation._id) {
+        // Remove the member from local state
+        const removedMemberId = data.memberId;
+        if (removedMemberId) {
+          setMembers(prevMembers => 
+            prevMembers.filter(m => m.idUser._id !== removedMemberId)
+          );
+          
+          // Update the conversation object if needed
+          if (onGroupUpdated && data.conversation) {
+            onGroupUpdated(data.conversation);
+          }
+        }
+      }
+    });
+  };
 
   const prepareData = () => {
     if (!conversation) return;
@@ -70,6 +127,19 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     console.log('Admin2:', conversation.admin2);
     console.log('Members:', conversation.members);
     console.log('Current user:', userData);
+    
+    // Store admin and admin2 IDs in localStorage for use in ChatService
+    if (conversation.admin) {
+      const adminId = conversation.admin._id || conversation.admin;
+      localStorage.setItem('adminId', adminId);
+      console.log('Stored adminId in localStorage:', adminId);
+    }
+    
+    if (conversation.admin2) {
+      const admin2Id = conversation.admin2._id || conversation.admin2;
+      localStorage.setItem('admin2Id', admin2Id);
+      console.log('Stored admin2Id in localStorage:', admin2Id);
+    }
     
     // Check if current user is admin or admin2
     const isUserAdmin = conversation.admin && userData && 
@@ -143,6 +213,17 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       );
       
       if (response.success) {
+        // Create updated conversation object with the new admin2
+        const updatedConversation = {
+          ...conversation,
+          admin2: selectedMember.idUser,
+          members: conversation.members.map(m => 
+            m.idUser._id === selectedMember.idUser._id 
+              ? { ...m, role: "admin2" }
+              : m
+          )
+        };
+        
         // Update local members list
         setMembers(prevMembers => 
           prevMembers.map(m => 
@@ -152,9 +233,12 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
           )
         );
         
-        // Notify parent component
+        // Update local conversation state
+        conversation.admin2 = selectedMember.idUser;
+        
+        // Notify parent component with the complete updated conversation
         if (onGroupUpdated) {
-          onGroupUpdated(response.conversation);
+          onGroupUpdated(updatedConversation);
         }
         
         handleMenuClose();
@@ -204,6 +288,21 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       );
       
       if (response.success) {
+        // Create a deep copy of the conversation to modify
+        const updatedConversation = JSON.parse(JSON.stringify(conversation));
+        updatedConversation.admin2 = null;
+        
+        // Update the members in the copied conversation
+        if (updatedConversation.members) {
+          updatedConversation.members = updatedConversation.members.map(m => {
+            const memberId = m.idUser?._id || m.idUser;
+            if (memberId === admin2Id) {
+              return { ...m, role: "member" };
+            }
+            return m;
+          });
+        }
+        
         // Update local members list
         setMembers(prevMembers => 
           prevMembers.map(m => 
@@ -213,18 +312,16 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
           )
         );
         
-        // Update conversation in parent component
+        // Update local conversation state directly
+        conversation.admin2 = null;
+        
+        // Update conversation in parent component with the deep copy
         if (onGroupUpdated) {
-          onGroupUpdated({
-            ...conversation,
-            admin2: null,
-            members: conversation.members.map(m => 
-              m.idUser._id === admin2Id
-                ? { ...m, role: "member" }
-                : m
-            )
-          });
+          onGroupUpdated(updatedConversation);
         }
+        
+        // Force re-render by setting state
+        setIsAdmin2(false);
         
         handleMenuClose();
       } else {
@@ -262,10 +359,22 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       );
       
       if (response.success) {
-        // Notify parent component
+        // Create a deep copy of the conversation to modify
+        const updatedConversation = JSON.parse(JSON.stringify(conversation));
+        
+        // Update the permissions in both the local state and the copy
+        updatedConversation.permissions = permissions;
+        conversation.permissions = permissions;
+        
+        console.log('Updated conversation with new permissions:', updatedConversation);
+        
+        // Notify parent component with the complete updated conversation
         if (onGroupUpdated) {
-          onGroupUpdated(response.conversation);
+          onGroupUpdated(updatedConversation);
         }
+        
+        // Force a re-render by updating the state
+        setMembers([...members]);
         
         setPermissionsDialogOpen(false);
       } else {
@@ -282,6 +391,90 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
   const handleRemoveMember = async () => {
     if (!selectedMember || !conversation) return;
     
+    // Store the member to be removed for potential rollback
+    const memberToRemove = selectedMember;
+    
+    try {
+      // Immediately update UI first for better user experience
+      // This creates an optimistic UI update before the API call completes
+      setMembers(prevMembers => 
+        prevMembers.filter(m => m.idUser._id !== memberToRemove.idUser._id)
+      );
+      
+      // Close menu immediately for better UX
+      handleMenuClose();
+      
+      // Start loading state
+      setActionLoading(true);
+      const token = localStorage.getItem('accessToken');
+      
+      if (!token) {
+        setError('No authentication token found. Please log in again.');
+        // Revert the optimistic update if token is missing
+        setMembers(prevMembers => [...prevMembers, memberToRemove]);
+        setActionLoading(false);
+        return;
+      }
+      
+      // Add logging to debug user roles
+      console.log('=== Remove Member Debug ===');
+      console.log('Current user:', currentUser);
+      console.log('Is admin:', isAdmin);
+      console.log('Is admin2:', isAdmin2);
+      console.log('Selected member:', memberToRemove);
+      console.log('Selected member role:', memberToRemove.role);
+      
+      // Emit socket event for real-time updates to other users
+      // This ensures other users see the member removal immediately
+      SocketService.removeMemberFromGroup(
+        conversation._id,
+        memberToRemove.idUser._id
+      );
+      
+      // Make API call to remove the member
+      const response = await ChatService.removeMemberFromGroup(
+        conversation._id,
+        memberToRemove.idUser._id,
+        token
+      );
+      
+      if (response.success) {
+        console.log('Member removed successfully:', response);
+        
+        // Update conversation with the updated data from response
+        if (response.conversation) {
+          console.log('Updating conversation with new data');
+          // Update the conversation object with the latest data
+          if (onGroupUpdated) {
+            onGroupUpdated(response.conversation);
+          }
+        }
+        
+        // Notify parent component about member removal
+        if (onMemberRemoved) {
+          onMemberRemoved(memberToRemove, response.conversation);
+        }
+      } else {
+        console.error('Failed to remove member:', response.message);
+        setError(response.message || 'Không thể xóa thành viên');
+        
+        // Revert the optimistic update if API call fails
+        setMembers(prevMembers => [...prevMembers, memberToRemove]);
+      }
+    } catch (error) {
+      console.error('Error removing member:', error);
+      setError('Không thể xóa thành viên. Vui lòng thử lại.');
+      
+      // Revert the optimistic update if there's an error
+      setMembers(prevMembers => [...prevMembers, memberToRemove]);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!conversation || !currentUser) return;
+    
     try {
       setActionLoading(true);
       const token = localStorage.getItem('accessToken');
@@ -291,55 +484,23 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
         return;
       }
       
-      const response = await ChatService.removeMemberFromGroup(
-        conversation._id,
-        selectedMember.idUser._id,
-        token
-      );
-      
-      if (response.success) {
-        // Update local members list
-        setMembers(prevMembers => 
-          prevMembers.filter(m => m.idUser._id !== selectedMember.idUser._id)
-        );
-        
-        // Notify parent component
-        if (onMemberRemoved) {
-          onMemberRemoved(selectedMember, response.conversation);
-        }
-        
-        handleMenuClose();
-      } else {
-        setError(response.message || 'Failed to remove member');
+      // Emit socket event for real-time updates to other users
+      // This ensures other users see the member leaving immediately
+      if (currentUser && currentUser._id) {
+        console.log('Emitting leave_group event for user:', currentUser._id);
+        SocketService.leaveGroup(conversation._id, currentUser._id);
       }
-    } catch (error) {
-      console.error('Error removing member:', error);
-      setError('Failed to remove member. Please try again.');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleLeaveGroup = async () => {
-    if (!conversation) return;
-    
-    try {
-      setActionLoading(true);
-      const userData = AuthService.getUserData();
-      const token = userData.token;
       
-      const response = await ChatService.leaveGroup(
-        conversation._id,
-        token
-      );
+      const response = await ChatService.leaveGroup(conversation._id, token);
       
       if (response.success) {
+        // Close the dialog first
+        handleClose();
+        
         // Notify parent component
         if (onGroupLeft) {
           onGroupLeft(conversation._id);
         }
-        
-        handleClose();
       } else {
         setError(response.message || 'Failed to leave group');
       }
@@ -402,17 +563,37 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
   };
 
   const handleMembersAdded = (updatedConversation) => {
-    // Update local members list
-    if (updatedConversation && updatedConversation.members) {
-      setMembers(updatedConversation.members);
-    }
-    
-    // Notify parent component
-    if (onGroupUpdated) {
-      onGroupUpdated(updatedConversation);
-    }
-    
+    // Close the add members dialog
     setAddMembersDialogOpen(false);
+    
+    // Update the conversation and members list
+    if (updatedConversation) {
+      // Find the newly added members by comparing with current members
+      const currentMemberIds = members.map(m => m.idUser._id);
+      const newMembers = updatedConversation.members.filter(
+        m => !currentMemberIds.includes(m.idUser._id || m.idUser)
+      );
+      
+      console.log('New members added:', newMembers);
+      
+      // Emit socket events for each new member added
+      if (newMembers.length > 0 && conversation._id) {
+        newMembers.forEach(member => {
+          const memberId = member.idUser._id || member.idUser;
+          console.log('Emitting add_member_to_group for:', memberId);
+          // Emit socket event for real-time updates to other users
+          SocketService.addMemberToGroup(conversation._id, memberId);
+        });
+      }
+      
+      // Update the conversation in parent components
+      if (onGroupUpdated) {
+        onGroupUpdated(updatedConversation);
+      }
+      
+      // Refresh the members list
+      prepareData();
+    }
   };
 
   const handleClose = () => {
@@ -493,7 +674,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                   fullWidth
                   sx={{ mb: 1 }}
                 >
-                  Add Members
+                  Thêm thành viên
                 </Button>
                 <Button
                   variant="outlined"
@@ -503,7 +684,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                   fullWidth
                   sx={{ mb: 1 }}
                 >
-                  Manage Permissions
+                  Quản lý quyền
                 </Button>
                 <Button
                   variant="outlined"
@@ -512,7 +693,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                   onClick={() => setConfirmDeleteOpen(true)}
                   fullWidth
                 >
-                  Delete Group
+                  Xóa nhóm
                 </Button>
               </>
             )}
@@ -536,7 +717,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                 onClick={() => setConfirmLeaveOpen(true)}
                 fullWidth
               >
-                Leave Group
+                Rời nhóm
               </Button>
             )}
           </Box>
@@ -557,7 +738,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                 <ListItemIcon>
                   <EditIcon fontSize="small" />
                 </ListItemIcon>
-                Set as admin2
+                 Thêm phó nhóm
               </MenuItem>
             )}
             {selectedMember.role === "admin2" && (
@@ -565,14 +746,14 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                 <ListItemIcon>
                   <EditIcon fontSize="small" />
                 </ListItemIcon>
-                Remove admin2
+                Xóa phó nhóm
               </MenuItem>
             )}
             <MenuItem onClick={handleRemoveMember} disabled={actionLoading}>
               <ListItemIcon>
                 <DeleteIcon fontSize="small" />
               </ListItemIcon>
-              Remove from group
+              Xóa thành viên
             </MenuItem>
           </>
         )}
@@ -586,7 +767,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                 <ListItemIcon>
                   <DeleteIcon fontSize="small" />
                 </ListItemIcon>
-                Remove from group
+                Xóa thành viên
               </MenuItem>
             )}
           </>
@@ -598,16 +779,16 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
             <ListItemIcon>
               <ExitToAppIcon fontSize="small" />
             </ListItemIcon>
-            Leave group
+            Rời nhóm
           </MenuItem>
         )}
       </Menu>
       
       {/* Confirm dialogs */}
       <Dialog open={confirmSetAdmin2Open} onClose={() => setConfirmSetAdmin2Open(false)}>
-        <DialogTitle>Set Admin2</DialogTitle>
+        <DialogTitle>Thêm phó nhóm</DialogTitle>
         <DialogContent>
-          <Typography>Are you sure you want to set {selectedMember?.idUser?.name} as admin2?</Typography>
+          <Typography>Bạn có chắc muốn đặt {selectedMember?.idUser?.name} là phó nhóm?</Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmSetAdmin2Open(false)} disabled={actionLoading}>
@@ -619,15 +800,15 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
             variant="contained"
             disabled={actionLoading}
           >
-            {actionLoading ? <CircularProgress size={24} /> : 'Set Admin2'}
+            {actionLoading ? <CircularProgress size={24} /> : 'Thêm phó nhóm'}
           </Button>
         </DialogActions>
       </Dialog>
       
       <Dialog open={confirmRemoveAdmin2Open} onClose={() => setConfirmRemoveAdmin2Open(false)}>
-        <DialogTitle>Remove Admin2</DialogTitle>
+        <DialogTitle>Xóa phó nhóm</DialogTitle>
         <DialogContent>
-          <Typography>Are you sure you want to remove {selectedMember?.idUser?.name} from admin2 position?</Typography>
+          <Typography>Bạn có chắc muốn xóa {selectedMember?.idUser?.name} là phó nhóm?</Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmRemoveAdmin2Open(false)} disabled={actionLoading}>
@@ -639,14 +820,14 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
             variant="contained"
             disabled={actionLoading}
           >
-            {actionLoading ? <CircularProgress size={24} /> : 'Remove Admin2'}
+            {actionLoading ? <CircularProgress size={24} /> : 'Xóa phó nhóm'}
           </Button>
         </DialogActions>
       </Dialog>
       
       {/* Permissions dialog */}
       <Dialog open={permissionsDialogOpen} onClose={() => setPermissionsDialogOpen(false)}>
-        <DialogTitle>Group Permissions</DialogTitle>
+        <DialogTitle>Quyền nhóm</DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 2 }}>
             <FormControlLabel
@@ -659,7 +840,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                   })}
                 />
               }
-              label="Allow changing group name"
+              label="Cho phép thay đổi tên nhóm"
             />
             <FormControlLabel
               control={
@@ -671,7 +852,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                   })}
                 />
               }
-              label="Allow changing group avatar"
+              label="Cho phép thay đổi ảnh avatar"
             />
             <FormControlLabel
               control={
@@ -683,7 +864,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                   })}
                 />
               }
-              label="Allow adding members"
+              label="Cho phép thêm thành viên"
             />
             <FormControlLabel
               control={
@@ -695,7 +876,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                   })}
                 />
               }
-              label="Allow removing members"
+              label="Cho phép xóa thành viên"
             />
             <FormControlLabel
               control={
@@ -707,7 +888,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
                   })}
                 />
               }
-              label="Allow deleting group"
+              label="Cho phép xóa nhóm"
             />
           </Box>
         </DialogContent>
@@ -720,9 +901,9 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       
       {/* Confirm leave dialog */}
       <Dialog open={confirmLeaveOpen} onClose={() => setConfirmLeaveOpen(false)}>
-        <DialogTitle>Leave Group</DialogTitle>
+        <DialogTitle>Rời nhóm</DialogTitle>
         <DialogContent>
-          <Typography>Are you sure you want to leave this group?</Typography>
+          <Typography>Bạn có chắc chắn muốn rời nhóm này không?</Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmLeaveOpen(false)} disabled={actionLoading}>

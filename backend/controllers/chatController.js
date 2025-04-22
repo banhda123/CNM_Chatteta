@@ -4,6 +4,7 @@ import { MessageModel } from "../models/MessageModel.js";
 import { UsersModel } from "../models/UserModel.js";
 import fs from 'fs';
 import { uploadToCloudinary } from '../config/Cloudinary.js';
+import { getIO } from '../config/Socket.js';
 
 export const createConversation = async (userFrom, userTo) => {
   console.log(userFrom, userTo);
@@ -318,7 +319,7 @@ export const seenMessage = async (idConversationOrReq, res) => {
   } else {
     console.error("Invalid parameters for seenMessage");
     if (res) {
-      return res.status(400).json({ error: "Invalid conversation ID" });
+      return res.status(400).json({ error: "ID cuộc trò chuyện không hợp lệ" });
     }
     return false;
   }
@@ -337,7 +338,7 @@ export const seenMessage = async (idConversationOrReq, res) => {
   } catch (error) {
     console.error("Error updating messages:", error);
     if (res) {
-      res.status(500).json({ error: "Failed to mark messages as seen" });
+      res.status(500).json({ error: "Không thể đánh dấu tin nhắn đã đọc" });
     }
     return false;
   }
@@ -349,19 +350,19 @@ export const revokeMessage = async (req, res) => {
     const userId = req.user._id;
 
     if (!messageId) {
-      return res.status(400).json({ error: "Message ID is required" });
+      return res.status(400).json({ error: "Cần cung cấp ID tin nhắn" });
     }
 
     // Tìm tin nhắn
     const message = await MessageModel.findById(messageId);
     
     if (!message) {
-      return res.status(404).json({ error: "Message not found" });
+      return res.status(404).json({ error: "Không tìm thấy tin nhắn" });
     }
 
     // Kiểm tra người thu hồi tin nhắn có phải là người gửi không
     if (message.sender.toString() !== userId.toString()) {
-      return res.status(403).json({ error: "You can only revoke your own messages" });
+      return res.status(403).json({ error: "Bạn chỉ có thể thu hồi tin nhắn của chính mình" });
     }
 
     // Cập nhật tình trạng thu hồi tin nhắn
@@ -374,7 +375,7 @@ export const revokeMessage = async (req, res) => {
     });
   } catch (error) {
     console.error("Error revoking message:", error);
-    return res.status(500).json({ error: "Failed to revoke message" });
+    return res.status(500).json({ error: "Không thể thu hồi tin nhắn" });
   }
 };
 
@@ -384,14 +385,14 @@ export const deleteMessage = async (req, res) => {
     const userId = req.user._id;
 
     if (!messageId) {
-      return res.status(400).json({ error: "Message ID is required" });
+      return res.status(400).json({ error: "Cần cung cấp ID tin nhắn" });
     }
 
     // Tìm tin nhắn
     const message = await MessageModel.findById(messageId);
     
     if (!message) {
-      return res.status(404).json({ error: "Message not found" });
+      return res.status(404).json({ error: "Không tìm thấy tin nhắn" });
     }
 
     // Không cần kiểm tra người xóa có phải người gửi không
@@ -399,7 +400,7 @@ export const deleteMessage = async (req, res) => {
     
     // Kiểm tra xem người dùng đã xóa tin nhắn này chưa
     if (message.deletedBy && message.deletedBy.some(id => id.toString() === userId.toString())) {
-      return res.status(400).json({ error: "Message already deleted by you" });
+      return res.status(400).json({ error: "Tin nhắn đã được bạn xóa trước đó" });
     }
     
     // Thêm userId vào mảng deletedBy
@@ -416,7 +417,7 @@ export const deleteMessage = async (req, res) => {
     });
   } catch (error) {
     console.error("Error deleting message:", error);
-    return res.status(500).json({ error: "Failed to delete message" });
+    return res.status(500).json({ error: "Không thể xóa tin nhắn" });
   }
 };
 
@@ -426,14 +427,14 @@ export const forwardMessage = async (req, res) => {
     const userId = req.user._id;
 
     if (!messageId || !conversationId) {
-      return res.status(400).json({ error: "Message ID and Conversation ID are required" });
+      return res.status(400).json({ error: "Cần cung cấp ID tin nhắn và ID cuộc trò chuyện" });
     }
 
     // Tìm tin nhắn gốc
     const originalMessage = await MessageModel.findById(messageId).populate('sender', 'name avatar');
     
     if (!originalMessage) {
-      return res.status(404).json({ error: "Original message not found" });
+      return res.status(404).json({ error: "Không tìm thấy tin nhắn gốc" });
     }
 
     // Tạo tin nhắn mới với nội dung được chuyển tiếp
@@ -474,7 +475,7 @@ export const forwardMessage = async (req, res) => {
     });
   } catch (error) {
     console.error("Error forwarding message:", error);
-    return res.status(500).json({ error: "Failed to forward message" });
+    return res.status(500).json({ error: "Không thể chuyển tiếp tin nhắn" });
   }
 };
 
@@ -555,7 +556,7 @@ export const addMemberToGroup = async (req, res) => {
     
     const systemMessage = new MessageModel({
       idConversation: conversationId,
-      content: `${req.user.name} added ${addedNames} to the group`,
+      content: `${req.user.name} đã thêm ${addedNames} vào nhóm`,
       type: 'system',
       seen: false,
       sender: userId,
@@ -576,6 +577,24 @@ export const addMemberToGroup = async (req, res) => {
         select: "name avatar"
       })
       .populate("admin", "name avatar");
+    
+    // Import socket.io instance
+    const io = getIO();
+    
+    // Notify all users in the conversation about the update
+    io.to(conversationId).emit('group_updated', updatedConversation);
+    
+    // Notify each newly added member individually
+    for (const memberId of newMemberIds) {
+      // For each new member, emit a 'member_added' event to their personal room
+      // This will allow their client to add the group to their conversation list
+      io.to(memberId).emit('member_added', { 
+        conversation: updatedConversation, 
+        member: { idUser: memberId }
+      });
+      
+      console.log(`🔔 Notifying user ${memberId} that they were added to group ${conversationId}`);
+    }
 
     return res.status(200).json({
       success: true,
@@ -626,11 +645,26 @@ export const removeMemberFromGroup = async (req, res) => {
       });
     }
 
-    // Check if the user is admin
+    // Check if the user is admin or admin2
     const isAdmin = conversation.admin && conversation.admin.toString() === userId.toString();
+    const isAdmin2 = conversation.admin2 && conversation.admin2.toString() === userId.toString();
     
-    // Only admin can remove members or members can remove themselves
-    if (!isAdmin && memberId !== userId.toString()) {
+    console.log('User ID:', userId.toString());
+    console.log('Admin ID:', conversation.admin ? conversation.admin.toString() : 'None');
+    console.log('Admin2 ID:', conversation.admin2 ? conversation.admin2.toString() : 'None');
+    console.log('Is Admin:', isAdmin);
+    console.log('Is Admin2:', isAdmin2);
+    
+    // Check if the member being removed is admin or admin2
+    const isRemovingAdmin = conversation.admin && conversation.admin.toString() === memberId;
+    const isRemovingAdmin2 = conversation.admin2 && conversation.admin2.toString() === memberId;
+    
+    // Admin can remove anyone, admin2 can remove regular members but not admin
+    // Members can remove themselves
+    if (
+      (!isAdmin && !isAdmin2 && memberId !== userId.toString()) || // Not admin/admin2 and not removing self
+      (isAdmin2 && isRemovingAdmin) // Admin2 trying to remove admin
+    ) {
       return res.status(403).json({ 
         success: false, 
         message: "You don't have permission to remove this member" 
@@ -666,14 +700,32 @@ export const removeMemberFromGroup = async (req, res) => {
     const systemMessage = new MessageModel({
       idConversation: conversationId,
       content: memberId === userId.toString() 
-        ? `${memberName} left the group` 
-        : `${req.user.name} removed ${memberName} from the group`,
+        ? `${memberName} đã rời khỏi nhóm` 
+        : `${req.user.name} đã xóa ${memberName} khỏi nhóm`,
       type: 'system',
       seen: false,
       sender: userId,
     });
     
     const savedMessage = await systemMessage.save();
+    
+    // Emit socket event to notify the removed user
+    const io = req.app.get('io');
+    if (io) {
+      // Emit to the room of the removed user
+      io.to(memberId).emit('member_removed', { 
+        conversation: conversation.toObject(), 
+        memberId, 
+        memberName 
+      });
+      
+      // Emit to the conversation room for other members
+      io.to(conversationId).emit('member_removed', { 
+        conversation: conversation.toObject(), 
+        memberId, 
+        memberName 
+      });
+    }
     
     // Update last message
     await updateLastMesssage({ 
@@ -777,7 +829,7 @@ export const leaveGroup = async (req, res) => {
     // Create system message about leaving
     const systemMessage = new MessageModel({
       idConversation: conversationId,
-      content: `${userName} left the group`,
+      content: `${userName} đã rời khỏi nhóm`,
       type: 'system',
       seen: false,
       sender: userId,
@@ -790,6 +842,29 @@ export const leaveGroup = async (req, res) => {
       idConversation: conversationId, 
       message: savedMessage._id 
     });
+
+    // Get updated conversation with populated members
+    const updatedConversation = await ConversationModel.findById(conversationId)
+      .populate({
+        path: "members.idUser",
+        select: "name avatar"
+      })
+      .populate("admin", "name avatar");
+    
+    // Get socket.io instance
+    const io = getIO();
+    
+    // Emit group_updated event to all members in the conversation
+    io.to(conversationId).emit('group_updated', updatedConversation);
+    
+    // Emit member_removed event to all members in the conversation
+    io.to(conversationId).emit('member_removed', { 
+      conversation: updatedConversation, 
+      memberId: userId,
+      memberName: userName
+    });
+    
+    console.log(`🔔 Notifying members that user ${userName} (${userId}) left group ${conversationId}`);
 
     return res.status(200).json({
       success: true,
@@ -852,12 +927,12 @@ export const updateGroupInfo = async (req, res) => {
     let updateMessage = "";
     if (name) {
       conversation.name = name;
-      updateMessage = `${req.user.name} changed the group name to ${name}`;
+      updateMessage = `${req.user.name} đã đổi tên nhóm thành ${name}`;
     }
 
     if (avatar) {
       conversation.avatar = avatar;
-      updateMessage = updateMessage || `${req.user.name} changed the group avatar`;
+      updateMessage = updateMessage || `${req.user.name} đã đổi ảnh đại diện nhóm`;
     }
 
     await conversation.save();
@@ -872,6 +947,29 @@ export const updateGroupInfo = async (req, res) => {
     });
     
     const savedMessage = await systemMessage.save();
+    
+    // Get IO instance
+    const io = getIO();
+    
+    // Emit group_updated event to all members
+    if (io) {
+      // Emit to all members of the conversation
+      conversation.members.forEach(member => {
+        if (member.idUser) {
+          io.to(member.idUser.toString()).emit('group_updated', {
+            conversationId,
+            name: conversation.name,
+            avatar: conversation.avatar,
+            updatedBy: req.user.name,
+            systemMessage: {
+              _id: savedMessage._id,
+              content: updateMessage,
+              createdAt: savedMessage.createdAt
+            }
+          });
+        }
+      });
+    }
     
     // Update last message
     await updateLastMesssage({ 
@@ -1021,7 +1119,7 @@ export const setAdmin2 = async (req, res) => {
     // Create system message about the change
     const systemMessage = new MessageModel({
       idConversation: conversationId,
-      content: `${req.user.name} đã đặt ${memberToPromote.idUser.name} làm phó nhóm`,
+      content: `${req.user.name} đã giao quyền phó nhóm cho ${memberToPromote.idUser.name}`,
       type: 'system',
       seen: false,
       sender: userId,
@@ -1043,6 +1141,21 @@ export const setAdmin2 = async (req, res) => {
         path: "members.idUser",
         select: "name avatar"
       });
+    
+    // Get socket.io instance
+    const io = getIO();
+    
+    // Emit group_updated event to all members in the conversation
+    io.to(conversationId).emit('group_updated', updatedConversation);
+    
+    // Emit a specific event for the user who was promoted to admin2
+    io.to(memberId).emit('admin2_assigned', { 
+      conversation: updatedConversation,
+      memberId: memberId,
+      assignedBy: req.user.name
+    });
+    
+    console.log(`🔔 Thông báo đến người dùng ${memberId}, họ đã được giao quyền phó nhóm trong group ${conversationId}`);
 
     return res.status(200).json({
       success: true,
@@ -1161,6 +1274,21 @@ export const removeAdmin2 = async (req, res) => {
         path: "members.idUser",
         select: "name avatar"
       });
+    
+    // Get socket.io instance
+    const io = getIO();
+    
+    // Emit group_updated event to all members in the conversation
+    io.to(conversationId).emit('group_updated', updatedConversation);
+    
+    // Emit a specific event for the user who was demoted from admin2
+    io.to(admin2Id).emit('admin2_removed', { 
+      conversation: updatedConversation,
+      memberId: admin2Id,
+      removedBy: req.user.name
+    });
+    
+    console.log(`🔔 Notifying user ${admin2Id} that their admin2 role was removed in group ${conversationId}`);
 
     return res.status(200).json({
       success: true,
@@ -1336,7 +1464,7 @@ export const uploadFile = async (req, res) => {
     // Tạo và lưu tin nhắn mới với file
     const newMessage = new MessageModel({
       idConversation,
-      content: content || `File: ${req.file.originalname}`,
+      content: content || `Tệp: ${req.file.originalname}`,
       type: detectedType,
       seen: false,
       sender,
@@ -1347,7 +1475,7 @@ export const uploadFile = async (req, res) => {
 
     console.log('📝 Lưu tin nhắn mới với dữ liệu:', {
       idConversation,
-      content: content || `File: ${req.file.originalname}`,
+      content: content || `Tệp: ${req.file.originalname}`,
       type: detectedType,
       fileUrl,
       fileName: req.file.originalname

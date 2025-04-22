@@ -120,7 +120,7 @@ const AddGroupMembersDialog = ({ open, onClose, conversation, onMembersAdded }) 
         onMembersAdded(response.conversation);
         handleClose();
       } else {
-        setError(response.message || 'Failed to add members');
+        setError(response.message || 'Không thể thêm thành viên');
       }
     } catch (error) {
       console.error('Error adding members:', error);
@@ -131,7 +131,7 @@ const AddGroupMembersDialog = ({ open, onClose, conversation, onMembersAdded }) 
       if (error.message === 'No token provided') {
         setError('You are not authenticated. Please log in again.');
       } else {
-        setError('Failed to add members. Please try again.');
+        setError('Không thể thêm thành viên. Vui lòng thử lại.');
       }
     } finally {
       setAdding(false);
@@ -244,7 +244,7 @@ const AddGroupMembersDialog = ({ open, onClose, conversation, onMembersAdded }) 
           variant="contained"
           disabled={adding || selectedFriends.length === 0}
         >
-          {adding ? <CircularProgress size={24} /> : 'Add Members'}
+          {adding ? <CircularProgress size={24} /> : 'Thêm thành viên'}
         </Button>
       </DialogActions>
     </Dialog>

@@ -156,13 +156,13 @@ export const ConnectSocket = (server) => {
         const message = await MessageModel.findById(messageId);
         
         if (!message) {
-          socket.emit("revoke_message_error", { error: "Message not found" });
+          socket.emit("revoke_message_error", { error: "Không tìm thấy tin nhắn" });
           return;
         }
         
         // Kiểm tra người thu hồi tin nhắn có phải là người gửi không
         if (message.sender.toString() !== userId) {
-          socket.emit("revoke_message_error", { error: "You can only revoke your own messages" });
+          socket.emit("revoke_message_error", { error: "Bạn chỉ có thể thu hồi tin nhắn của chính mình" });
           return;
         }
         
@@ -184,7 +184,7 @@ export const ConnectSocket = (server) => {
         });
       } catch (error) {
         console.error("Error revoking message via socket:", error);
-        socket.emit("revoke_message_error", { error: "Failed to revoke message" });
+        socket.emit("revoke_message_error", { error: "Không thể thu hồi tin nhắn" });
       }
     });
     
@@ -196,14 +196,14 @@ export const ConnectSocket = (server) => {
         const message = await MessageModel.findById(messageId);
         
         if (!message) {
-          socket.emit("delete_message_error", { error: "Message not found" });
+          socket.emit("delete_message_error", { error: "Không tìm thấy tin nhắn" });
           return;
         }
         
         // Không cần kiểm tra người xóa có phải người gửi không
         // Kiểm tra xem người dùng đã xóa tin nhắn này chưa
         if (message.deletedBy && message.deletedBy.some(id => id.toString() === userId)) {
-          socket.emit("delete_message_error", { error: "Message already deleted by you" });
+          socket.emit("delete_message_error", { error: "Tin nhắn đã được bạn xóa trước đó" });
           return;
         }
         
@@ -220,7 +220,7 @@ export const ConnectSocket = (server) => {
         socket.emit("message_deleted", { messageId, conversationId, forUser: userId });
       } catch (error) {
         console.error("Error deleting message via socket:", error);
-        socket.emit("delete_message_error", { error: "Failed to delete message" });
+        socket.emit("delete_message_error", { error: "Không thể xóa tin nhắn" });
       }
     });
 
@@ -231,7 +231,7 @@ export const ConnectSocket = (server) => {
         io.to(userFrom).to(userTo).emit("new_conversation", newConversation);
       } catch (error) {
         console.error("Error creating conversation:", error);
-        socket.emit("conversation_error", { message: "Failed to create conversation" });
+        socket.emit("conversation_error", { message: "Không thể tạo cuộc trò chuyện" });
       }
     });
 
@@ -259,7 +259,7 @@ export const ConnectSocket = (server) => {
         const message = await MessageModel.findById(messageId);
         
         if (!message) {
-          socket.emit("reaction_error", { error: "Message not found" });
+          socket.emit("reaction_error", { error: "Không tìm thấy tin nhắn" });
           return;
         }
 
@@ -290,7 +290,7 @@ export const ConnectSocket = (server) => {
         });
       } catch (error) {
         console.error("Error adding reaction:", error);
-        socket.emit("reaction_error", { error: "Failed to add reaction" });
+        socket.emit("reaction_error", { error: "Không thể thêm cảm xúc" });
       }
     });
     
@@ -303,7 +303,7 @@ export const ConnectSocket = (server) => {
         const message = await MessageModel.findById(messageId);
         
         if (!message) {
-          socket.emit("reaction_error", { error: "Message not found" });
+          socket.emit("reaction_error", { error: "Không tìm thấy tin nhắn" });
           return;
         }
         
@@ -330,7 +330,7 @@ export const ConnectSocket = (server) => {
         });
       } catch (error) {
         console.error("Error removing reaction:", error);
-        socket.emit("reaction_error", { error: "Failed to remove reaction" });
+        socket.emit("reaction_error", { error: "Không thể xóa cảm xúc" });
       }
     });
 
@@ -343,7 +343,7 @@ export const ConnectSocket = (server) => {
         const originalMessage = await MessageModel.findById(messageId).populate('sender', 'name avatar');
         
         if (!originalMessage) {
-          socket.emit("forward_message_error", { error: "Message not found" });
+          socket.emit("forward_message_error", { error: "Không tìm thấy tin nhắn" });
           return;
         }
 
@@ -386,7 +386,7 @@ export const ConnectSocket = (server) => {
         
       } catch (error) {
         console.error("Error forwarding message:", error);
-        socket.emit("forward_message_error", { error: "Failed to forward message" });
+        socket.emit("forward_message_error", { error: "Không thể chuyển tiếp tin nhắn" });
       }
     });
     

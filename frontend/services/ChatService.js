@@ -97,10 +97,32 @@ class ChatService {
       console.log('Removing member from conversation:', conversationId); // Debug log
       console.log('Member to remove:', memberId); // Debug log
       
-      const response = await axios.delete(
-        `${API_URL}/group/${conversationId}/members/${memberId}`,
-        config
-      );
+      // Get current user data to determine role
+      const userData = AuthService.getUserData();
+      const isAdmin = userData && userData._id === localStorage.getItem('adminId');
+      const isAdmin2 = userData && userData._id === localStorage.getItem('admin2Id');
+      
+      console.log('Current user role:', isAdmin ? 'admin' : isAdmin2 ? 'admin2' : 'member');
+      
+      let response;
+      
+      // Use different endpoints based on user role
+      if (isAdmin2 && !isAdmin) {
+        // For admin2, use a POST request to a different endpoint
+        console.log('Using admin2 endpoint for member removal');
+        response = await axios.post(
+          `${API_URL}/group/${conversationId}/admin2/remove/${memberId}`,
+          {},
+          config
+        );
+      } else {
+        // For admin, use the standard DELETE endpoint
+        console.log('Using standard admin endpoint for member removal');
+        response = await axios.delete(
+          `${API_URL}/group/${conversationId}/members/${memberId}`,
+          config
+        );
+      }
       
       console.log('Response data:', response.data); // Debug log
       console.log('Response status:', response.status); // Debug log
@@ -121,20 +143,39 @@ class ChatService {
   // Leave a group
   static async leaveGroup(conversationId, token) {
     try {
+      if (!token) {
+        throw new Error('No token provided');
+      }
+
+      // Remove 'Bearer ' if it's already included in the token
+      const cleanToken = token.replace('Bearer ', '');
+      
+      console.log('Clean token for leave group:', cleanToken); // Debug log
+      
       const config = {
         headers: {
-          Authorization: `Bearer ${token}`
+          'Authorization': `Bearer ${cleanToken}`,
+          'Content-Type': 'application/json'
         }
       };
       
-      const response = await axios.delete(
+      console.log('Leave group request config:', config); // Debug log
+      
+      // Using POST method to match the backend route
+      const response = await axios.post(
         `${API_URL}/group/leave/${conversationId}`,
+        {}, // Empty body for POST request
         config
       );
       
       return response.data;
     } catch (error) {
       console.error("Error leaving group:", error);
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+        console.error("Response status:", error.response.status);
+        console.error("Response headers:", error.response.headers);
+      }
       throw error;
     }
   }

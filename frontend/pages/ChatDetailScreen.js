@@ -453,28 +453,165 @@ const ChatUI = () => {
     });
     
     // Group updated event
-    SocketService.onGroupUpdated((updatedGroup) => {
-      console.log('🔔 Group updated:', updatedGroup);
+    SocketService.onGroupUpdated((data) => {
+      console.log('🔔 Group updated:', data);
+      
+      const { conversationId, name, avatar, updatedBy, systemMessage } = data;
+      
+      // Update conversations list with new group info
       setConversations(prev => 
-        prev.map(conv => 
-          conv._id === updatedGroup._id ? updatedGroup : conv
-        )
+        prev.map(conv => {
+          if (conv._id === conversationId) {
+            // Create a new object with updated properties
+            return {
+              ...conv,
+              name: name || conv.name,
+              avatar: avatar || conv.avatar
+            };
+          }
+          return conv;
+        })
       );
       
       // Update active conversation if it's the one that was updated
-      if (activeConversation && activeConversation._id === updatedGroup._id) {
-        setActiveConversation(updatedGroup);
+      if (activeConversation && activeConversation._id === conversationId) {
+        setActiveConversation(prev => ({
+          ...prev,
+          name: name || prev.name,
+          avatar: avatar || prev.avatar
+        }));
+        
+        // Add a system message to the UI about the update
+        if (systemMessage) {
+          const tempSystemMessage = {
+            _id: systemMessage._id || Date.now().toString(),
+            type: 'system',
+            content: systemMessage.content,
+            createdAt: systemMessage.createdAt || new Date(),
+            temporary: true // Mark as temporary so it doesn't duplicate with actual messages
+          };
+          
+          // Add the system message to the messages list
+          setMessages(prev => [...prev, tempSystemMessage]);
+        }
+      }
+    });
+    
+    // Admin2 assigned event - when the current user is assigned as admin2
+    SocketService.onAdmin2Assigned(({ conversation, memberId, assignedBy }) => {
+      console.log('🔔 User assigned as admin2:', { conversation, memberId, assignedBy });
+      
+      // Get current user data
+      const userData = AuthService.getUserData();
+      const currentUserId = userData?._id;
+      
+      // Check if the current user is the one being assigned as admin2
+      const isCurrentUserAssigned = memberId === currentUserId;
+      
+      if (isCurrentUserAssigned) {
+        console.log('Current user was assigned as admin2');
+        
+        // Update the conversation in the list
+        setConversations(prev => 
+          prev.map(conv => 
+            conv._id === conversation._id ? conversation : conv
+          )
+        );
+        
+        // Update active conversation if it's the one that was updated
+        if (activeConversation && activeConversation._id === conversation._id) {
+          setActiveConversation(conversation);
+          
+          // Add a system message to the UI about the admin2 assignment
+          const systemMessage = {
+            _id: Date.now().toString(),
+            type: 'system',
+            content: `${assignedBy}  đã giao quyền phó nhóm cho bạn`,
+            createdAt: new Date(),
+            temporary: true // Mark as temporary so it doesn't duplicate with actual messages
+          };
+          
+          // Add the system message to the messages list
+          setMessages(prev => [...prev, systemMessage]);
+        }
+      }
+    });
+    
+    // Admin2 removed event - when the current user's admin2 role is removed
+    SocketService.onAdmin2Removed(({ conversation, memberId, removedBy }) => {
+      console.log('🔔 Người dùng đã bị xoá phó nhóm:', { conversation, memberId, removedBy });
+      
+      // Get current user data
+      const userData = AuthService.getUserData();
+      const currentUserId = userData?._id;
+      
+      // Check if the current user is the one being removed from admin2
+      const isCurrentUserRemoved = memberId === currentUserId;
+      
+      if (isCurrentUserRemoved) {
+        console.log('Current user was removed from admin2 role');
+        
+        // Update the conversation in the list
+        setConversations(prev => 
+          prev.map(conv => 
+            conv._id === conversation._id ? conversation : conv
+          )
+        );
+        
+        // Update active conversation if it's the one that was updated
+        if (activeConversation && activeConversation._id === conversation._id) {
+          setActiveConversation(conversation);
+          
+          // Add a system message to the UI about the admin2 removal
+          const systemMessage = {
+            _id: Date.now().toString(),
+            type: 'system',
+            content: `${removedBy} đã xóa bạn khỏi phó nhóm`,
+            createdAt: new Date(),
+            temporary: true // Mark as temporary so it doesn't duplicate with actual messages
+          };
+          
+          // Add the system message to the messages list
+          setMessages(prev => [...prev, systemMessage]);
+        }
       }
     });
     
     // Member added to group event
     SocketService.onMemberAdded(({ conversation, member }) => {
-      console.log('🔔 Member added to group:', { conversation, member });
-      setConversations(prev => 
-        prev.map(conv => 
-          conv._id === conversation._id ? conversation : conv
-        )
+      console.log('🔔 Người dùng được thêm vào nhóm:', { conversation, member });
+      
+      // Get current user data
+      const userData = AuthService.getUserData();
+      const currentUserId = userData?._id;
+      
+      // Check if the current user is the one being added to the group
+      const isCurrentUserAdded = member && (
+        (member._id === currentUserId) || 
+        (member.idUser && member.idUser._id === currentUserId) ||
+        (member.idUser === currentUserId)
       );
+      
+      console.log('Is current user added to group:', isCurrentUserAdded);
+      
+      setConversations(prev => {
+        // Check if the conversation already exists in the list
+        const conversationExists = prev.some(conv => conv._id === conversation._id);
+        
+        if (conversationExists) {
+          // Update existing conversation
+          return prev.map(conv => 
+            conv._id === conversation._id ? conversation : conv
+          );
+        } else if (isCurrentUserAdded) {
+          // Add new conversation to the list if current user was added
+          console.log('Adding new group conversation to list:', conversation);
+          return [conversation, ...prev];
+        } else {
+          // No changes needed
+          return prev;
+        }
+      });
       
       // Update active conversation if it's the one that was updated
       if (activeConversation && activeConversation._id === conversation._id) {
@@ -483,30 +620,62 @@ const ChatUI = () => {
     });
     
     // Member removed from group event
-    SocketService.onMemberRemoved(({ conversation, memberId }) => {
-      console.log('🔔 Member removed from group:', { conversation, memberId });
-      setConversations(prev => 
-        prev.map(conv => 
-          conv._id === conversation._id ? conversation : conv
-        )
-      );
+    SocketService.onMemberRemoved(({ conversation, memberId, memberName }) => {
+      console.log('🔔 Người dùng được xóa khỏi nhóm:', { conversation, memberId, memberName });
       
-      // Update active conversation if it's the one that was updated
-      if (activeConversation && activeConversation._id === conversation._id) {
-        setActiveConversation(conversation);
-      }
+      // Get current user data
+      const userData = AuthService.getUserData();
+      const currentUserId = userData?._id;
       
-      // If current user was removed, close the conversation
-      if (memberId === userId) {
+      // Check if the current user is the one being removed
+      const isCurrentUserRemoved = memberId === currentUserId;
+      
+      if (isCurrentUserRemoved) {
+        console.log('Current user was removed from the group');
+        // Remove the conversation from the list if current user was removed
+        setConversations(prev => prev.filter(conv => conv._id !== conversation._id));
+        
+        // If the active conversation is the one the user was removed from, clear it
         if (activeConversation && activeConversation._id === conversation._id) {
           setActiveConversation(null);
+          setMessages([]);
+          // Navigate back to conversation list if needed
+          if (window.innerWidth <= 768) {
+            setShowConversationList(true);
+          }
+        }
+      } else {
+        // Update the conversation in the list with the new member list
+        setConversations(prev => 
+          prev.map(conv => 
+            conv._id === conversation._id ? conversation : conv
+          )
+        );
+        
+        // Update active conversation if it's the one that was updated
+        if (activeConversation && activeConversation._id === conversation._id) {
+          setActiveConversation(conversation);
+          
+          // Add a system message to the UI about the member leaving
+          if (memberName) {
+            const systemMessage = {
+              _id: Date.now().toString(),
+              type: 'system',
+              content: `${memberName} left the group`,
+              createdAt: new Date(),
+              temporary: true // Mark as temporary so it doesn't duplicate with actual messages
+            };
+            
+            // Add the system message to the messages list
+            setMessages(prev => [...prev, systemMessage]);
+          }
         }
       }
     });
     
     // User left group event
     SocketService.onGroupLeft(({ conversationId, userId: leftUserId }) => {
-      console.log('🔔 User left group:', { conversationId, userId: leftUserId });
+      console.log('🔔 Người dùng rời khỏi nhóm:', { conversationId, userId: leftUserId });    
       
       // If current user left the group, remove it from the list
       if (leftUserId === userId) {
@@ -537,7 +706,7 @@ const ChatUI = () => {
     
     // Group deleted event
     SocketService.onGroupDeleted(({ conversationId }) => {
-      console.log('🔔 Group deleted:', conversationId);
+      console.log('🔔 Nhóm đã bị xóa:', conversationId);
       setConversations(prev => prev.filter(conv => conv._id !== conversationId));
       
       // If active conversation is the one that was deleted, clear it
@@ -1469,7 +1638,7 @@ const ChatUI = () => {
       setGroupMembersDialogOpen(false);
     } catch (error) {
       console.error('Error leaving group:', error);
-      Alert.alert('Error', 'Failed to leave group chat');
+      Alert.alert('Lỗi', 'Không thể rời nhóm chat');
     }
   };
 
@@ -2200,14 +2369,14 @@ const ChatUI = () => {
                 <ListItemIcon>
                   <GroupAddIcon fontSize="small" />
                 </ListItemIcon>
-                <Typography>Create New Group</Typography>
+                <Typography>Tạo nhóm mới</Typography>
               </MenuItem>
               {activeConversation && activeConversation.type === 'group' && (
                 <MenuItem onClick={handleEditGroup}>
                   <ListItemIcon>
                     <EditIcon fontSize="small" />
                   </ListItemIcon>
-                  <Typography>Edit Group</Typography>
+                  <Typography>Chỉnh sửa nhóm</Typography>
                 </MenuItem>
               )}
               {activeConversation && activeConversation.type === 'group' && (
@@ -2215,20 +2384,20 @@ const ChatUI = () => {
                   <ListItemIcon>
                     <PeopleIcon fontSize="small" />
                   </ListItemIcon>
-                  <Typography>Manage Group Members</Typography>
+                  <Typography>Quản lý thành viên nhóm</Typography>
                 </MenuItem>
               )}
               <MenuItem onClick={() => setShowProfile(true)}>
                 <ListItemIcon>
                   <Avatar sx={{ width: 24, height: 24 }} src={user.avatar} />
                 </ListItemIcon>
-                <Typography>Profile</Typography>
+                <Typography>Hồ sơ cá nhân</Typography>
               </MenuItem>
               <MenuItem onClick={handleLogout}>
                 <ListItemIcon>
                   <ExitToAppIcon fontSize="small" />
                 </ListItemIcon>
-                <Typography>Logout</Typography>
+                <Typography>Đăng xuất</Typography>
               </MenuItem>
             </Menu>
           </Box>

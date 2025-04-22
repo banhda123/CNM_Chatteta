@@ -48,7 +48,7 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
 
   const handleSave = async () => {
     if (!groupName.trim()) {
-      setError('Group name is required');
+      setError('Tên nhóm không được để trống');
       return;
     }
 
@@ -86,7 +86,7 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
         onGroupUpdated(response.conversation);
         handleClose();
       } else {
-        setError(response.message || 'Failed to update group');
+        setError(response.message || 'Không thể cập nhật nhóm');
       }
     } catch (error) {
       console.error('Error updating group:', error);
@@ -97,7 +97,7 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
       if (error.message === 'No token provided') {
         setError('You are not authenticated. Please log in again.');
       } else {
-      setError('Failed to update group. Please try again.');
+      setError('Không thể cập nhật nhóm. Vui lòng thử lại.');
       }
     } finally {
       setLoading(false);
@@ -112,7 +112,7 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <DialogTitle>
-        Edit Group
+        Chỉnh sửa nhóm
         <IconButton
           aria-label="close"
           onClick={handleClose}
@@ -157,20 +157,20 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
           </Box>
           
           <Typography variant="caption" color="text.secondary">
-            Click the camera icon to change group avatar
+            Nhấp vào biểu tượng máy ảnh để thay đổi ảnh đại diện nhóm
           </Typography>
         </Box>
         
         <TextField
           autoFocus
           margin="dense"
-          label="Group Name"
+          label="Tên nhóm"
           type="text"
           fullWidth
           value={groupName}
           onChange={(e) => setGroupName(e.target.value)}
           error={!!error && !groupName.trim()}
-          helperText={!groupName.trim() && error ? 'Group name is required' : ''}
+          helperText={!groupName.trim() && error ? 'Tên nhóm không được để trống' : ''}
         />
         
         {error && !error.includes('Group name') && (
@@ -181,14 +181,14 @@ const EditGroupDialog = ({ open, onClose, conversation, onGroupUpdated }) => {
       </DialogContent>
       
       <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
+        <Button onClick={handleClose}>Hủy</Button>
         <Button 
           onClick={handleSave} 
           color="primary" 
           variant="contained"
           disabled={loading || !groupName.trim()}
         >
-          {loading ? <CircularProgress size={24} /> : 'Save Changes'}
+          {loading ? <CircularProgress size={24} /> : 'Lưu thay đổi'}
         </Button>
       </DialogActions>
     </Dialog>

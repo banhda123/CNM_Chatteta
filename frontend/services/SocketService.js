@@ -335,6 +335,22 @@ class SocketService {
       this.socket.on('forward_message_error', callback);
     }
   }
+  
+  // Listen for admin2 assigned event
+  static onAdmin2Assigned(callback) {
+    if (this.socket) {
+      this.socket.off('admin2_assigned'); // Remove any existing listeners
+      this.socket.on('admin2_assigned', callback);
+    }
+  }
+  
+  // Listen for admin2 removed event
+  static onAdmin2Removed(callback) {
+    if (this.socket) {
+      this.socket.off('admin2_removed'); // Remove any existing listeners
+      this.socket.on('admin2_removed', callback);
+    }
+  }
 }
 
-export default SocketService; 
+export default SocketService;
