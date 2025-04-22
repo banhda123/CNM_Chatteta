@@ -494,8 +494,111 @@ class ChatService {
       
       return response.data;
     } catch (error) {
-      console.error("Error forwarding message:", error);
-      throw error;
+      console.error('Error forwarding message:', error);
+      return { success: false, message: error.response?.data?.message || 'Failed to forward message' };
+    }
+  }
+  
+  // Pin a message in a group chat
+  static async pinMessage(messageId, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.post(
+        `${API_URL}/message/${messageId}/pin`,
+        {},
+        config
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error pinning message:', error);
+      return { success: false, message: error.response?.data?.message || 'Failed to pin message' };
+    }
+  }
+  
+  // Unpin a message in a group chat
+  static async unpinMessage(messageId, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.delete(
+        `${API_URL}/message/${messageId}/pin`,
+        { headers: config.headers }
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error unpinning message:', error);
+      return { success: false, message: error.response?.data?.message || 'Failed to unpin message' };
+    }
+  }
+  
+  // Get all pinned messages in a conversation
+  static async getPinnedMessages(conversationId, token) {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.get(
+        `${API_URL}/conversation/${conversationId}/pinned-messages`,
+        { headers: config.headers }
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error getting pinned messages:', error);
+      return { success: false, message: error.response?.data?.message || 'Failed to get pinned messages' };
+    }
+  }
+  
+  // Unpin a message in a group chat
+  static async unpinMessage(messageId, token) {
+    try {
+      const response = await axios.delete(
+        `${API_URL}/message/${messageId}/pin`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error unpinning message:', error);
+      return { success: false, message: error.response?.data?.message || 'Failed to unpin message' };
+    }
+  }
+  
+  // Get all pinned messages in a conversation
+  static async getPinnedMessages(conversationId, token) {
+    try {
+      const response = await axios.get(
+        `${API_URL}/conversation/${conversationId}/pinned-messages`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error getting pinned messages:', error);
+      return { success: false, message: error.response?.data?.message || 'Failed to get pinned messages' };
     }
   }
 

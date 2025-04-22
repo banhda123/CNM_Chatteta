@@ -74,6 +74,9 @@ import GroupMembersDialog from "../components/GroupMembersDialog";
 import EditGroupDialog from "../components/EditGroupDialog";
 import GifGallery from "../components/GifGallery"; // Import GifGallery component
 import GifIcon from '@mui/icons-material/Gif';
+import PinnedMessageBanner from "../components/PinnedMessageBanner";
+import PinnedMessagesDialog from "../components/PinnedMessagesDialog";
+import PinMessageButton from "../components/PinMessageButton";
 
 const ChatUI = () => {
   const route = useRoute();
@@ -113,6 +116,22 @@ const ChatUI = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedFilePreview, setSelectedFilePreview] = useState(null);
   const fileInputRef = useRef(null);
+  
+  // State for pinned messages functionality
+  const [pinnedMessagesDialogOpen, setPinnedMessagesDialogOpen] = useState(false);
+  const [selectedPinnedMessage, setSelectedPinnedMessage] = useState(null);
+
+  // Function to check if the current conversation is with Gemini AI
+  const isGeminiConversation = () => {
+    if (!activeConversation || activeConversation.type !== 'private') return false;
+    
+    // Get the other participant in the conversation
+    const otherUser = getOtherParticipant(activeConversation)?.idUser;
+    
+    // Check if the other user is Gemini AI (you might identify it by a specific ID or name)
+    return otherUser && otherUser.name === 'Gemini AI';
+  };
+
   const [typingUsers, setTypingUsers] = useState({});
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeoutRef = useRef(null);
@@ -1328,6 +1347,102 @@ const ChatUI = () => {
     };
   }, []);
 
+  // Xử lý sự kiện ghim và bỏ ghim tin nhắn
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('📌 Thiết lập listener cho ghim/bỏ ghim tin nhắn');
+    
+    const handleMessagePinned = (data) => {
+      if (!data || !data.message || !data.conversation) {
+        console.warn('⚠️ Nhận được dữ liệu không hợp lệ từ sự kiện message_pinned');
+        return;
+      }
+      
+      console.log(`📌 Tin nhắn đã được ghim: ${data.message._id}`);
+      
+      // Cập nhật tin nhắn trong danh sách tin nhắn hiện tại
+      if (activeConversation && activeConversation._id === data.conversation.toString()) {
+        // Update the messages array
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg._id === data.message._id ? {...msg, isPinned: true, pinnedBy: data.message.pinnedBy, pinnedAt: data.message.pinnedAt} : msg
+          )
+        );
+        
+        // Update the active conversation to reflect the pinned message
+        // This is crucial for components like PinnedMessageBanner to update immediately
+        setActiveConversation(prevConversation => ({
+          ...prevConversation,
+          pinnedMessages: prevConversation.pinnedMessages 
+            ? [data.message, ...prevConversation.pinnedMessages]
+            : [data.message]
+        }));
+        
+        // Thêm thông báo hệ thống nếu có
+        if (data.systemMessage) {
+          setMessages(prevMessages => [...prevMessages, data.systemMessage]);
+          // Cuộn xuống tin nhắn mới
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, 100);
+        }
+      }
+    };
+    
+    const handleMessageUnpinned = (data) => {
+      if (!data || !data.messageId || !data.conversation) {
+        console.warn('⚠️ Nhận được dữ liệu không hợp lệ từ sự kiện message_unpinned');
+        return;
+      }
+      
+      console.log(`📌 Tin nhắn đã bỏ ghim: ${data.messageId}`);
+      
+      // Cập nhật tin nhắn trong danh sách tin nhắn hiện tại
+      if (activeConversation && activeConversation._id === data.conversation.toString()) {
+        // Update the messages array
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg._id === data.messageId ? {...msg, isPinned: false, pinnedBy: null, pinnedAt: null} : msg
+          )
+        );
+        
+        // Update the active conversation to reflect the unpinned message
+        // This is crucial for components like PinnedMessageBanner to update immediately
+        setActiveConversation(prevConversation => {
+          if (prevConversation.pinnedMessages) {
+            return {
+              ...prevConversation,
+              pinnedMessages: prevConversation.pinnedMessages.filter(
+                msg => msg._id !== data.messageId
+              )
+            };
+          }
+          return prevConversation;
+        });
+        
+        // Thêm thông báo hệ thống nếu có
+        if (data.systemMessage) {
+          setMessages(prevMessages => [...prevMessages, data.systemMessage]);
+          // Cuộn xuống tin nhắn mới
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, 100);
+        }
+      }
+    };
+    
+    // Đăng ký event listener
+    SocketService.onMessagePinned(handleMessagePinned);
+    SocketService.onMessageUnpinned(handleMessageUnpinned);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('message_pinned');
+      SocketService.removeListener('message_unpinned');
+    };
+  }, [activeConversation]);
+  
   // Xử lý cập nhật danh sách cuộc trò chuyện khi có tin nhắn mới
   useEffect(() => {
     if (!SocketService.socket) return;
@@ -2690,6 +2805,24 @@ const ChatUI = () => {
               </Toolbar>
             </AppBar>
 
+            {/* Pinned Message Banner - Fixed Position */}
+            {activeConversation && activeConversation.type === 'group' && (
+              <Box sx={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                <PinnedMessageBanner 
+                  conversation={activeConversation}
+                  onViewAllPinned={() => setPinnedMessagesDialogOpen(true)}
+                  onUnpinMessage={(messageId) => {
+                    // Update the messages list to reflect the unpinned status
+                    setMessages(prevMessages => 
+                      prevMessages.map(msg => 
+                        msg._id === messageId ? {...msg, isPinned: false} : msg
+                      )
+                    );
+                  }}
+                />
+              </Box>
+            )}
+            
             {/* Messages */}
             <Box
               sx={{
@@ -2703,6 +2836,8 @@ const ChatUI = () => {
                 backgroundSize: "410px 410px",
               }}
             >
+              {/* Pinned Message Banner moved to fixed position */}
+
               <Container maxWidth="md" disableGutters>
                 {loading.messages ? (
                   <Box display="flex" justifyContent="center" pt={4}>
@@ -3090,11 +3225,29 @@ const ChatUI = () => {
                                 
                                 {/* Add MessageReactions component - only for non-system messages */}
                                 {!message.isRevoked && message.type !== 'system' && (
-                                  <MessageReactions 
-                                    message={message} 
-                                    userId={userId} 
-                                    onAddReaction={handleAddReaction} 
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                    <MessageReactions 
+                                      message={message} 
+                                      userId={userId} 
+                                      onAddReaction={handleAddReaction} 
+                                    />
+                                    
+                                    {/* Add Pin Message Button for group chats */}
+                                    {activeConversation && activeConversation.type === 'group' && (
+                                      <PinMessageButton
+                                        message={message}
+                                        conversation={activeConversation}
+                                        onPinStatusChange={(messageId, isPinned) => {
+                                          // Update the messages list to reflect the pinned/unpinned status
+                                          setMessages(prevMessages => 
+                                            prevMessages.map(msg => 
+                                              msg._id === messageId ? {...msg, isPinned: isPinned} : msg
+                                            )
+                                          );
+                                        }}
+                                      />
+                                    )}
+                                  </Box>
                                 )}
                               </Box>
                             </Box>
@@ -3710,6 +3863,15 @@ const ChatUI = () => {
           onClose={() => setEditGroupDialogOpen(false)}
           conversation={activeConversation}
           onGroupUpdated={handleGroupUpdated}
+        />
+      )}
+      
+      {/* Pinned Messages Dialog */}
+      {activeConversation && (
+        <PinnedMessagesDialog
+          open={pinnedMessagesDialogOpen}
+          onClose={() => setPinnedMessagesDialogOpen(false)}
+          conversation={activeConversation}
         />
       )}
     </Box>

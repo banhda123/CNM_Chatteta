@@ -339,15 +339,21 @@ export const ConnectSocket = (server) => {
       try {
         const { messageId, conversationId, userId } = data;
         
-        // Tìm tin nhắn gốc và populate thông tin người gửi
-        const originalMessage = await MessageModel.findById(messageId).populate('sender', 'name avatar');
-        
-        if (!originalMessage) {
-          socket.emit("forward_message_error", { error: "Không tìm thấy tin nhắn" });
+        if (!messageId || !conversationId || !userId) {
+          socket.emit("forward_message_error", { error: "Thiếu thông tin cần thiết" });
           return;
         }
-
-        // Tạo tin nhắn mới với nội dung được chuyển tiếp
+        
+        // Tìm tin nhắn gốc
+        const originalMessage = await MessageModel.findById(messageId)
+          .populate('sender', 'name avatar');
+        
+        if (!originalMessage) {
+          socket.emit("forward_message_error", { error: "Không tìm thấy tin nhắn gốc" });
+          return;
+        }
+        
+        // Tạo tin nhắn mới từ tin nhắn gốc
         const forwardedMessage = new MessageModel({
           idConversation: conversationId,
           content: originalMessage.content,
@@ -387,6 +393,115 @@ export const ConnectSocket = (server) => {
       } catch (error) {
         console.error("Error forwarding message:", error);
         socket.emit("forward_message_error", { error: "Không thể chuyển tiếp tin nhắn" });
+      }
+    });
+    
+    // Handle pin message event
+    socket.on("pin_message", async (data) => {
+      try {
+        const { messageId } = data;
+        
+        if (!messageId) {
+          socket.emit("pin_message_error", { error: "Thiếu ID tin nhắn" });
+          return;
+        }
+        
+        // Find the message to be pinned
+        const message = await MessageModel.findById(messageId)
+          .populate('sender', 'name avatar')
+          .populate('pinnedBy', 'name avatar');
+        
+        if (!message) {
+          socket.emit("pin_message_error", { error: "Không tìm thấy tin nhắn" });
+          return;
+        }
+        
+        // Find the conversation to check permissions
+        const conversation = await ConversationModel.findById(message.idConversation);
+        if (!conversation) {
+          socket.emit("pin_message_error", { error: "Không tìm thấy cuộc trò chuyện" });
+          return;
+        }
+        
+        // Tạo tin nhắn hệ thống
+        const systemMessage = new MessageModel({
+          idConversation: message.idConversation,
+          content: `${message.pinnedBy?.name || 'Ai đó'} đã ghim một tin nhắn`,
+          type: 'system',
+          sender: message.pinnedBy?._id || message.sender._id,
+          createdAt: new Date(),
+          systemType: 'pin_message',
+          referencedMessage: message._id
+        });
+        
+        // Lưu tin nhắn hệ thống
+        await systemMessage.save();
+        
+        // Populate sender cho tin nhắn hệ thống
+        await systemMessage.populate('sender', 'name avatar');
+        
+        // Emit the event to all users in the conversation
+        io.to(message.idConversation.toString()).emit("message_pinned", {
+          message: message,
+          conversation: conversation._id,
+          systemMessage: systemMessage
+        });
+        
+      } catch (error) {
+        console.error("Error pinning message via socket:", error);
+        socket.emit("pin_message_error", { error: "Không thể ghim tin nhắn" });
+      }
+    });
+    
+    // Handle unpin message event
+    socket.on("unpin_message", async (data) => {
+      try {
+        const { messageId } = data;
+        
+        if (!messageId) {
+          socket.emit("unpin_message_error", { error: "Thiếu ID tin nhắn" });
+          return;
+        }
+        
+        // Find the message to be unpinned
+        const message = await MessageModel.findById(messageId)
+          .populate('sender', 'name avatar');
+        
+        if (!message) {
+          socket.emit("unpin_message_error", { error: "Không tìm thấy tin nhắn" });
+          return;
+        }
+        
+        // Get the user who is unpinning the message (from socket)
+        const user = socket.user;
+        
+        // Tạo tin nhắn hệ thống
+        const systemMessage = new MessageModel({
+          idConversation: message.idConversation,
+          content: `${user?.name || 'Ai đó'} đã bỏ ghim một tin nhắn`,
+          type: 'system',
+          sender: user?._id || message.sender._id,
+          createdAt: new Date(),
+          systemType: 'unpin_message',
+          referencedMessage: message._id
+        });
+        
+        // Lưu tin nhắn hệ thống
+        await systemMessage.save();
+        
+        // Populate sender cho tin nhắn hệ thống
+        await systemMessage.populate('sender', 'name avatar');
+        
+        // Emit the event to all users in the conversation
+        io.to(message.idConversation.toString()).emit("message_unpinned", {
+          messageId: message._id,
+          conversation: message.idConversation,
+          systemMessage: systemMessage
+        });
+        
+      } catch (error) {
+        console.error("Error unpinning message via socket:", error);
+        socket.emit("unpin_message_error", { error: "Không thể bỏ ghim tin nhắn" });
       }
     });
     

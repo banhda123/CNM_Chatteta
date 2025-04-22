@@ -351,6 +351,35 @@ class SocketService {
       this.socket.on('admin2_removed', callback);
     }
   }
+  
+  // Message pinning functionality
+  static pinMessage(messageId) {
+    if (this.socket && messageId) {
+      this.socket.emit('pin_message', { messageId });
+    }
+  }
+  
+  static unpinMessage(messageId) {
+    if (this.socket && messageId) {
+      this.socket.emit('unpin_message', { messageId });
+    }
+  }
+  
+  // Listen for message pinned event
+  static onMessagePinned(callback) {
+    if (this.socket) {
+      this.socket.off('message_pinned'); // Remove any existing listeners
+      this.socket.on('message_pinned', callback);
+    }
+  }
+  
+  // Listen for message unpinned event
+  static onMessageUnpinned(callback) {
+    if (this.socket) {
+      this.socket.off('message_unpinned'); // Remove any existing listeners
+      this.socket.on('message_unpinned', callback);
+    }
+  }
 }
 
 export default SocketService;

@@ -18,7 +18,10 @@ import {
   setAdmin2,
   removeAdmin2,
   updateGroupPermissions,
-  uploadFile
+  uploadFile,
+  pinMessage,
+  unpinMessage,
+  getPinnedMessages
 } from "../controllers/chatController.js";
 import { isAuth } from "../utils/index.js";
 import multer from "multer";
@@ -72,6 +75,11 @@ ChatRouter.delete("/group/:conversationId", isAuth, deleteGroup);
 ChatRouter.post("/group/members", isAuth, addMemberToGroup);
 ChatRouter.delete("/group/:conversationId/members/:memberId", isAuth, removeMemberFromGroup);
 ChatRouter.post("/group/leave/:conversationId", isAuth, leaveGroup);
+
+// Message pinning routes
+ChatRouter.post("/message/:messageId/pin", isAuth, pinMessage);
+ChatRouter.delete("/message/:messageId/pin", isAuth, unpinMessage);
+ChatRouter.get("/conversation/:conversationId/pinned-messages", isAuth, getPinnedMessages);
 
 // Admin2 and permissions routes
 ChatRouter.post("/group/admin2", isAuth, setAdmin2);

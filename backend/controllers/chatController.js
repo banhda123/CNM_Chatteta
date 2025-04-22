@@ -942,6 +942,7 @@ export const updateGroupInfo = async (req, res) => {
       idConversation: conversationId,
       content: updateMessage,
       type: 'system',
+      systemType: name ? 'change_group_name' : 'change_group_avatar',
       seen: false,
       sender: userId,
     });
@@ -1546,4 +1547,290 @@ export const uploadFile = async (req, res) => {
     console.error("Error uploading file:", error);
     return res.status(500).json({ error: "Lỗi khi tải file lên server" });
   }
+};
+
+// Pin a message in a group chat
+export const pinMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    
+    // Find the message
+    const message = await MessageModel.findById(messageId);
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: "Message not found"
+      });
+    }
+    
+    // Find the conversation to check permissions
+    const conversation = await ConversationModel.findById(message.idConversation);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: "Conversation not found"
+      });
+    }
+    
+    // Check if it's a group conversation
+    if (conversation.type !== "group") {
+      return res.status(400).json({
+        success: false,
+        message: "Pinning messages is only available in group chats"
+      });
+    }
+    
+    // Check if user is a member of the group
+    const isMember = conversation.members.some(
+      member => member.idUser.toString() === req.user._id.toString()
+    );
+    
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not a member of this group"
+      });
+    }
+    
+    // Check permissions (only admin, admin2, or based on group permissions)
+    const isAdmin = conversation.admin.toString() === req.user._id.toString();
+    const isAdmin2 = conversation.admin2 && conversation.admin2.toString() === req.user._id.toString();
+    const canPinMessages = conversation.permissions?.pinMessages || false;
+    
+    if (!isAdmin && !isAdmin2 && !canPinMessages) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to pin messages in this group"
+      });
+    }
+    
+    // Update the message
+    message.isPinned = true;
+    message.pinnedBy = req.user._id;
+    message.pinnedAt = new Date();
+    await message.save();
+    
+    // Create a system message about the pinned message
+    const systemMessage = new MessageModel({
+      idConversation: message.idConversation,
+      sender: req.user._id,
+      content: `${req.user.name} đã ghim một tin nhắn`,
+      type: "system",
+      systemType: "pin_message",
+      referencedMessage: message._id,
+      seen: false
+    });
+    
+    await systemMessage.save();
+    
+    // Update last message
+    await updateLastMesssage({
+      idConversation: message.idConversation,
+      message: systemMessage._id
+    });
+    
+    // Get the populated message to return
+    const populatedMessage = await MessageModel.findById(message._id)
+      .populate("sender", "name avatar")
+      .populate("pinnedBy", "name avatar");
+    
+    // Emit socket event for real-time updates
+    const io = getIO();
+    if (io) {
+      io.to(message.idConversation.toString()).emit("message_pinned", {
+        message: populatedMessage,
+        systemMessage,
+        conversation: conversation._id
+      });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: "Message pinned successfully",
+      pinnedMessage: populatedMessage,
+      systemMessage
+    });
+    
+  } catch (error) {
+    console.error("Error pinning message:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error"
+    });
+  }
+};
+
+// Unpin a message in a group chat
+export const unpinMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    
+    // Find the message
+    const message = await MessageModel.findById(messageId);
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: "Message not found"
+      });
+    }
+    
+    // Check if the message is pinned
+    if (!message.isPinned) {
+      return res.status(400).json({
+        success: false,
+        message: "This message is not pinned"
+      });
+    }
+    
+    // Find the conversation to check permissions
+    const conversation = await ConversationModel.findById(message.idConversation);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: "Conversation not found"
+      });
+    }
+    
+    // Check if user is a member of the group
+    const isMember = conversation.members.some(
+      member => member.idUser.toString() === req.user._id.toString()
+    );
+    
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not a member of this group"
+      });
+    }
+    
+    // Check permissions (admin, admin2, the user who pinned it, or based on group permissions)
+    const isAdmin = conversation.admin.toString() === req.user._id.toString();
+    const isAdmin2 = conversation.admin2 && conversation.admin2.toString() === req.user._id.toString();
+    const isPinner = message.pinnedBy && message.pinnedBy.toString() === req.user._id.toString();
+    const canPinMessages = conversation.permissions?.pinMessages || false;
+    
+    if (!isAdmin && !isAdmin2 && !isPinner && !canPinMessages) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to unpin this message"
+      });
+    }
+    
+    // Update the message
+    message.isPinned = false;
+    message.pinnedBy = null;
+    message.pinnedAt = null;
+    await message.save();
+    
+    // Create a system message about the unpinned message
+    const systemMessage = new MessageModel({
+      idConversation: message.idConversation,
+      sender: req.user._id,
+      content: `${req.user.name} đã bỏ ghim một tin nhắn`,
+      type: "system",
+      systemType: "unpin_message",
+      referencedMessage: message._id,
+      seen: false
+    });
+    
+    await systemMessage.save();
+    
+    // Update last message
+    await updateLastMesssage({
+      idConversation: message.idConversation,
+      message: systemMessage._id
+    });
+    
+    // Emit socket event for real-time updates
+    const io = getIO();
+    if (io) {
+      io.to(message.idConversation.toString()).emit("message_unpinned", {
+        messageId: message._id,
+        systemMessage,
+        conversation: conversation._id
+      });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: "Message unpinned successfully",
+      messageId: message._id,
+      systemMessage
+    });
+    
+  } catch (error) {
+    console.error("Error unpinning message:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error"
+    });
+  }
+};
+
+// Get all pinned messages in a conversation
+export const getPinnedMessages = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    
+    // Find the conversation
+    const conversation = await ConversationModel.findById(conversationId);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: "Conversation not found"
+      });
+    }
+    
+    // Check if user is a member of the conversation
+    const isMember = conversation.members.some(
+      member => member.idUser.toString() === req.user._id.toString()
+    );
+    
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not a member of this conversation"
+      });
+    }
+    
+    // Get all pinned messages in the conversation
+    const pinnedMessages = await MessageModel.find({
+      idConversation: conversationId,
+      isPinned: true
+    }).populate("sender", "name avatar")
+      .populate("pinnedBy", "name avatar")
+      .sort({ pinnedAt: -1 });
+    
+    return res.status(200).json({
+      success: true,
+      pinnedMessages
+    });
+    
+  } catch (error) {
+    console.error("Error getting pinned messages:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error"
+    });
+  }
+};
+
+export default {
+  getConversations: getAllConversationByUser,
+  createConversation,
+  getMessages: getAllMessageByConversation,
+  sendMessage: saveMessage,
+  markAsSeen: seenMessage,
+  createGroupConversation,
+  addMemberToGroup,
+  removeMemberFromGroup,
+  leaveGroup,
+  deleteGroup,
+  updateGroupInfo,
+  revokeMessage,
+  deleteMessage,
+  forwardMessage,
+  pinMessage,
+  unpinMessage,
+  getPinnedMessages
 };

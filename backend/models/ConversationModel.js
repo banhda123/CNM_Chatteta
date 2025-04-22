@@ -72,6 +72,10 @@ const ConversationSchema = new Schema(
       deleteGroup: {
         type: Boolean,
         default: true
+      },
+      pinMessages: {
+        type: Boolean,
+        default: true
       }
     }
   },

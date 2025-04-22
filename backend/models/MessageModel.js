@@ -16,8 +16,19 @@ const MessageSchema = new Schema(
     content: String,
     type: {
       type: String,
-      enum: ["text", "file", "image", "audio", "video", "pdf", "doc", "excel", "presentation", "system", "gif"],
+      enum: ["text", "image", "file", "video", "audio", "system", "pdf", "doc", "excel", "presentation", "gif"],
       default: "text"
+    },
+    systemType: {
+      type: String,
+      enum: ["pin_message", "unpin_message", "add_member", "remove_member", "leave_group", "change_group_name", "change_group_avatar"],
+      required: function() {
+        return this.type === 'system';
+      }
+    },
+    referencedMessage: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Message'
     },
     seen: Boolean,
     fileUrl: {
@@ -69,6 +80,19 @@ const MessageSchema = new Schema(
     },
     originalSenderAvatar: {
       type: String,
+      default: null
+    },
+    isPinned: {
+      type: Boolean,
+      default: false
+    },
+    pinnedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null
+    },
+    pinnedAt: {
+      type: Date,
       default: null
     }
   },
