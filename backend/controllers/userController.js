@@ -311,7 +311,7 @@ export const acceptFriend = async (req, res) => {
 
     // Tạo cuộc trò chuyện mới
     const newConversation = new ConversationModel({
-      type: "single",
+      type: "private",
       members: [{ idUser: userFrom }, { idUser: userTo }],
     });
     await newConversation.save();

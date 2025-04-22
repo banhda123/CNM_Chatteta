@@ -98,36 +98,53 @@ export const ConnectSocket = (server) => {
     });
 
     socket.on("send_message", async (data) => {
-      const newMessage = await saveMessage(data);
-      await updateLastMesssage({
-        idConversation: newMessage.idConversation,
-        message: newMessage._id,
-      });
-
-      // Emit to the conversation room for real-time chat updates
-      io.to(newMessage.idConversation.toString()).emit(
-        "new_message",
-        newMessage
-      );
-      
-      // Emit to all users in the conversation to update their conversation list
-      const conversation = await ConversationModel.findById(newMessage.idConversation)
-        .populate({
-          path: "members.idUser",
-          select: { name: 1, avatar: 1 }
-        })
-        .populate("lastMessage");
+      try {
+        const newMessage = await saveMessage(data);
         
-      if (conversation && conversation.members) {
-        // Emit to each member of the conversation to update their list
-        conversation.members.forEach(member => {
-          if (member.idUser && member.idUser._id) {
-            io.to(member.idUser._id.toString()).emit("update_conversation_list", {
-              conversation: conversation,
-              newMessage: newMessage
-            });
-          }
+        // Kiểm tra nếu tin nhắn không được lưu thành công
+        if (!newMessage) {
+          console.error("Failed to save message");
+          return;
+        }
+        
+        await updateLastMesssage({
+          idConversation: newMessage.idConversation,
+          message: newMessage._id,
         });
+
+        // Emit to the conversation room for real-time chat updates
+        io.to(newMessage.idConversation.toString()).emit(
+          "new_message",
+          newMessage
+        );
+        
+        // Ghi log thêm thông tin về loại tin nhắn đã gửi
+        console.log(`📨 Tin nhắn mới đã được gửi - ID: ${newMessage._id}, Loại: ${newMessage.type}`);
+        
+        // Get the updated conversation with populated data
+        const conversation = await ConversationModel.findById(newMessage.idConversation)
+          .populate({
+            path: "members.idUser",
+            select: { name: 1, avatar: 1 }
+          })
+          .populate("lastMessage");
+          
+        if (conversation && conversation.members) {
+          console.log(`📣 Cập nhật danh sách cuộc trò chuyện cho ${conversation.members.length} thành viên`);
+          
+          // Emit update_conversation_list to each member to move the conversation to the top
+          conversation.members.forEach(member => {
+            if (member.idUser && member.idUser._id) {
+              console.log(`👤 Gửi cập nhật cho user: ${member.idUser._id}`);
+              io.to(member.idUser._id.toString()).emit("update_conversation_list", {
+                conversation: conversation,
+                newMessage: newMessage
+              });
+            }
+          });
+        }
+      } catch (error) {
+        console.error("Error handling send_message:", error);
       }
     });
 
@@ -361,10 +378,10 @@ export const ConnectSocket = (server) => {
           .populate('sender', 'name avatar')
           .populate('originalSender', 'name avatar');
 
-        // Gửi tin nhắn mới đến tất cả người dùng trong cuộc trò chuyện
+        // CHỈ gửi tin nhắn tới phòng cuộc trò chuyện đích
         io.to(conversationId).emit("new_message", populatedMessage);
         
-        // Thông báo thành công cho người gửi
+        // Thông báo thành công cho người gửi - chỉ gửi cho client gọi socket
         socket.emit("forward_message_success", populatedMessage);
         
       } catch (error) {

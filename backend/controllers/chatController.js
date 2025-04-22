@@ -2,11 +2,13 @@ import mongoose from "mongoose";
 import { ConversationModel } from "../models/ConversationModel.js";
 import { MessageModel } from "../models/MessageModel.js";
 import { UsersModel } from "../models/UserModel.js";
+import fs from 'fs';
+import { uploadToCloudinary } from '../config/Cloudinary.js';
 
 export const createConversation = async (userFrom, userTo) => {
   console.log(userFrom, userTo);
   const newConversation = new ConversationModel({
-    type: "single",
+    type: "private",
     lastMessage: "",
     members: [],
   });
@@ -260,10 +262,27 @@ export const saveMessage = async (dataOrReq, res) => {
 };
 
 export const updateLastMesssage = async ({ idConversation, message }) => {
-  console.log(idConversation, message);
-  const conversation = await ConversationModel.findById(idConversation);
-  conversation.lastMessage = message;
-  await conversation.save();
+  try {
+    if (!idConversation || !message) {
+      console.error("Missing idConversation or message ID in updateLastMesssage");
+      return false;
+    }
+    
+    console.log(`Updating last message for conversation ${idConversation} to message ${message}`);
+    const conversation = await ConversationModel.findById(idConversation);
+    
+    if (!conversation) {
+      console.error(`Conversation with ID ${idConversation} not found`);
+      return false;
+    }
+    
+    conversation.lastMessage = message;
+    await conversation.save();
+    return true;
+  } catch (error) {
+    console.error("Error in updateLastMesssage:", error);
+    return false;
+  }
 };
 
 export const getAllMessageByConversation = async (req, res) => {
@@ -1244,5 +1263,159 @@ export const updateGroupPermissions = async (req, res) => {
       message: "Failed to update group permissions", 
       error: error.message 
     });
+  }
+};
+
+export const uploadFile = async (req, res) => {
+  try {
+    // Xử lý tệp tải lên
+    if (!req.file) {
+      return res.status(400).json({ error: "Không có file nào được tải lên" });
+    }
+
+    // Lấy thông tin từ form data
+    const { idConversation, sender, content, type } = req.body;
+    const socketId = req.body.socketId; // Lấy socketId nếu có
+    
+    console.log('📁 File đã được tải lên:', {
+      filename: req.file.filename,
+      path: req.file.path,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+      idConversation,
+      sender,
+      type
+    });
+
+    // Phát hiện loại file
+    let detectedType = type || 'file';
+    if (!type) {
+      if (req.file.mimetype.startsWith('image/')) {
+        detectedType = 'image';
+      } else if (req.file.mimetype.startsWith('video/')) {
+        detectedType = 'video';
+        console.log('🎬 Phát hiện file là video, xử lý đặc biệt');
+      } else if (req.file.mimetype.startsWith('audio/')) {
+        detectedType = 'audio';
+      } else if (req.file.mimetype.includes('pdf')) {
+        detectedType = 'pdf';
+      } else if (req.file.mimetype.includes('word') || 
+                req.file.mimetype.includes('document') || 
+                req.file.originalname.endsWith('.doc') || 
+                req.file.originalname.endsWith('.docx')) {
+        detectedType = 'doc';
+      } else if (req.file.mimetype.includes('excel') || 
+                req.file.mimetype.includes('sheet') || 
+                req.file.originalname.endsWith('.xls') || 
+                req.file.originalname.endsWith('.xlsx')) {
+        detectedType = 'excel';
+      } else if (req.file.mimetype.includes('presentation') || 
+                req.file.originalname.endsWith('.ppt') || 
+                req.file.originalname.endsWith('.pptx')) {
+        detectedType = 'presentation';
+      }
+    }
+
+    // Upload file lên Cloudinary thay vì dùng local storage
+    console.log('☁️ Đang tải lên Cloudinary...');
+    const folderName = detectedType === 'image' ? 'zalo_images' : 
+                      detectedType === 'video' ? 'zalo_videos' : 
+                      detectedType === 'audio' ? 'zalo_audio' : 'zalo_files';
+    
+    const cloudinaryResult = await uploadToCloudinary(req.file.path, folderName);
+    console.log('✅ Tải lên Cloudinary thành công:', cloudinaryResult);
+    
+    // Lấy URL từ Cloudinary thay vì tạo local URL
+    const fileUrl = cloudinaryResult.secure_url;
+    console.log(`📋 URL file từ Cloudinary: ${fileUrl}, loại file: ${detectedType}`);
+    
+    // Xóa file tạm sau khi đã upload lên Cloudinary
+    fs.unlinkSync(req.file.path);
+    console.log('🗑️ Đã xóa file tạm thời:', req.file.path);
+    
+    // Tạo và lưu tin nhắn mới với file
+    const newMessage = new MessageModel({
+      idConversation,
+      content: content || `File: ${req.file.originalname}`,
+      type: detectedType,
+      seen: false,
+      sender,
+      fileUrl: fileUrl,
+      fileName: req.file.originalname,
+      fileType: req.file.mimetype
+    });
+
+    console.log('📝 Lưu tin nhắn mới với dữ liệu:', {
+      idConversation,
+      content: content || `File: ${req.file.originalname}`,
+      type: detectedType,
+      fileUrl,
+      fileName: req.file.originalname
+    });
+
+    const savedMessage = await newMessage.save();
+    console.log(`✅ Đã lưu tin nhắn với ID: ${savedMessage._id}`);
+    
+    // Cập nhật tin nhắn cuối cùng cho cuộc trò chuyện
+    await updateLastMesssage({
+      idConversation,
+      message: savedMessage._id
+    });
+    console.log(`✅ Đã cập nhật tin nhắn cuối cùng cho cuộc trò chuyện ${idConversation}`);
+
+    // Sử dụng Socket.io để thông báo tin nhắn mới
+    const { emitNewMessage, getIO } = await import('../config/Socket.js');
+    
+    // Sử dụng emitNewMessage để gửi tin nhắn mới
+    if (emitNewMessage) {
+      const messageEmitted = await emitNewMessage(savedMessage, socketId);
+      console.log(`📣 Tin nhắn file đã được phát sóng: ${messageEmitted ? 'thành công' : 'thất bại'}`);
+    }
+    
+    // Cập nhật danh sách cuộc trò chuyện cho tất cả thành viên
+    try {
+      const io = getIO();
+      if (io) {
+        // Lấy thông tin cuộc trò chuyện đã cập nhật
+        const conversation = await ConversationModel.findById(idConversation)
+          .populate({
+            path: "members.idUser",
+            select: { name: 1, avatar: 1 }
+          })
+          .populate("lastMessage");
+          
+        if (conversation && conversation.members) {
+          console.log(`📣 Cập nhật danh sách cuộc trò chuyện sau khi tải lên file cho ${conversation.members.length} thành viên`);
+          
+          // Emit update_conversation_list cho từng thành viên
+          conversation.members.forEach(member => {
+            if (member.idUser && member.idUser._id) {
+              console.log(`👤 Gửi cập nhật danh sách cuộc trò chuyện cho user: ${member.idUser._id.toString()}`);
+              io.to(member.idUser._id.toString()).emit("update_conversation_list", {
+                conversation: conversation,
+                newMessage: savedMessage
+              });
+            }
+          });
+        }
+      }
+    } catch (socketError) {
+      console.error("Lỗi khi gửi cập nhật qua socket:", socketError);
+      // Vẫn tiếp tục xử lý phản hồi HTTP dù có lỗi socket
+    }
+
+    // Trả về phản hồi thành công với đầy đủ thông tin
+    console.log('📤 Gửi phản hồi về client với đầy đủ thông tin của tin nhắn');
+    return res.status(200).json({
+      ...savedMessage.toObject(),
+      _id: savedMessage._id.toString(),
+      fileUrl: fileUrl,
+      fileName: req.file.originalname,
+      fileType: req.file.mimetype,
+      type: detectedType
+    });
+  } catch (error) {
+    console.error("Error uploading file:", error);
+    return res.status(500).json({ error: "Lỗi khi tải file lên server" });
   }
 };

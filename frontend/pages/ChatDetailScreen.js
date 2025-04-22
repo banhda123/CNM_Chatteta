@@ -337,6 +337,12 @@ const ChatUI = () => {
       
       console.log(`📩 Received message from socket: ${message._id || 'unknown'}`);
       
+      // Kiểm tra xem tin nhắn có thuộc cuộc trò chuyện hiện tại không
+      if (activeConversation && message.idConversation.toString() !== activeConversation._id.toString()) {
+        console.log(`📤 Tin nhắn không thuộc cuộc trò chuyện hiện tại. idConversation: ${message.idConversation}, activeConversation: ${activeConversation._id}`);
+        return; // Bỏ qua tin nhắn không thuộc cuộc trò chuyện hiện tại
+      }
+      
       // Log chi tiết cho các loại file
       if (message.type !== 'text') {
         console.log(`📁 Received ${message.type} message:`, {
@@ -651,10 +657,6 @@ const ChatUI = () => {
           const fileResponse = await ChatService.uploadFile(formData, token);
           console.log('✅ Tải lên file thành công:', fileResponse);
           
-          // Không cần cập nhật messages vì sẽ nhận tin nhắn qua socket
-          // Socket sẽ phát sự kiện new_message khi tin nhắn được lưu vào database
-          // và listener đã thiết lập sẽ xử lý việc cập nhật tin nhắn
-
           // Cập nhật trạng thái tin nhắn tạm để người dùng biết tin nhắn đã gửi thành công
           setMessages((prev) =>
             prev.map((msg) =>
@@ -672,6 +674,21 @@ const ChatUI = () => {
                 : msg
             )
           );
+          
+          // Cập nhật danh sách cuộc trò chuyện (thay vì đợi socket)
+          const updatedConversation = {
+            ...activeConversation,
+            lastMessage: {
+              _id: fileResponse._id,
+              content: fileResponse.content || `File: ${fileResponse.fileName}`,
+              type: fileResponse.type || messageType,
+              fileUrl: fileResponse.fileUrl,
+              fileName: fileResponse.fileName,
+              sender: userId
+            }
+          };
+          
+          setActiveConversation(updatedConversation);
           
           // Xóa file đã chọn
           setSelectedFile(null);
@@ -1148,27 +1165,41 @@ const ChatUI = () => {
     console.log('🔄 Thiết lập listener cho cập nhật danh sách cuộc trò chuyện');
     
     const handleUpdateConversationList = (data) => {
-      console.log('🔄 Cập nhật danh sách cuộc trò chuyện:', data.conversation._id);
+      if (!data || !data.conversation) {
+        console.warn('⚠️ Nhận được dữ liệu không hợp lệ từ sự kiện update_conversation_list');
+        return;
+      }
+      
+      console.log(`🔄 Cập nhật danh sách cuộc trò chuyện: ${data.conversation._id}, tin nhắn mới loại: ${data.newMessage?.type || 'không xác định'}`);
       
       // Cập nhật danh sách cuộc trò chuyện
       setConversations(prev => {
         // Tìm vị trí của cuộc trò chuyện trong danh sách hiện tại
         const index = prev.findIndex(conv => conv._id === data.conversation._id);
         
-        if (index !== -1) {
-          // Tạo bản sao của mảng hiện tại
-          const updatedConversations = [...prev];
-          
-          // Cập nhật cuộc trò chuyện với tin nhắn mới nhất
-          updatedConversations[index] = data.conversation;
-          
-          // Đưa cuộc trò chuyện vừa cập nhật lên đầu danh sách
-          const conversationToMove = updatedConversations.splice(index, 1)[0];
-          return [conversationToMove, ...updatedConversations];
+        // Nếu không tìm thấy, thêm cuộc trò chuyện mới vào đầu danh sách
+        if (index === -1) {
+          console.log('✨ Thêm cuộc trò chuyện mới vào đầu danh sách');
+          return [data.conversation, ...prev];
         }
         
-        return prev;
+        // Tạo bản sao của mảng hiện tại
+        const updatedConversations = [...prev];
+        
+        // Cập nhật cuộc trò chuyện với tin nhắn mới nhất
+        updatedConversations[index] = data.conversation;
+        
+        // Đưa cuộc trò chuyện vừa cập nhật lên đầu danh sách
+        console.log(`🔝 Đưa cuộc trò chuyện ${data.conversation._id} lên đầu danh sách`);
+        const conversationToMove = updatedConversations.splice(index, 1)[0];
+        
+        return [conversationToMove, ...updatedConversations];
       });
+      
+      // Nếu đang ở trong cuộc trò chuyện này, cập nhật active conversation
+      if (activeConversation && activeConversation._id === data.conversation._id) {
+        setActiveConversation(data.conversation);
+      }
     };
     
     // Đăng ký event listener
@@ -1178,7 +1209,7 @@ const ChatUI = () => {
     return () => {
       SocketService.removeListener('update_conversation_list');
     };
-  }, []);
+  }, [activeConversation]);
 
   // Hàm xử lý khi nhập tin nhắn (để gửi trạng thái typing)
   const handleMessageTyping = (e) => {
@@ -1516,10 +1547,12 @@ const ChatUI = () => {
   
   // Xử lý khi chuyển tiếp tin nhắn thành công
   const handleForwardMessageSuccess = (message) => {
+    console.log("✅ Tin nhắn chuyển tiếp thành công:", message);
     Alert.alert("Thành công", "Tin nhắn đã được chuyển tiếp");
     
-    // Nếu đang trong cuộc trò chuyện đích, cập nhật danh sách tin nhắn
-    if (activeConversation && activeConversation._id === message.idConversation) {
+    // Chỉ cập nhật giao diện nếu đang ở trong cuộc trò chuyện đích
+    if (activeConversation && activeConversation._id.toString() === message.idConversation.toString()) {
+      console.log("📝 Đang hiển thị tin nhắn chuyển tiếp trong cuộc trò chuyện hiện tại");
       setMessages(prevMessages => [...prevMessages, message]);
       
       // Cuộn xuống tin nhắn mới nhất
@@ -1528,6 +1561,8 @@ const ChatUI = () => {
           messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
       }, 100);
+    } else {
+      console.log("ℹ️ Không hiển thị tin nhắn chuyển tiếp vì không ở trong cuộc trò chuyện đích");
     }
   };
   
