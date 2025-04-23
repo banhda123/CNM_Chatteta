@@ -82,7 +82,8 @@ export const createGroupConversation = async (req, res) => {
       content: memberNames.length > 0 
         ? `${req.user.name} đã tạo nhóm và mời ${memberNames.join(', ')} vào nhóm`
         : `${req.user.name} đã tạo nhóm ${name}`,
-      type: 'system', // Now using system type for centered, subtle messages
+      type: 'system',
+      systemType: 'add_member',
       seen: false,
       sender: creatorId,
     });
