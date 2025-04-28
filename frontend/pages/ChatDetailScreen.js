@@ -82,6 +82,7 @@ import PinnedMessageBanner from "../components/PinnedMessageBanner";
 import PinnedMessagesDialog from "../components/PinnedMessagesDialog";
 import PinMessageButton from "../components/PinMessageButton";
 import { useTheme } from '../contexts/ThemeContext';
+import ProfileDialog from '../components/ProfileDialog';
 
 const ChatUI = () => {
   const route = useRoute();
@@ -127,6 +128,9 @@ const ChatUI = () => {
   const [selectedPinnedMessage, setSelectedPinnedMessage] = useState(null);
 
   const { isDarkMode, toggleTheme } = useTheme();
+
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
 
   // Function to check if the current conversation is with Gemini AI
   const isGeminiConversation = () => {
@@ -2320,6 +2324,16 @@ const ChatUI = () => {
     };
   }, []);
 
+  const handleAvatarClick = (user) => {
+    setSelectedUser(user);
+    setProfileDialogOpen(true);
+  };
+
+  const handleCloseProfileDialog = () => {
+    setProfileDialogOpen(false);
+    setSelectedUser(null);
+  };
+
   if (showProfile) {
     return <ProfileScreen onBack={() => setShowProfile(false)} />;
   }
@@ -2374,7 +2388,7 @@ const ChatUI = () => {
             <Avatar
               src={user?.avatar || "/static/images/avatar/1.jpg"}
               sx={{ width: 40, height: 40, cursor: "pointer" }}
-              onClick={() => setShowProfile(true)}
+              onClick={() => handleAvatarClick(user)}
             />
             <Typography variant="h6" sx={{ ml: 2 }}>
               {user?.name || "User"}
@@ -3025,8 +3039,10 @@ const ChatUI = () => {
                                   height: 28, 
                                   mr: 1, 
                                   mb: 1,
-                                  display: { xs: 'none', sm: 'flex' }
+                                  display: { xs: 'none', sm: 'flex' },
+                                  cursor: 'pointer'
                                 }}
+                                onClick={() => handleAvatarClick(getOtherParticipant(activeConversation)?.idUser)}
                               />
                             )}
                             <Box
@@ -3963,6 +3979,14 @@ const ChatUI = () => {
           conversation={activeConversation}
         />
       )}
+      
+      {/* Profile Dialog */}
+      <ProfileDialog
+        open={profileDialogOpen}
+        onClose={handleCloseProfileDialog}
+        user={selectedUser}
+        currentUser={user}
+      />
     </Box>
   );
 };
