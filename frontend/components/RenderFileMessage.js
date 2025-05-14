@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography, CircularProgress, IconButton } from '@mui/material';
+import { Box, Typography, CircularProgress, IconButton, useTheme } from '@mui/material';
 import {
   PictureAsPdf as PictureAsPdfIcon,
   Description as DescriptionIcon,
@@ -21,10 +21,41 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
   if (!message.fileUrl && !message.fileName) {
     return null;
   }
+  
+  // Get current theme to check dark/light mode
+  const theme = useTheme();
+  const isDarkMode = theme.palette.mode === 'dark';
+  
+  // Xác định xem tin nhắn có phải từ user hiện tại hay không
+  const isCurrentUser = message.sender === localStorage.getItem('userId') || 
+                       message.originalSender?._id === localStorage.getItem('userId');
 
   // Xử lý trường hợp đang tải
   const isSending = message.status === 'sending';
   
+  // Zalo-style border radius
+  const borderRadiusStyle = {
+    borderRadius: isCurrentUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+    boxShadow: !isCurrentUser ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+    border: !isCurrentUser ? `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}` : 'none',
+    position: 'relative',
+    '&::before': !isCurrentUser ? {
+      content: '""',
+      position: 'absolute',
+      bottom: 0,
+      left: -8,
+      width: 15,
+      height: 15,
+      backgroundColor: isDarkMode ? 'background.paper' : 'background.paper',
+      borderBottom: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
+      borderLeft: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
+      borderBottomLeftRadius: '50%',
+      clipPath: 'polygon(0 0, 100% 100%, 0 100%)',
+      transformOrigin: 'bottom left',
+      zIndex: 0,
+    } : {}
+  };
+
   // Render dựa vào loại file
   switch (message.type) {
     case 'image':
@@ -33,20 +64,19 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
           sx={{
             display: 'flex',
             flexDirection: 'column',
-            width: '100%',
             position: 'relative',
             maxWidth: '250px',
+            minWidth: '120px',
+            ...borderRadiusStyle,
+            overflow: 'hidden'
           }}
         >
           <Box
             sx={{ 
               position: 'relative',
-              width: '100%',
-              paddingBottom: '100%',
-              minHeight: '150px',
-              borderRadius: '8px',
               overflow: 'hidden',
-              backgroundColor: 'rgba(0, 0, 0, 0.05)',
+              backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
+              lineHeight: 0,
             }}
           >
             <Box 
@@ -54,15 +84,15 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
               src={message.fileUrl}
               alt="Image attachment"
               sx={{ 
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                borderRadius: '8px',
+                maxWidth: '100%',
+                maxHeight: '300px',
+                width: 'auto',
+                height: 'auto',
                 cursor: isSending ? 'default' : 'pointer',
                 opacity: isSending ? 0.7 : 1,
-                filter: message.isPreview ? 'blur(0.5px)' : 'none'
+                filter: message.isPreview ? 'blur(0.5px)' : 'none',
+                display: 'block',
+                objectFit: 'contain'
               }}
               onClick={() => message.fileUrl && !message.isPreview && !isSending && 
                 window.open(message.fileUrl.startsWith('http')
@@ -92,7 +122,8 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
                     bgcolor: 'rgba(0,0,0,0.7)'
                   },
                   width: 28,
-                  height: 28
+                  height: 28,
+                  zIndex: 1
                 }}
               >
                 <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>↓</Box>
@@ -113,11 +144,28 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
                 height: 40,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                zIndex: 2
               }}
             >
               <CircularProgress size={24} color="inherit" />
             </Box>
+          )}
+          
+          {/* Hiển thị kích thước ảnh hoặc caption nếu có */}
+          {message.content && (
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                mt: 0.5, 
+                color: isCurrentUser ? 'primary.contrastText' : (isDarkMode ? 'common.white' : 'text.secondary'),
+                fontSize: '0.85rem',
+                px: 1,
+                pb: 1
+              }}
+            >
+              {message.content}
+            </Typography>
           )}
         </Box>
       );
@@ -126,18 +174,22 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
       return (
         <Box
           sx={{ 
-            bgcolor: 'rgba(0,0,0,0.05)',
+            bgcolor: isCurrentUser ? 'primary.main' : 'background.paper',
+            color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
             p: 1.5,
-            borderRadius: '8px',
+            ...borderRadiusStyle,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             cursor: isSending ? 'default' : 'pointer',
             opacity: isSending ? 0.7 : 1,
             '&:hover': {
-              bgcolor: !isSending ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)'
+              bgcolor: isCurrentUser 
+                ? 'primary.dark'
+                : !isSending ? (isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)') : 'background.paper'
             },
-            maxWidth: 300
+            maxWidth: 300,
+            position: 'relative'
           }}
           onClick={() => message.fileUrl && !isSending && 
             handleOpenFile(message.fileUrl, message.fileName, message.fileType)}
@@ -147,8 +199,8 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
             sx={{
               width: '100%',
               height: 120,
-              bgcolor: '#f5f5f5',
-              border: '1px solid #e0e0e0',
+              bgcolor: isDarkMode ? 'rgba(255,255,255,0.03)' : '#f5f5f5',
+              border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : '#e0e0e0'}`,
               borderRadius: '4px',
               display: 'flex',
               justifyContent: 'center',
@@ -170,7 +222,7 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
                   display: 'flex',
                   justifyContent: 'center',
                   alignItems: 'center',
-                  bgcolor: 'rgba(255,255,255,0.7)'
+                  bgcolor: isDarkMode ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.7)'
                 }}
               >
                 <CircularProgress size={24} />
@@ -180,10 +232,16 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
           
           {/* File information */}
           <Box sx={{ width: '100%' }}>
-            <Typography variant="body2" sx={{ fontWeight: 'medium', wordBreak: 'break-word' }}>
+            <Typography variant="body2" sx={{ 
+              fontWeight: 'medium', 
+              wordBreak: 'break-word',
+              color: isCurrentUser ? 'primary.contrastText' : 'text.primary'
+            }}>
               {message.fileName || "PDF Document"}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{ 
+              color: isCurrentUser ? 'rgba(255,255,255,0.8)' : (isDarkMode ? 'rgba(255,255,255,0.7)' : 'text.secondary')
+            }}>
               {isSending ? "Đang tải..." : "Nhấn để mở tài liệu PDF"}
             </Typography>
           </Box>
@@ -194,16 +252,19 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
       return (
         <Box
           sx={{ 
-            bgcolor: 'rgba(0,0,0,0.05)',
+            bgcolor: isCurrentUser ? 'primary.main' : 'background.paper',
+            color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
             p: 1.5,
-            borderRadius: '8px',
+            ...borderRadiusStyle,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             cursor: isSending ? 'default' : 'pointer',
             opacity: isSending ? 0.7 : 1,
             '&:hover': {
-              bgcolor: !isSending ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)'
+              bgcolor: isCurrentUser 
+                ? 'primary.dark'
+                : !isSending ? 'rgba(0,0,0,0.04)' : 'background.paper'
             },
             maxWidth: 300
           }}
@@ -262,16 +323,19 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
       return (
         <Box
           sx={{ 
-            bgcolor: 'rgba(0,0,0,0.05)',
+            bgcolor: isCurrentUser ? 'primary.main' : 'background.paper',
+            color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
             p: 1.5,
-            borderRadius: '8px',
+            ...borderRadiusStyle,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             cursor: isSending ? 'default' : 'pointer',
             opacity: isSending ? 0.7 : 1,
             '&:hover': {
-              bgcolor: !isSending ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)'
+              bgcolor: isCurrentUser 
+                ? 'primary.dark'
+                : !isSending ? 'rgba(0,0,0,0.04)' : 'background.paper'
             },
             maxWidth: 300
           }}
@@ -330,16 +394,19 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
       return (
         <Box
           sx={{ 
-            bgcolor: 'rgba(0,0,0,0.05)',
+            bgcolor: isCurrentUser ? 'primary.main' : 'background.paper',
+            color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
             p: 1.5,
-            borderRadius: '8px',
+            ...borderRadiusStyle,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             cursor: isSending ? 'default' : 'pointer',
             opacity: isSending ? 0.7 : 1,
             '&:hover': {
-              bgcolor: !isSending ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)'
+              bgcolor: isCurrentUser 
+                ? 'primary.dark'
+                : !isSending ? 'rgba(0,0,0,0.04)' : 'background.paper'
             },
             maxWidth: 300
           }}
@@ -398,7 +465,8 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
       return (
         <Box
           sx={{ 
-            bgcolor: 'rgba(0,0,0,0.05)',
+            bgcolor: isCurrentUser ? 'primary.main' : 'background.paper',
+            color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
             p: 1.5,
             borderRadius: '8px',
             display: 'flex',
@@ -506,14 +574,15 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
       return (
         <Box
           sx={{ 
-            bgcolor: 'rgba(0,0,0,0.05)',
+            bgcolor: isCurrentUser ? 'primary.main' : 'background.paper',
+            color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
             p: 1.5,
-            borderRadius: '8px',
+            ...borderRadiusStyle,
             display: 'flex',
             flexDirection: 'column',
-            width: '100%',
-            maxWidth: 350,
-            overflow: 'hidden'
+            maxWidth: 300,
+            overflow: 'hidden',
+            position: 'relative'
           }}
         >
           {/* Audio player */}
@@ -615,9 +684,11 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
           sx={{
             display: 'flex',
             flexDirection: 'column',
-            width: '100%',
             position: 'relative',
-            maxWidth: '280px',
+            maxWidth: '250px',
+            minWidth: '120px',
+            ...borderRadiusStyle,
+            overflow: 'hidden'
           }}
         >
           <Box 
@@ -628,6 +699,7 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
               backgroundColor: 'rgba(0, 0, 0, 0.03)',
               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
               border: '1px solid rgba(0, 0, 0, 0.08)',
+              lineHeight: 0,
             }}
           >
             <Box 
@@ -636,8 +708,10 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
               alt="GIF"
               sx={{ 
                 display: 'block',
-                width: '100%',
-                maxHeight: '250px',
+                maxWidth: '100%',
+                maxHeight: '300px',
+                width: 'auto',
+                height: 'auto',
                 objectFit: 'contain',
                 borderRadius: '8px',
                 cursor: isSending ? 'default' : 'pointer',
@@ -653,7 +727,7 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
             />
             
             {/* Ghi chú nếu có */}
-            {message.content && message.content.trim() !== '' && (
+            {false && message.content && message.content.trim() !== '' && (
               <Box sx={{ 
                 p: 1.5, 
                 borderTop: '1px solid rgba(0, 0, 0, 0.08)',
@@ -683,7 +757,8 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
                     bgcolor: 'rgba(0,0,0,0.7)'
                   },
                   width: 32,
-                  height: 32
+                  height: 32,
+                  zIndex: 1
                 }}
               >
                 <Box component="span" sx={{ fontSize: '1.1rem', fontWeight: 'bold' }}>↓</Box>
@@ -704,11 +779,26 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
                 height: 40,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                zIndex: 2
               }}
             >
               <CircularProgress size={24} color="inherit" />
             </Box>
+          )}
+          
+          {/* Hiển thị caption nếu có */}
+          {false && message.content && !message.content.trim() && (
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                mt: 0.5, 
+                color: 'text.secondary',
+                fontSize: '0.85rem'
+              }}
+            >
+              {message.content}
+            </Typography>
           )}
         </Box>
       );
@@ -718,26 +808,37 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
       return (
         <Box
           sx={{ 
-            bgcolor: 'rgba(0,0,0,0.05)',
+            bgcolor: isCurrentUser ? 'primary.main' : 'background.paper',
+            color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
             p: 1.5,
-            borderRadius: '8px',
+            ...borderRadiusStyle,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             cursor: isSending ? 'default' : 'pointer',
             opacity: isSending ? 0.7 : 1,
             '&:hover': {
-              bgcolor: !isSending ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)'
-            }
+              bgcolor: isCurrentUser 
+                ? 'primary.dark'
+                : !isSending ? (isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)') : 'background.paper'
+            },
+            maxWidth: 300,
+            position: 'relative'
           }}
           onClick={() => message.fileUrl && !isSending && 
             handleOpenFile(message.fileUrl, message.fileName, message.fileType)}
         >
           <InsertDriveFileIcon fontSize="medium" sx={{ mr: 1.5, color: '#607d8b' }} />
           <Box>
-            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+            <Typography variant="body2" sx={{ 
+              fontWeight: 'medium',
+              color: isCurrentUser ? 'primary.contrastText' : 'text.primary'
+            }}>
               {message.fileName || "File"}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{ 
+              color: isCurrentUser ? 'rgba(255,255,255,0.8)' : (isDarkMode ? 'rgba(255,255,255,0.7)' : 'text.secondary')
+            }}>
               {isSending ? "Đang tải..." : "Nhấn để tải xuống"}
             </Typography>
           </Box>

@@ -59,6 +59,7 @@ const upload = multer({
 
 ChatRouter.get("/", getAllConversation);
 ChatRouter.get("/allmessage/:id", getAllMessageByConversation);
+ChatRouter.get("/conversations/:id", getAllConversationByUser);
 ChatRouter.get("/:id", getAllConversationByUser);
 ChatRouter.get("/friend/:id", getAllFriend);
 
@@ -90,7 +91,8 @@ ChatRouter.put("/group/permissions", isAuth, updateGroupPermissions);
 ChatRouter.post("/upload", isAuth, upload.single('file'), uploadFile);
 
 // Gemini AI route - handle messages sent to Gemini AI
-ChatRouter.post("/gemini/message", isAuth, processGeminiMessage);
+// Không yêu cầu xác thực để cho phép sử dụng trong GeminiChatBox
+ChatRouter.post("/gemini/message", processGeminiMessage);
 
 // API thêm cảm xúc vào tin nhắn
 ChatRouter.post("/message/reaction", isAuth, async (req, res) => {

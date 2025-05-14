@@ -1,3 +1,79 @@
+// Thêm một lớp ghi log đơn giản vào đầu file
+const Logger = {
+  // Các cấp độ log
+  levels: {
+    DEBUG: 0,  // Chi tiết nhất, hữu ích khi phát triển
+    INFO: 1,   // Thông tin chung
+    WARN: 2,   // Cảnh báo
+    ERROR: 3,  // Lỗi
+  },
+  
+  // Cấu hình cấp độ hiện tại
+  currentLevel: 1, // Mặc định chỉ hiện INFO trở lên
+  
+  // Bật/tắt group logs cho dễ đọc
+  useGroups: true,
+  
+  // Thiết lập cấp độ log
+  setLevel(level) {
+    this.currentLevel = level;
+  },
+  
+  // Các phương thức log theo cấp độ
+  debug(message, data) {
+    if (this.currentLevel <= this.levels.DEBUG) {
+      if (data && this.useGroups) {
+        console.groupCollapsed(`🔍 ${message}`);
+        console.log(data);
+        console.groupEnd();
+      } else {
+        console.log(`🔍 ${message}`, data || '');
+      }
+    }
+  },
+  
+  info(message, data) {
+    if (this.currentLevel <= this.levels.INFO) {
+      if (data && this.useGroups) {
+        console.groupCollapsed(`ℹ️ ${message}`);
+        console.log(data);
+        console.groupEnd();
+      } else {
+        console.log(`ℹ️ ${message}`, data || '');
+      }
+    }
+  },
+  
+  warn(message, data) {
+    if (this.currentLevel <= this.levels.WARN) {
+      if (data && this.useGroups) {
+        console.groupCollapsed(`⚠️ ${message}`);
+        console.log(data);
+        console.groupEnd();
+      } else {
+        console.warn(`⚠️ ${message}`, data || '');
+      }
+    }
+  },
+  
+  error(message, error) {
+    if (this.currentLevel <= this.levels.ERROR) {
+      if (error && this.useGroups) {
+        console.groupCollapsed(`❌ ${message}`);
+        console.error(error);
+        console.groupEnd();
+      } else {
+        console.error(`❌ ${message}`, error || '');
+      }
+    }
+  }
+};
+
+// Trong môi trường production, chỉ hiển thị lỗi
+if (process.env.NODE_ENV === 'production') {
+  Logger.setLevel(Logger.levels.ERROR);
+}
+
 import axios from "axios";
 import AuthService from "./AuthService";
 import SocketService from "./SocketService";
@@ -14,6 +90,8 @@ class ChatService {
           'Content-Type': 'application/json'
         }
       };
+      
+      Logger.info('Creating new group conversation', { groupName: groupData.name });
       
       const response = await axios.post(
         `${API_URL}/group`, 
@@ -35,7 +113,7 @@ class ChatService {
       
       return response.data;
     } catch (error) {
-      console.error("Error creating group conversation:", error);
+      Logger.error("Error creating group conversation", error);
       throw error;
     }
   }
@@ -50,7 +128,7 @@ class ChatService {
       // Remove 'Bearer ' if it's already included in the token
       const cleanToken = token.replace('Bearer ', '');
       
-      console.log('Clean token:', cleanToken); // Debug log
+      Logger.debug('Clean token:', cleanToken);
       
       const config = {
         headers: {
@@ -59,8 +137,7 @@ class ChatService {
         }
       };
       
-      console.log('Request config:', config); // Debug log
-      console.log('Request payload:', { conversationId, memberIds }); // Debug log
+      Logger.info('Adding members to group', { conversationId, memberCount: memberIds.length });
       
       const response = await axios.post(
         `${API_URL}/group/members`, 
@@ -70,11 +147,13 @@ class ChatService {
       
       return response.data;
     } catch (error) {
-      console.error("Error adding members to group:", error);
+      Logger.error("Error adding members to group", error);
       if (error.response) {
-        console.error("Response data:", error.response.data);
-        console.error("Response status:", error.response.status);
-        console.error("Response headers:", error.response.headers);
+        Logger.error("Response details:", {
+          data: error.response.data,
+          status: error.response.status,
+          headers: error.response.headers
+        });
       }
       throw error;
     }
@@ -99,10 +178,31 @@ class ChatService {
       
       // Get current user data to determine role
       const userData = AuthService.getUserData();
-      const isAdmin = userData && userData._id === localStorage.getItem('adminId');
-      const isAdmin2 = userData && userData._id === localStorage.getItem('admin2Id');
       
-      console.log('Current user role:', isAdmin ? 'admin' : isAdmin2 ? 'admin2' : 'member');
+      // Nếu người dùng không có dữ liệu thì không thể xác định vai trò
+      if (!userData) {
+        throw new Error('User data not available');
+      }
+      
+      // Kiểm tra quyền admin cho cuộc trò chuyện cụ thể
+      const adminId = localStorage.getItem(`adminId_${conversationId}`) || localStorage.getItem('adminId');
+      const admin2Id = localStorage.getItem(`admin2Id_${conversationId}`) || localStorage.getItem('admin2Id');
+      
+      // Chuyển đổi ID sang string để so sánh chính xác
+      const currentUserId = userData._id.toString();
+      const adminIdStr = adminId ? adminId.toString() : null;
+      const admin2IdStr = admin2Id ? admin2Id.toString() : null;
+      
+      const isAdmin = adminIdStr && currentUserId === adminIdStr;
+      const isAdmin2 = admin2IdStr && currentUserId === admin2IdStr;
+      
+      console.log('Current user role check:', { 
+        currentUserId, 
+        adminId: adminIdStr, 
+        admin2Id: admin2IdStr,
+        isAdmin, 
+        isAdmin2 
+      });
       
       let response;
       
@@ -125,8 +225,6 @@ class ChatService {
       }
       
       console.log('Response data:', response.data); // Debug log
-      console.log('Response status:', response.status); // Debug log
-      console.log('Response headers:', response.headers); // Debug log
       
       return response.data;
     } catch (error) {
@@ -258,37 +356,142 @@ class ChatService {
     }
   }
 
-  // Get all conversations
-  static async getAllConversations() {
-    try {
-      const response = await axios.get(`${API_URL}/`);
-      return response.data;
-    } catch (error) {
-      console.error("Error fetching all conversations:", error);
-      throw error;
-    }
-  }
-
-  // Get all conversations for a specific user
+  // Lấy danh sách cuộc trò chuyện của người dùng với metadata tối thiểu
   static async getUserConversations(userId) {
     try {
-      const response = await axios.get(`${API_URL}/${userId}`);
+      Logger.info('Fetching conversations for user', { userId });
+      
+      // Thêm tham số chỉ lấy metadata, không tải lịch sử tin nhắn đầy đủ
+      // Explicity request fully populated user data with the 'populate_users=true' parameter
+      const response = await axios.get(`${API_URL}/conversations/${userId}?metadata_only=true&populate_users=true`);
+      
+      // Validate conversation member data
+      if (response.data && Array.isArray(response.data)) {
+        // Check if any conversations have unpopulated member data
+        const hasUnpopulatedMembers = response.data.some(conv => {
+          if (!conv.members || !Array.isArray(conv.members)) return false;
+          
+          return conv.members.some(member => {
+            return member.idUser && typeof member.idUser === 'string';
+          });
+        });
+        
+        if (hasUnpopulatedMembers) {
+          Logger.warn('Some conversations have unpopulated member data', {
+            conversationCount: response.data.length
+          });
+        }
+        
+        // Xử lý dữ liệu cuộc trò chuyện và lưu thông tin admin vào localStorage
+        response.data.forEach(conversation => {
+          if (conversation.type === 'group') {
+            // Lưu thông tin admin
+            if (conversation.admin) {
+              const adminId = conversation.admin._id || conversation.admin;
+              localStorage.setItem(`adminId_${conversation._id}`, adminId);
+            }
+            
+            // Lưu thông tin admin2
+            if (conversation.admin2) {
+              const admin2Id = conversation.admin2._id || conversation.admin2;
+              localStorage.setItem(`admin2Id_${conversation._id}`, admin2Id);
+            }
+          }
+        });
+      }
+      
+      Logger.info(`Fetched ${response.data.length} conversations`);
       return response.data;
     } catch (error) {
-      console.error("Error fetching user conversations:", error);
+      Logger.error("Error fetching conversations", error);
       throw error;
     }
   }
 
-  // Get all messages in a conversation
-  static async getConversationMessages(conversationId) {
+  // Lấy tin nhắn với lazy loading
+  static async getConversationMessages(conversationId, options = {}) {
     try {
-      const response = await axios.get(
-        `${API_URL}/allmessage/${conversationId}`
-      );
-      return response.data;
+      Logger.info('Fetching messages for conversation', { conversationId, options });
+      
+      // Giảm giới hạn mặc định xuống 15 tin nhắn mỗi lần tải để cải thiện hiệu suất
+      const limit = options.limit || 15;
+      
+      // Xây dựng URL parameters
+      let url = `${API_URL}/allmessage/${conversationId}?limit=${limit}`;
+      
+      // Thêm tham số before nếu có
+      if (options.before) {
+        url += `&before=${options.before}`;
+      }
+      
+      Logger.debug('Request URL:', url);
+      const response = await axios.get(url);
+      
+      // Chuẩn hóa dữ liệu tin nhắn để đảm bảo tính nhất quán
+      const normalizeMessages = (messages) => {
+        if (!Array.isArray(messages)) return [];
+        
+        return messages.map(msg => {
+          // Đảm bảo ID người gửi luôn ở dạng chuỗi để so sánh nhất quán
+          if (msg.sender && typeof msg.sender === 'object' && msg.sender._id) {
+            msg.originalSender = { ...msg.sender }; // Lưu thông tin người gửi gốc
+            msg.sender = msg.sender._id; // Chỉ lưu ID
+          }
+          
+          // Đảm bảo ID nhất quán
+          if (msg._id) {
+            msg.id = msg._id;
+          }
+          
+          return msg;
+        });
+      };
+      
+      // Tin nhắn sẽ trả về dạng { messages: [], hasMore: boolean, nextCursor: string }
+      const messageCount = response.data.messages?.length || (Array.isArray(response.data) ? response.data.length : 0);
+      Logger.info(`Fetched ${messageCount} messages`);
+      
+      // Nếu API trả về theo định dạng mới, xử lý
+      if (response.data && response.data.messages) {
+        const result = {
+          messages: normalizeMessages(response.data.messages),
+          hasMore: response.data.hasMore || false,
+          nextCursor: response.data.nextCursor || null
+        };
+        Logger.debug('Normalized response with pagination', { hasMore: result.hasMore, messageCount: result.messages.length });
+        return result;
+      } 
+      // Nếu API trả về theo định dạng cũ (mảng tin nhắn), chuyển đổi
+      else if (Array.isArray(response.data)) {
+        const result = {
+          messages: normalizeMessages(response.data),
+          hasMore: false, // Giả định không có thêm tin nhắn cũ hơn
+          nextCursor: null
+        };
+        Logger.debug('Converted legacy response format', { messageCount: result.messages.length });
+        return result;
+      } 
+      // Nếu không khớp với format nào
+      else {
+        Logger.warn('Unexpected response format', response.data);
+        return { messages: [], hasMore: false, nextCursor: null };
+      }
     } catch (error) {
-      console.error("Error fetching conversation messages:", error);
+      Logger.error("Error fetching messages", error);
+      throw error;
+    }
+  }
+
+  // Tải thêm tin nhắn cũ hơn (lazy loading)
+  static async loadMoreMessages(conversationId, beforeTimestamp, limit = 20) {
+    try {
+      Logger.info(`Loading more messages`, { conversationId, before: beforeTimestamp, limit });
+      return this.getConversationMessages(conversationId, {
+        before: beforeTimestamp,
+        limit: limit
+      });
+    } catch (error) {
+      Logger.error("Error loading more messages", error);
       throw error;
     }
   }
@@ -314,6 +517,11 @@ class ChatService {
         }
       };
       
+      Logger.info('Sending message', { 
+        conversationId: messageData.idConversation, 
+        type: messageData.type || 'text'
+      });
+      
       const response = await axios.post(
         `${API_URL}/message`, 
         messageData,
@@ -322,7 +530,7 @@ class ChatService {
       
       return response.data;
     } catch (error) {
-      console.error("Error sending message via HTTP:", error);
+      Logger.error("Error sending message via HTTP", error);
       throw error;
     }
   }
@@ -375,7 +583,16 @@ class ChatService {
   // Upload file message
   static async uploadFile(formData, token) {
     try {
-      console.log("Uploading file with formData:", Object.fromEntries(formData.entries()));
+      // Chỉ log thông tin cơ bản của file, không log toàn bộ formData
+      const fileInfo = {
+        fileName: formData.get('file')?.name,
+        fileSize: formData.get('file')?.size,
+        fileType: formData.get('file')?.type,
+        conversationId: formData.get('idConversation'),
+        messageType: formData.get('type')
+      };
+      
+      Logger.info("Uploading file", fileInfo);
       
       const config = {
         headers: {
@@ -390,12 +607,13 @@ class ChatService {
         config
       );
       
+      Logger.info("File upload successful", { fileUrl: response.data.fileUrl });
       return response.data;
     } catch (error) {
-      console.error("Error uploading file:", error);
+      Logger.error("Error uploading file", error);
       // Xem chi tiết lỗi từ response nếu có
       if (error.response && error.response.data) {
-        console.error("Server error details:", error.response.data);
+        Logger.error("Server error details", error.response.data);
       }
       throw error;
     }
@@ -618,6 +836,12 @@ class ChatService {
         config
       );
       
+      // Lưu ID của admin2 mới vào localStorage
+      if (response.data && response.data.admin2) {
+        const admin2Id = response.data.admin2._id || response.data.admin2;
+        localStorage.setItem(`admin2Id_${conversationId}`, admin2Id);
+      }
+      
       return response.data;
     } catch (error) {
       console.error("Error setting admin2:", error);
@@ -653,6 +877,9 @@ class ChatService {
         url: `${API_URL}/group/admin2/${conversationId}`,
         headers: config.headers
       });
+      
+      // Xóa ID của admin2 khỏi localStorage khi admin2 bị xóa
+      localStorage.removeItem(`admin2Id_${conversationId}`);
       
       return response.data;
     } catch (error) {

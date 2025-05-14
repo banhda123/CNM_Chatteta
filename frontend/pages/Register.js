@@ -13,6 +13,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import AuthService from "../services/AuthService";
+import LoadingAnimation from "../components/LoadingAnimation";
 
 const steps = ['Thông tin cơ bản', 'Xác thực OTP', 'Hoàn tất'];
 
@@ -188,7 +189,7 @@ const Register = () => {
               disabled={loading}
             >
               {loading ? (
-                <CircularProgress size={24} />
+                <LoadingAnimation size={30} />
               ) : (
                 activeStep === steps.length - 1 ? 'Hoàn tất' : 'Tiếp tục'
               )}

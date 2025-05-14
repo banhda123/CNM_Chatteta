@@ -208,12 +208,24 @@ const UserService = {
 
   acceptFriend: async (userFrom, userTo, token) => {
     try {
+      // The backend expects userTo._id
+      const userToId = typeof userTo === 'object' && userTo._id ? userTo._id : userTo;
+      
+      console.log('Accepting friend request with data:', {
+        userFrom,
+        userTo: { _id: userToId }
+      });
+      
       const response = await axios.post(
         `${API_URL}/acceptFriend`,
-        { userFrom, userTo },
+        {
+          userFrom,
+          userTo: { _id: userToId }
+        },
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
           },
         }
       );
@@ -226,12 +238,24 @@ const UserService = {
 
   rejectFriend: async (userFrom, userTo, token) => {
     try {
+      // Use cancelFriendRequest which is properly implemented in the backend
+      const userToId = typeof userTo === 'object' && userTo._id ? userTo._id : userTo;
+      
+      console.log('Rejecting friend request with data:', {
+        userFrom,
+        userTo: userToId
+      });
+      
       const response = await axios.post(
-        `${API_URL}/dontAcceptFriend`,
-        { userFrom, userTo },
+        `${API_URL}/cancelFriendRequest`,
+        {
+          userFrom,
+          userTo: userToId
+        },
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
           },
         }
       );
@@ -262,24 +286,202 @@ const UserService = {
 
   getAllFriends: async (userId) => {
     try {
+      if (!userId) {
+        console.warn("Missing userId in getAllFriends call");
+        return [];
+      }
+
+      console.log(`Fetching friends for user: ${userId}`);
+      
       const response = await axios.get(
         `${API_URL}/getAllFriendByUser/${userId}`
       );
+      
+      // Validate response data
+      if (!response || !response.data) {
+        console.warn("Invalid response from getAllFriendByUser endpoint");
+        return [];
+      }
+      
+      // Ensure we're returning an array even if the backend returns something else
+      if (!Array.isArray(response.data)) {
+        console.warn("Friends data is not an array, returning empty array");
+        return [];
+      }
+      
       return response.data;
     } catch (error) {
       console.error("Error getting all friends:", error);
-      throw error;
+      // Return empty array instead of throwing error to prevent UI crashes
+      return [];
     }
   },
 
   getAllFriendRequests: async (userId) => {
     try {
+      if (!userId) {
+        console.warn("Missing userId in getAllFriendRequests call");
+        return [];
+      }
+
+      console.log(`🔍 FETCH: Getting friend requests for user: ${userId}`);
+      
       const response = await axios.get(
         `${API_URL}/getAllPeopleRequestByUser/${userId}`
       );
+      
+      // Validate response data
+      if (!response || !response.data) {
+        console.warn("Invalid response from getAllPeopleRequestByUser endpoint");
+        return [];
+      }
+      
+      // Ensure we're returning an array even if the backend returns something else
+      if (!Array.isArray(response.data)) {
+        console.warn("Friend requests data is not an array, returning empty array");
+        return [];
+      }
+      
+      console.log(`✅ RECEIVED: ${response.data.length} friend requests`);
       return response.data;
     } catch (error) {
       console.error("Error getting friend requests:", error);
+      
+      // Return empty array instead of throwing error to prevent UI crashes
+      return [];
+    }
+  },
+
+  getAllSentFriendRequests: async (userId) => {
+    try {
+      if (!userId) {
+        console.warn("Missing userId in getAllSentFriendRequests call");
+        return [];
+      }
+
+      console.log(`🔍 FETCH: Getting sent friend requests for user: ${userId}`);
+      
+      const response = await axios.get(
+        `${API_URL}/getAllSentRequestsByUser/${userId}`
+      );
+      
+      // Validate response data
+      if (!response || !response.data) {
+        console.warn("Invalid response from getAllSentRequestsByUser endpoint");
+        return [];
+      }
+      
+      // Ensure we're returning an array even if the backend returns something else
+      if (!Array.isArray(response.data)) {
+        console.warn("Sent requests data is not an array, returning empty array");
+        return [];
+      }
+      
+      console.log(`✅ RECEIVED: ${response.data.length} sent friend requests`);
+      return response.data;
+    } catch (error) {
+      console.error("Error getting sent friend requests:", error);
+      // Return empty array instead of throwing error to prevent UI crashes
+      return [];
+    }
+  },
+
+  // Hàm kiểm tra trạng thái kết bạn
+  checkFriendshipStatus: async (userFrom, userTo, token) => {
+    try {
+      const response = await axios.get(
+        `${API_URL}/checkFriendshipStatus/${userFrom}/${userTo}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error checking friendship status:", error);
+      throw error;
+    }
+  },
+
+  // Tạm hoãn quyết định lời mời kết bạn
+  deferFriendRequest: async (userFrom, userTo, token) => {
+    try {
+      const response = await axios.post(
+        `${API_URL}/deferFriendRequest`,
+        { userFrom, userTo },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error deferring friend request:", error);
+      throw error;
+    }
+  },
+
+  // Lấy danh sách lời mời đã tạm hoãn
+  getDeferredFriendRequests: async (userId, token) => {
+    try {
+      if (!userId) {
+        console.warn("Missing userId in getDeferredFriendRequests call");
+        return [];
+      }
+
+      if (!token) {
+        console.warn("Missing token in getDeferredFriendRequests call");
+        return [];
+      }
+
+      console.log(`Fetching deferred friend requests for user: ${userId}`);
+      
+      const response = await axios.get(
+        `${API_URL}/getDeferredRequests/${userId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      
+      // Validate response data
+      if (!response || !response.data) {
+        console.warn("Invalid response from getDeferredRequests endpoint");
+        return [];
+      }
+      
+      // Ensure we're returning an array even if the backend returns something else
+      if (!Array.isArray(response.data)) {
+        console.warn("Deferred requests data is not an array, returning empty array");
+        return [];
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error getting deferred friend requests:", error);
+      // Return empty array instead of throwing error to prevent UI crashes
+      return [];
+    }
+  },
+
+  // Hủy lời mời kết bạn đã gửi
+  cancelFriendRequest: async (userFrom, userTo, token) => {
+    try {
+      const response = await axios.post(
+        `${API_URL}/cancelFriendRequest`,
+        { userFrom, userTo },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error canceling friend request:", error);
       throw error;
     }
   },

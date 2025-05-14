@@ -1,51 +1,51 @@
 import axios from "axios";
-
-const GEMINI_API_KEY = "AIzaSyB1e4shZBBLtUxvFi-V5h9Y4OPt_WWlVyU";
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
-
-const buildRequestBody = (message) => ({
-  contents: [
-    {
-      parts: [
-        {
-          text: message,
-        },
-      ],
-    },
-  ],
-});
-
-const extractResponseContent = (data) => {
-  const candidates = data?.candidates || [];
-  if (candidates.length > 0) {
-    const content = candidates[0]?.content;
-    if (content?.parts?.length > 0) {
-      return content.parts[0].text.trim();
-    }
-  }
-  return "Không tìm thấy phản hồi.";
-};
-
-const handleError = (error) => {
-  console.error("Error fetching Gemini response:", error?.response?.data || error);
-  return "Có lỗi xảy ra, vui lòng thử lại.";
-};
+import { API_URL } from "../config/constants";
 
 class GeminiService {
   /**
-   * Fetches a response from Gemini AI based on the provided message
+   * Fetches a response from Gemini AI through the backend API
    * @param {string} message - The message to send to Gemini AI
+   * @param {boolean} requireAuth - Whether authentication is required (default: false)
    * @returns {Promise<string>} - The response from Gemini AI
    */
-  static async fetchGeminiResponse(message) {
+  static async fetchGeminiResponse(message, requireAuth = false) {
     try {
-      const response = await axios.post(GEMINI_ENDPOINT, buildRequestBody(message), {
-        headers: { "Content-Type": "application/json" },
-      });
-
-      return extractResponseContent(response.data);
+      // Prepare request configuration
+      const config = {
+        headers: { "Content-Type": "application/json" }
+      };
+      
+      // Get the active conversation ID (this might need to be passed as a parameter)
+      // For now, we'll use a temporary conversation ID if needed
+      const conversationId = localStorage.getItem('activeConversationId') || 'temp-conversation';
+      
+      // Add authentication if required
+      if (requireAuth) {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('Authentication required');
+        }
+        config.headers["Authorization"] = `Bearer ${token}`;
+      }
+      
+      // Send the message to the backend API
+      const response = await axios.post(
+        `${API_URL}/chat/gemini/message`, 
+        {
+          content: message,
+          conversationId
+        },
+        config
+      );
+      
+      if (response.data && response.data.data && response.data.data.content) {
+        return response.data.data.content;
+      }
+      
+      return "Không tìm thấy phản hồi từ Gemini.";
     } catch (error) {
-      return handleError(error);
+      console.error("Error fetching Gemini response:", error?.response?.data || error);
+      return "Có lỗi xảy ra, vui lòng thử lại.";
     }
   }
 }

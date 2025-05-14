@@ -6,13 +6,20 @@ import {
   IconButton,
   Avatar,
   Tooltip,
-  Collapse
+  Collapse,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText
 } from '@mui/material';
 import {
   PushPin as PushPinIcon,
   Close as CloseIcon,
   KeyboardArrowDown as KeyboardArrowDownIcon,
-  KeyboardArrowUp as KeyboardArrowUpIcon
+  KeyboardArrowUp as KeyboardArrowUpIcon,
+  MoreVert as MoreVertIcon,
+  List as ListIcon,
+  Delete as DeleteIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
 import { vi } from 'date-fns/locale';
@@ -25,6 +32,7 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   
   const currentUser = AuthService.getUserData();
   const isAdmin = conversation?.admin && 
@@ -33,8 +41,17 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
     (conversation.admin2._id === currentUser?._id || conversation.admin2 === currentUser?._id);
   
   useEffect(() => {
+    console.log('PinnedMessageBanner - conversation:', conversation?._id);
+    console.log('PinnedMessageBanner - pinnedMessages from props:', conversation?.pinnedMessages?.length);
+    
     if (conversation?._id) {
-      loadPinnedMessages();
+      if (conversation.pinnedMessages && conversation.pinnedMessages.length > 0) {
+        console.log('Using pinnedMessages from conversation prop');
+        setPinnedMessages(conversation.pinnedMessages);
+      } else {
+        console.log('Loading pinnedMessages from API');
+        loadPinnedMessages();
+      }
       setupSocketListeners();
     }
     
@@ -64,14 +81,25 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
     
     // Listen for message unpinned event
     SocketService.onMessageUnpinned((data) => {
+      console.log('🔔 PinnedMessageBanner received message_unpinned event:', data);
       if (data.conversation && data.conversation.toString() === conversation._id.toString()) {
         // Remove the unpinned message from the list
         setPinnedMessages(prevMessages => {
-          const filtered = prevMessages.filter(msg => msg._id.toString() !== data.messageId.toString());
+          console.log('Filtering out unpinned message:', data.messageId);
+          console.log('Current pinned messages:', prevMessages.map(m => m._id));
+          
+          const filtered = prevMessages.filter(msg => 
+            msg._id.toString() !== data.messageId.toString()
+          );
+          
+          console.log('Filtered pinned messages:', filtered.map(m => m._id));
+          
           // Adjust current index if needed
           if (currentIndex >= filtered.length && filtered.length > 0) {
             setCurrentIndex(filtered.length - 1);
           }
+          
+          // If no more pinned messages, return empty array
           return filtered;
         });
       }
@@ -87,6 +115,7 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
       const response = await ChatService.getPinnedMessages(conversation._id, token);
       
       if (response.success) {
+        console.log(`Loaded ${response.pinnedMessages?.length || 0} pinned messages from API`);
         setPinnedMessages(response.pinnedMessages || []);
       } else {
         console.error('Failed to load pinned messages:', response.message);
@@ -98,55 +127,27 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
     }
   };
   
+  const handleNext = () => {
+    setCurrentIndex(prevIndex => 
+      prevIndex < pinnedMessages.length - 1 ? prevIndex + 1 : 0
+    );
+  };
+  
+  const handlePrevious = () => {
+    setCurrentIndex(prevIndex => 
+      prevIndex > 0 ? prevIndex - 1 : pinnedMessages.length - 1
+    );
+  };
+  
   const handleUnpin = async (messageId) => {
-    if (!messageId) return;
-    
-    // Tìm tin nhắn trong danh sách đã ghim
-    const pinnedMessage = pinnedMessages.find(msg => msg._id.toString() === messageId.toString());
-    
-    // Kiểm tra nếu tin nhắn không tồn tại hoặc không có trạng thái isPinned
-    if (!pinnedMessage || !pinnedMessage.isPinned) {
-      console.log('Message is not pinned or not found, removing from UI only');
-      
-      // Chỉ xóa khỏi UI mà không gọi API
-      setPinnedMessages(prevMessages => {
-        const filtered = prevMessages.filter(msg => msg._id.toString() !== messageId.toString());
-        // Adjust current index if needed
-        if (currentIndex >= filtered.length && filtered.length > 0) {
-          setCurrentIndex(filtered.length - 1);
-        }
-        return filtered;
-      });
-      
-      // Notify parent component
-      if (onUnpinMessage) {
-        onUnpinMessage(messageId);
-      }
-      
-      return;
-    }
+    if (!messageId || !isAdmin && !isAdmin2) return;
     
     try {
       const token = AuthService.getAccessToken();
-      
-      // Call the API to unpin the message
       const response = await ChatService.unpinMessage(messageId, token);
       
       if (response.success) {
-        // Emit socket event for real-time updates
-        SocketService.unpinMessage(messageId);
-        
-        // Remove from local state
-        setPinnedMessages(prevMessages => {
-          const filtered = prevMessages.filter(msg => msg._id.toString() !== messageId.toString());
-          // Adjust current index if needed
-          if (currentIndex >= filtered.length && filtered.length > 0) {
-            setCurrentIndex(filtered.length - 1);
-          }
-          return filtered;
-        });
-        
-        // Notify parent component
+        // The socket event will handle removing from the UI
         if (onUnpinMessage) {
           onUnpinMessage(messageId);
         }
@@ -156,48 +157,40 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
     } catch (error) {
       console.error('Error unpinning message:', error);
     }
-  };
-  
-  const handleNextPinned = () => {
-    if (pinnedMessages.length > 1) {
-      setCurrentIndex((currentIndex + 1) % pinnedMessages.length);
-    }
-  };
-  
-  const handlePrevPinned = () => {
-    if (pinnedMessages.length > 1) {
-      setCurrentIndex((currentIndex - 1 + pinnedMessages.length) % pinnedMessages.length);
-    }
-  };
-  
-  const formatMessageContent = (message) => {
-    if (!message) return '';
     
-    switch (message.type) {
-      case 'text':
-        return message.content;
-      case 'image':
-        return '[Hu00ecnh u1ea3nh]';
-      case 'file':
-        return `[Tu1ec7p: ${message.fileName || 'File'}]`;
-      case 'audio':
-        return '[Ghi u00e2m]';
-      case 'video':
-        return '[Video]';
-      case 'gif':
-        return '[GIF]';
-      case 'system':
-        return message.content;
-      default:
-        return message.content || '';
+    handleMenuClose();
+  };
+  
+  const formatPinnedTime = (date) => {
+    if (!date) return '';
+    try {
+      return formatDistanceToNow(new Date(date), { addSuffix: true, locale: vi });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return '';
     }
+  };
+  
+  const handleMenuOpen = (event) => {
+    setMenuAnchorEl(event.currentTarget);
+  };
+  
+  const handleMenuClose = () => {
+    setMenuAnchorEl(null);
   };
   
   // Don't show anything if there are no pinned messages or not in a group chat
-  if (pinnedMessages.length === 0 || conversation?.type !== 'group') {
+  if (pinnedMessages.length === 0) {
+    console.log('No pinned messages to display');
     return null;
   }
   
+  if (conversation?.type !== 'group') {
+    console.log('Not a group chat, not showing pinned messages banner');
+    return null;
+  }
+  
+  console.log(`Displaying pinned message banner with ${pinnedMessages.length} messages`);
   const currentMessage = pinnedMessages[currentIndex];
   
   return (
@@ -220,7 +213,7 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
             display: 'flex',
             alignItems: 'center',
             width: '100%',
-            p: 1.5,
+            p: 1,
             position: 'relative',
             '&:hover': {
               backgroundColor: '#e3f2fd'
@@ -233,105 +226,87 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
               left: 0,
               top: 0,
               bottom: 0,
-              width: 4,
+              width: 3,
               backgroundColor: '#1976d2'
             }}
           />
           
-          <PushPinIcon color="primary" fontSize="small" sx={{ ml: 1.5, mr: 2, transform: 'rotate(45deg)' }} />
+          <PushPinIcon color="primary" fontSize="small" sx={{ ml: 1, mr: 1.5, transform: 'rotate(45deg)' }} />
           
-          <Box flexGrow={1} sx={{ display: 'flex', flexDirection: 'column' }}>
-            <Box display="flex" alignItems="center" justifyContent="space-between">
-              <Typography variant="subtitle2" component="span" sx={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1976d2' }}>
-                Tin nhắn đã ghim {pinnedMessages.length > 1 && `(${currentIndex + 1}/${pinnedMessages.length})`}
-              </Typography>
-              
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                {currentMessage?.pinnedAt && formatDistanceToNow(new Date(currentMessage.pinnedAt), { addSuffix: true, locale: vi })}
-              </Typography>
-            </Box>
+          <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
+            <Avatar 
+              src={currentMessage?.originalSender?.avatar || 
+                  (typeof currentMessage?.sender === 'object' ? currentMessage?.sender?.avatar : null)} 
+              sx={{ width: 20, height: 20, mr: 1 }}
+            />
             
-            <Box display="flex" alignItems="center" sx={{ mt: 0.5 }}>
-              <Avatar 
-                src={currentMessage?.sender?.avatar} 
-                alt={currentMessage?.sender?.name}
-                sx={{ width: 24, height: 24, mr: 1, border: '1px solid #e0e0e0' }}
-              />
-              <Typography variant="body2" component="span" sx={{ fontWeight: 500, fontSize: '0.85rem', mr: 1 }}>
-                {currentMessage?.sender?.name}
+            <Typography 
+              variant="body2" 
+              noWrap
+              sx={{ fontWeight: 500 }}
+            >
+              {currentMessage?.content || 'Nội dung tin nhắn'}
+            </Typography>
+            
+            {pinnedMessages.length > 1 && (
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                ({currentIndex + 1}/{pinnedMessages.length})
               </Typography>
-              <Typography variant="body2" noWrap sx={{ fontSize: '0.85rem', color: 'text.secondary', maxWidth: { xs: '150px', sm: '250px', md: '350px' } }}>
-                {formatMessageContent(currentMessage)}
-              </Typography>
-            </Box>
+            )}
           </Box>
           
-          <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', ml: 1 }}>
             {pinnedMessages.length > 1 && (
-              <Box sx={{ display: 'flex', mr: 1, bgcolor: '#e3f2fd', borderRadius: 1 }}>
-                <Tooltip title="Tin nhắn đã ghim trước">
-                  <IconButton size="small" onClick={handlePrevPinned} sx={{ color: '#1976d2' }}>
-                    <KeyboardArrowUpIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                
-                <Tooltip title="Tin nhắn đã ghim tiếp theo">
-                  <IconButton size="small" onClick={handleNextPinned} sx={{ color: '#1976d2' }}>
-                    <KeyboardArrowDownIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+              <Box sx={{ display: 'flex' }}>
+                <IconButton size="small" onClick={handlePrevious}>
+                  <KeyboardArrowDownIcon fontSize="small" />
+                </IconButton>
+                <IconButton size="small" onClick={handleNext}>
+                  <KeyboardArrowUpIcon fontSize="small" />
+                </IconButton>
               </Box>
             )}
             
-            <Tooltip title="Xem tất cả tin nhắn đã ghim">
-              <IconButton 
-                size="small" 
-                onClick={onViewAllPinned}
-                sx={{ 
-                  color: '#1976d2', 
-                  bgcolor: '#e3f2fd',
-                  mr: 1,
-                  '&:hover': { bgcolor: '#bbdefb' }
-                }}
-              >
-                <PushPinIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
+            <IconButton size="small" onClick={handleMenuOpen}>
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
             
-            {(isAdmin || isAdmin2 || 
-              (currentMessage?.pinnedBy && currentUser && 
-               currentMessage.pinnedBy._id === currentUser._id)) && (
-              <Tooltip title="Bỏ ghim tin nhắn">
-                <IconButton 
-                  size="small" 
-                  onClick={() => handleUnpin(currentMessage?._id)}
-                  sx={{ 
-                    color: '#f44336', 
-                    bgcolor: 'rgba(244, 67, 54, 0.08)',
-                    mr: 1,
-                    '&:hover': { bgcolor: 'rgba(244, 67, 54, 0.12)' }
-                  }}
-                >
-                  <CloseIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            )}
-            
-            <Tooltip title="Ẩn tin nhắn đã ghim">
-              <IconButton 
-                size="small" 
-                onClick={() => setExpanded(false)}
-                sx={{ 
-                  color: 'text.secondary',
-                  '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' }
-                }}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
+            <IconButton size="small" onClick={() => setExpanded(false)}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
           </Box>
         </Box>
       </Paper>
+      
+      <Menu
+        anchorEl={menuAnchorEl}
+        open={Boolean(menuAnchorEl)}
+        onClose={handleMenuClose}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'right',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+      >
+        <MenuItem onClick={() => { onViewAllPinned(); handleMenuClose(); }}>
+          <ListItemIcon>
+            <ListIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Xem tất cả tin nhắn đã ghim</ListItemText>
+        </MenuItem>
+        
+        {(isAdmin || isAdmin2) && (
+          <MenuItem onClick={() => handleUnpin(currentMessage?._id)}>
+            <ListItemIcon>
+              <DeleteIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Bỏ ghim tin nhắn này</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
     </Collapse>
   );
 };

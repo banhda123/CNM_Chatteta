@@ -12,19 +12,24 @@ const REACTIONS = [
   { emoji: '😡', name: 'Phẫn nộ' }
 ];
 
-const MessageReactions = ({ message, userId, onAddReaction }) => {
+const MessageReactions = ({ reactions, messageId, currentUserId, onAddReaction, onRemoveReaction }) => {
   // State để quản lý menu cảm xúc
   const [anchorEl, setAnchorEl] = useState(null);
   
+  // Kiểm tra nếu reactions là undefined hoặc null
+  if (!reactions) {
+    reactions = {};
+  }
+  
   // Tính toán số lượng cảm xúc
-  const hasReactions = message.reactions && Object.keys(message.reactions).length > 0;
+  const hasReactions = Object.keys(reactions).length > 0;
   const totalReactions = hasReactions ? 
-    Object.values(message.reactions).reduce((sum, users) => sum + users.length, 0) : 0;
+    Object.values(reactions).reduce((sum, users) => sum + users.length, 0) : 0;
   
   // Kiểm tra người dùng hiện tại đã thả cảm xúc chưa
   const userReaction = hasReactions ? 
-    Object.entries(message.reactions).find(([emoji, users]) => 
-      users.includes(userId)
+    Object.entries(reactions).find(([emoji, users]) => 
+      Array.isArray(users) && users.includes(currentUserId)
     )?.[0] : null;
   
   // Xử lý click vào nút thả cảm xúc
@@ -40,8 +45,14 @@ const MessageReactions = ({ message, userId, onAddReaction }) => {
   
   // Xử lý khi chọn cảm xúc
   const handleSelectReaction = (emoji) => {
-    if (onAddReaction) {
-      onAddReaction(message._id, emoji);
+    if (!reactions[emoji] || !reactions[emoji].includes(currentUserId)) {
+      if (onAddReaction) {
+        onAddReaction(messageId, emoji);
+      }
+    } else {
+      if (onRemoveReaction) {
+        onRemoveReaction(messageId, emoji);
+      }
     }
     handleClose();
   };
@@ -59,8 +70,8 @@ const MessageReactions = ({ message, userId, onAddReaction }) => {
           mt: 0.5
         }}
       >
-        {Object.entries(message.reactions).map(([emoji, users]) => {
-          if (users.length === 0) return null;
+        {Object.entries(reactions).map(([emoji, users]) => {
+          if (!Array.isArray(users) || users.length === 0) return null;
           
           return (
             <Tooltip 
@@ -84,7 +95,7 @@ const MessageReactions = ({ message, userId, onAddReaction }) => {
                 <Box 
                   sx={{ 
                     fontSize: '1.1rem',
-                    bgcolor: users.includes(userId) ? 'rgba(25, 118, 210, 0.1)' : 'transparent',
+                    bgcolor: users.includes(currentUserId) ? 'rgba(25, 118, 210, 0.1)' : 'transparent',
                     p: 0.5,
                     borderRadius: 1,
                     cursor: 'pointer',

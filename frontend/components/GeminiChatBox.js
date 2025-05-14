@@ -13,6 +13,7 @@ import {
 import SendIcon from '@mui/icons-material/Send';
 import GeminiService from '../services/GeminiService';
 import { useTheme } from '@mui/material/styles';
+import { STORAGE_KEYS } from '../config/constants';
 
 const GeminiChatBox = () => {
   const theme = useTheme();
@@ -47,7 +48,7 @@ const GeminiChatBox = () => {
     setLoading(true);
     
     try {
-      // Get response from Gemini API
+      // Get response from Gemini API via backend
       const response = await GeminiService.fetchGeminiResponse(input);
       
       // Add Gemini response to chat

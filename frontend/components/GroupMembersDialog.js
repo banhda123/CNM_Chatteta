@@ -51,6 +51,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
   const [confirmRemoveAdmin2Open, setConfirmRemoveAdmin2Open] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     if (open && conversation) {
@@ -187,26 +188,48 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     if (conversation.admin) {
       const adminId = conversation.admin._id || conversation.admin;
       localStorage.setItem('adminId', adminId);
+      localStorage.setItem(`adminId_${conversation._id}`, adminId);
       console.log('Stored adminId in localStorage:', adminId);
     }
     
     if (conversation.admin2) {
       const admin2Id = conversation.admin2._id || conversation.admin2;
       localStorage.setItem('admin2Id', admin2Id);
+      localStorage.setItem(`admin2Id_${conversation._id}`, admin2Id);
       console.log('Stored admin2Id in localStorage:', admin2Id);
     }
     
+    // Kiểm tra thông tin admin từ localStorage
+    const storedAdminId = localStorage.getItem(`adminId_${conversation._id}`);
+    const storedAdmin2Id = localStorage.getItem(`admin2Id_${conversation._id}`);
+    
+    console.log('Stored admin ID:', storedAdminId);
+    console.log('Stored admin2 ID:', storedAdmin2Id);
+    
+    // Cập nhật thông tin admin và admin2 trong conversation nếu không có
+    if (!conversation.admin && storedAdminId) {
+      console.log('Restoring admin from localStorage:', storedAdminId);
+      conversation.admin = storedAdminId;
+    }
+    
+    if (!conversation.admin2 && storedAdmin2Id) {
+      console.log('Restoring admin2 from localStorage:', storedAdmin2Id);
+      conversation.admin2 = storedAdmin2Id;
+    }
+    
     // Check if current user is admin or admin2
-    const isUserAdmin = conversation.admin && userData && 
-      (conversation.admin._id === userData._id || conversation.admin === userData._id);
-    const isUserAdmin2 = conversation.admin2 && userData &&
-      (conversation.admin2._id === userData._id || conversation.admin2 === userData._id);
+    const adminId = conversation.admin?._id || conversation.admin || storedAdminId;
+    const admin2Id = conversation.admin2?._id || conversation.admin2 || storedAdmin2Id;
+    
+    const isUserAdmin = adminId && userData && userData._id === adminId;
+    const isUserAdmin2 = admin2Id && userData && userData._id === admin2Id;
+    
     setIsAdmin(isUserAdmin);
     setIsAdmin2(isUserAdmin2);
     
     console.log('=== Role Checks ===');
-    console.log('Is user admin:', isUserAdmin);
-    console.log('Is user admin2:', isUserAdmin2);
+    console.log('Is user admin:', isUserAdmin, 'Admin ID:', adminId, 'User ID:', userData?._id);
+    console.log('Is user admin2:', isUserAdmin2, 'Admin2 ID:', admin2Id, 'User ID:', userData?._id);
     
     // Set members with correct roles
     if (conversation.members) {
@@ -220,18 +243,12 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
         // Set role based on admin/admin2 status
         let role = "member";
         
-        if (conversation.admin) {
-          const adminId = conversation.admin._id || conversation.admin;
-          if (memberId === adminId) {
-            role = "admin";
-          }
+        if (adminId && memberId === adminId) {
+          role = "admin";
         }
         
-        if (conversation.admin2) {
-          const admin2Id = conversation.admin2._id || conversation.admin2;
-          if (memberId === admin2Id) {
-            role = "admin2";
-          }
+        if (admin2Id && memberId === admin2Id) {
+          role = "admin2";
         }
         
         console.log('Setting role to', role, 'for member:', memberId);
@@ -310,92 +327,48 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
   };
 
   const handleRemoveAdmin2 = async () => {
-    if (!conversation) return;
-    
     try {
-      // Check if there's an admin2 in the conversation
-      if (!conversation.admin2) {
-        console.log('Current conversation:', conversation); // Debug log
-        setError('There is no admin2 in this group');
-        return;
-      }
-
-      // Get admin2 ID whether it's a string or an object
-      const admin2Id = typeof conversation.admin2 === 'string' 
-        ? conversation.admin2 
-        : conversation.admin2._id;
-
       setActionLoading(true);
-      const token = AuthService.getAccessToken();
-      if (!token) {
-        setError('You are not authenticated. Please log in again.');
-        return;
-      }
-      
-      console.log('Token being used:', token); // Debug log
-      console.log('Conversation:', conversation); // Debug log
-      console.log('Admin2 ID:', admin2Id); // Debug log
       console.log('Attempting to remove admin2 from conversation:', conversation._id); // Debug log
       
-      const response = await ChatService.removeAdmin2(
-        conversation._id,
-        token
-      );
+      const token = AuthService.getAccessToken();
       
-      if (response.success) {
-        // Create a deep copy of the conversation to modify
-        const updatedConversation = JSON.parse(JSON.stringify(conversation));
-        updatedConversation.admin2 = null;
-        
-        // Update the members in the copied conversation
-        if (updatedConversation.members) {
-          updatedConversation.members = updatedConversation.members.map(m => {
-            const memberId = m.idUser?._id || m.idUser;
-            if (memberId === admin2Id) {
-              return { ...m, role: "member" };
-            }
-            return m;
-          });
-        }
-        
-        // Update local members list
-        setMembers(prevMembers => 
-          prevMembers.map(m => 
-            m.idUser._id === admin2Id
-              ? { ...m, role: "member" }
-              : m
-          )
-        );
-        
-        // Update local conversation state directly
-        conversation.admin2 = null;
-        
-        // Update conversation in parent component with the deep copy
-        if (onGroupUpdated) {
-          onGroupUpdated(updatedConversation);
-        }
-        
-        // Force re-render by setting state
-        setIsAdmin2(false);
-        
-        handleMenuClose();
-      } else {
-        setError(response.message || 'Failed to remove admin2');
+      if (!token) {
+        throw new Error('Không có token xác thực');
       }
+      
+      const response = await ChatService.removeAdmin2(conversation._id, token);
+      
+      // Xóa thông tin admin2 từ localStorage
+      localStorage.removeItem(`admin2Id_${conversation._id}`);
+      localStorage.removeItem('admin2Id');
+      
+      // Cập nhật conversation với admin2 = null
+      const updatedConversation = {
+        ...conversation,
+        admin2: null
+      };
+      
+      setActionLoading(false);
+      setConfirmRemoveAdmin2Open(false);
+      
+      // Notify parent component
+      onGroupUpdated(updatedConversation);
+      
+      // Hiển thị thông báo thành công
+      setSuccess('Đã xóa phó nhóm thành công');
+      setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       console.error('Error removing admin2:', error);
+      setActionLoading(false);
+      
       if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
         setError(error.response.data.message || 'Failed to remove admin2. Please try again.');
-      } else if (error.message === 'No token provided') {
-        setError('You are not authenticated. Please log in again.');
       } else {
         setError('Failed to remove admin2. Please try again.');
       }
-    } finally {
-      setActionLoading(false);
-      setConfirmRemoveAdmin2Open(false);
+      
+      setTimeout(() => setError(''), 5000);
     }
   };
 
@@ -404,16 +377,16 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     
     try {
       setActionLoading(true);
-      const token = AuthService.getAccessToken();
-      console.log('Token being used:', token); // Debug log
+      const authToken = AuthService.getAccessToken();
+      console.log('Token being used:', authToken); // Debug log
       
-      const response = await ChatService.updateGroupPermissions(
+      const permissionsResponse = await ChatService.updateGroupPermissions(
         conversation._id,
         permissions,
-        token
+        authToken
       );
       
-      if (response.success) {
+      if (permissionsResponse.success) {
         // Create a deep copy of the conversation to modify
         const updatedConversation = JSON.parse(JSON.stringify(conversation));
         
@@ -433,7 +406,7 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
         
         setPermissionsDialogOpen(false);
       } else {
-        setError(response.message || 'Failed to update permissions');
+        setError(permissionsResponse.message || 'Failed to update permissions');
       }
     } catch (error) {
       console.error('Error updating permissions:', error);
@@ -463,43 +436,78 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       // Clear any existing error before attempting removal
       setError('');
 
-      // Emit socket event before making the API call
-      // This ensures real-time notification for the removed member
-      SocketService.emitMemberRemovedFromGroup({
-        conversationId: conversation._id,
-        memberId: memberToRemove.idUser._id,
-        removedBy: currentUser._id
-      });
+      console.log('Removing member:', memberToRemove.idUser.name, 'with ID:', memberToRemove.idUser._id);
+      console.log('Conversation before removal:', conversation);
 
-      const response = await ChatService.removeMemberFromGroup(
-        conversation._id,
-        memberToRemove.idUser._id,
-        token
-      );
+      // Gọi API để xóa thành viên
+      try {
+        const response = await ChatService.removeMemberFromGroup(
+          conversation._id,
+          memberToRemove.idUser._id,
+          token
+        );
 
-      // Update members list
-      setMembers(prevMembers => 
-        prevMembers.filter(m => m.idUser._id !== memberToRemove.idUser._id)
-      );
-      
-      // Update conversation if available in response
-      if (response?.conversation) {
-        if (onGroupUpdated) {
-          onGroupUpdated(response.conversation);
+        console.log('Remove member API response:', response);
+
+        // Update members list immediately
+        setMembers(prevMembers => 
+          prevMembers.filter(m => m.idUser._id !== memberToRemove.idUser._id)
+        );
+        
+        // Update conversation if available in response
+        if (response?.conversation) {
+          if (onGroupUpdated) {
+            onGroupUpdated(response.conversation);
+          }
         }
-      }
-      
-      // Notify parent component about member removal
-      if (onMemberRemoved) {
-        onMemberRemoved(memberToRemove, response?.conversation);
+        
+        // Notify parent component about member removal
+        if (onMemberRemoved) {
+          onMemberRemoved(memberToRemove, response?.conversation);
+        }
+
+        // Emit socket event với đầy đủ thông tin
+        try {
+          const socketData = {
+            conversationId: conversation._id,
+            memberId: memberToRemove.idUser._id,
+            memberName: memberToRemove.idUser.name,
+            removedBy: currentUser._id,
+            removedByName: currentUser.name,
+            groupName: conversation.name || 'Group Chat',
+            timestamp: new Date().toISOString()
+          };
+          
+          console.log('Emitting member_removed_from_group with data:', socketData);
+          
+          // Emit socket event
+          SocketService.emitMemberRemovedFromGroup(socketData);
+          
+          // Đảm bảo conversation được cập nhật cho tất cả thành viên
+          SocketService.socket.emit('update_conversation_list', {
+            conversation: response?.conversation || conversation,
+            action: 'member_removed',
+            timestamp: new Date().toISOString()
+          });
+          
+          console.log('Successfully emitted member_removed_from_group event');
+        } catch (socketError) {
+          console.error('Error emitting socket event:', socketError);
+          // Không cần hiển thị lỗi socket cho người dùng vì API đã thành công
+        }
+      } catch (apiError) {
+        console.error('Error from API when removing member:', apiError);
+        if (apiError.response?.status === 400 || apiError.response?.status === 403) {
+          setError(apiError.response.data.message || 'Không thể xóa thành viên. Vui lòng thử lại.');
+        } else {
+          setError('Có lỗi xảy ra khi xóa thành viên. Vui lòng thử lại sau.');
+        }
+        throw apiError; // Re-throw để không thực hiện code phía dưới nếu API lỗi
       }
 
     } catch (error) {
-      console.error('Error removing member:', error);
-      // Only set error if the operation actually failed
-      if (error.response?.status === 400 || error.response?.status === 403) {
-        setError(error.response.data.message || 'Không thể xóa thành viên. Vui lòng thử lại.');
-      }
+      console.error('Error in handleRemoveMember:', error);
+      // Lỗi đã được xử lý ở try-catch bên trong
     } finally {
       setActionLoading(false);
     }
@@ -607,11 +615,31 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
       
       // Emit socket events for each new member added
       if (newMembers.length > 0 && conversation._id) {
+        // Thông báo cho tất cả thành viên trong nhóm về việc có thành viên mới
+        console.log('📣 Thông báo cho tất cả thành viên trong nhóm về thành viên mới');
+        
+        // Thông báo cho toàn bộ nhóm về sự thay đổi
+        SocketService.socket.emit('group_updated', {
+          _id: updatedConversation._id,
+          name: updatedConversation.name,
+          type: updatedConversation.type,
+          avatar: updatedConversation.avatar,
+          members: updatedConversation.members,
+          admin: updatedConversation.admin,
+          admin2: updatedConversation.admin2,
+          lastMessage: updatedConversation.lastMessage
+        });
+        
+        // Thông báo cho từng thành viên mới
         newMembers.forEach(member => {
           const memberId = member.idUser._id || member.idUser;
-          console.log('Emitting add_member_to_group for:', memberId);
-          // Emit socket event for real-time updates to other users
-          SocketService.addMemberToGroup(conversation._id, memberId);
+          console.log('🔔 Emit sự kiện member_added cho:', memberId);
+          
+          // Emit socket event cho thành viên mới
+          SocketService.socket.emit('member_added', { 
+            conversation: updatedConversation, 
+            member: member
+          });
         });
       }
       

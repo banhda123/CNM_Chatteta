@@ -47,8 +47,8 @@ const PinMessageButton = ({ message, conversation, onPinStatusChange }) => {
       const response = await ChatService.pinMessage(message._id, token);
       
       if (response.success) {
-        // Emit socket event for real-time updates
-        SocketService.pinMessage(message._id);
+        // Không cần emit socket event vì API đã xử lý và emit event rồi
+        // SocketService.pinMessage(message._id);
         
         // Update the local state
         if (onPinStatusChange) {
@@ -86,22 +86,32 @@ const PinMessageButton = ({ message, conversation, onPinStatusChange }) => {
         return;
       }
       
+      // Cập nhật UI ngay lập tức (optimistic update)
+      if (onPinStatusChange) {
+        console.log('Optimistically updating UI for unpinned message:', message._id);
+        onPinStatusChange(message._id, false);
+      }
+      
       // Call the API to unpin the message
       const response = await ChatService.unpinMessage(message._id, token);
       
       if (response.success) {
-        // Emit socket event for real-time updates
-        SocketService.unpinMessage(message._id);
-        
-        // Update the local state
-        if (onPinStatusChange) {
-          onPinStatusChange(message._id, false);
-        }
+        console.log('Successfully unpinned message:', message._id);
+        // Không cần emit socket event vì API đã xử lý và emit event rồi
+        // SocketService.unpinMessage(message._id);
       } else {
         console.error('Failed to unpin message:', response.message);
+        // Hoàn tác cập nhật UI nếu API thất bại
+        if (onPinStatusChange) {
+          onPinStatusChange(message._id, true);
+        }
       }
     } catch (error) {
       console.error('Error unpinning message:', error);
+      // Hoàn tác cập nhật UI nếu có lỗi
+      if (onPinStatusChange) {
+        onPinStatusChange(message._id, true);
+      }
     } finally {
       setLoading(false);
       handleClose();

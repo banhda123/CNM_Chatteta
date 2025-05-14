@@ -35,14 +35,191 @@ export const ConnectSocket = (server) => {
   io.on("connection", (socket) => {
     console.log(`${socket.id} connected`);
 
+    // Map để lưu trạng thái online của người dùng
+    const userStatusMap = new Map();
+
     socket.on("join_room", (User) => {
       console.log("join-room");
       socket.join(User._id);
+      
+      // Cập nhật trạng thái online và thông báo cho danh bạ
+      if (User._id) {
+        // Kiểm tra nếu người dùng đã online rồi thì không gửi lại sự kiện
+        const wasAlreadyOnline = userStatusMap.get(User._id) === true;
+        
+        // Cập nhật trạng thái, nhưng chỉ gửi thông báo nếu chuyển từ offline sang online
+        userStatusMap.set(User._id, true);
+        
+        if (!wasAlreadyOnline) {
+          console.log(`Emitting user_online for ${User._id}`);
+          socket.broadcast.emit("user_online", User._id);
+        }
+      }
     });
 
     socket.on("leave_room", (User) => {
       console.log("leave-room");
       socket.leave(User._id);
+      
+      // Cập nhật trạng thái offline và thông báo
+      if (User._id) {
+        userStatusMap.set(User._id, false);
+        socket.broadcast.emit("user_offline", User._id);
+      }
+    });
+
+    // Xử lý trạng thái người dùng
+    socket.on("user_status", (data) => {
+      if (data.userId) {
+        const isOnline = data.status === "online";
+        // Kiểm tra nếu trạng thái không thay đổi thì không gửi thông báo
+        const currentStatus = userStatusMap.get(data.userId);
+        const statusChanged = currentStatus !== isOnline;
+        
+        // Cập nhật trạng thái
+        userStatusMap.set(data.userId, isOnline);
+        
+        // Chỉ thông báo khi trạng thái thực sự thay đổi
+        if (statusChanged) {
+          console.log(`Status changed for ${data.userId}: ${isOnline ? 'online' : 'offline'}`);
+          socket.broadcast.emit(isOnline ? "user_online" : "user_offline", data.userId);
+        }
+      }
+    });
+
+    // Xử lý xác nhận tin nhắn đã được gửi đến thiết bị
+    socket.on("message_delivered", async (data) => {
+      try {
+        const { messageId, conversationId } = data;
+        if (!messageId || !conversationId) return;
+        
+        // Cập nhật trạng thái tin nhắn trong DB nếu cần
+        // await MessageModel.findByIdAndUpdate(messageId, { delivered: true });
+        
+        // Gửi xác nhận đến tất cả thành viên trong cuộc trò chuyện
+        io.to(conversationId).emit("message_delivered", { 
+          messageId, 
+          conversationId,
+          deliveredAt: new Date()
+        });
+      } catch (error) {
+        console.error("Error in message_delivered event:", error);
+      }
+    });
+
+    // Xử lý thông báo người dùng đang xem tin nhắn
+    socket.on("viewing_messages", (data) => {
+      try {
+        const { conversationId } = data;
+        if (!conversationId) return;
+        
+        // Lấy ID người dùng từ request hoặc socket
+        const userId = socket.userId || data.userId;
+        if (!userId) return;
+        
+        // Thông báo cho tất cả thành viên trong cuộc trò chuyện
+        socket.to(conversationId).emit("user_viewing_messages", {
+          userId,
+          conversationId,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error("Error in viewing_messages event:", error);
+      }
+    });
+
+    socket.on("stop_viewing_messages", (data) => {
+      try {
+        const { conversationId } = data;
+        if (!conversationId) return;
+        
+        const userId = socket.userId || data.userId;
+        if (!userId) return;
+        
+        socket.to(conversationId).emit("user_stop_viewing_messages", {
+          userId,
+          conversationId,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error("Error in stop_viewing_messages event:", error);
+      }
+    });
+
+    // Xử lý đồng bộ hóa tin nhắn sau khi mất kết nối
+    socket.on("sync_messages", async (data) => {
+      try {
+        const { conversationId, lastMessageTimestamp } = data;
+        if (!conversationId) return;
+        
+        // Tìm tất cả tin nhắn từ thời điểm lastMessageTimestamp
+        const query = { idConversation: conversationId };
+        
+        if (lastMessageTimestamp) {
+          query.createdAt = { $gt: new Date(lastMessageTimestamp) };
+        }
+        
+        // Tìm các tin nhắn mới
+        const messages = await MessageModel.find(query)
+          .sort({ createdAt: 1 })
+          .populate("sender", "name avatar _id")
+          .lean();
+        
+        // Gửi kết quả về cho client yêu cầu
+        socket.emit("sync_messages_result", {
+          conversationId,
+          messages,
+          count: messages.length,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error("Error in sync_messages event:", error);
+        socket.emit("message_error", {
+          type: "sync_error",
+          message: "Không thể đồng bộ tin nhắn",
+          details: error.message
+        });
+      }
+    });
+
+    // Đăng ký thiết bị cho đồng bộ đa thiết bị
+    socket.on("register_device", (deviceInfo) => {
+      try {
+        const { userId, deviceId, deviceType } = deviceInfo;
+        if (!userId || !deviceId) return;
+        
+        // Lưu thông tin thiết bị vào user session hoặc DB
+        console.log(`📱 Đăng ký thiết bị: ${deviceId} (${deviceType}) cho user ${userId}`);
+        
+        // Có thể lưu vào db hoặc memory store ở đây
+        
+        // Thông báo đăng ký thành công
+        socket.emit("device_registered", {
+          success: true,
+          deviceId,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error("Error in register_device event:", error);
+      }
+    });
+
+    // Đồng bộ trạng thái tin nhắn giữa các thiết bị
+    socket.on("sync_message_status", (data) => {
+      try {
+        const { messageIds, status, userId } = data;
+        if (!Array.isArray(messageIds) || !status || !userId) return;
+        
+        // Thông báo cho tất cả thiết bị của người dùng này
+        socket.to(userId).emit("device_sync", {
+          type: "message_status",
+          messageIds,
+          status,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error("Error in sync_message_status event:", error);
+      }
     });
 
     socket.on("add_friend", async (data) => {
@@ -112,33 +289,65 @@ export const ConnectSocket = (server) => {
           message: newMessage._id,
         });
 
-        // Emit to the conversation room for real-time chat updates
+        // Chỉ gửi dữ liệu cần thiết của tin nhắn để giảm tải mạng
+        const messageData = {
+          _id: newMessage._id,
+          content: newMessage.content,
+          type: newMessage.type,
+          sender: newMessage.sender,
+          idConversation: newMessage.idConversation,
+          fileUrl: newMessage.fileUrl,
+          fileName: newMessage.fileName, 
+          fileType: newMessage.fileType,
+          createdAt: newMessage.createdAt,
+          seen: newMessage.seen,
+          isRevoked: newMessage.isRevoked
+        };
+
+        // Emitting to conversation room only
         io.to(newMessage.idConversation.toString()).emit(
           "new_message",
-          newMessage
+          messageData
         );
         
-        // Ghi log thêm thông tin về loại tin nhắn đã gửi
-        console.log(`📨 Tin nhắn mới đã được gửi - ID: ${newMessage._id}, Loại: ${newMessage.type}`);
+        console.log(`📨 Tin nhắn mới đã được gửi - ID: ${newMessage._id}`);
         
-        // Get the updated conversation with populated data
+        // Lấy thông tin tối thiểu cần thiết cho cập nhật danh sách cuộc trò chuyện
         const conversation = await ConversationModel.findById(newMessage.idConversation)
+          .select('_id name type avatar members lastMessage updatedAt')
           .populate({
             path: "members.idUser",
-            select: { name: 1, avatar: 1 }
-          })
-          .populate("lastMessage");
+            select: "name avatar _id"
+          });
           
         if (conversation && conversation.members) {
-          console.log(`📣 Cập nhật danh sách cuộc trò chuyện cho ${conversation.members.length} thành viên`);
+          // Tạo đối tượng dữ liệu tối giản để cập nhật danh sách cuộc trò chuyện
+          const conversationUpdate = {
+            _id: conversation._id,
+            name: conversation.name,
+            type: conversation.type,
+            avatar: conversation.avatar,
+            lastMessage: messageData,
+            updatedAt: new Date()
+          };
           
-          // Emit update_conversation_list to each member to move the conversation to the top
+          // Emit cập nhật riêng cho từng thành viên
           conversation.members.forEach(member => {
             if (member.idUser && member.idUser._id) {
-              console.log(`👤 Gửi cập nhật cho user: ${member.idUser._id}`);
+              // Đếm nhanh tin nhắn chưa đọc nếu không phải người gửi
+              let unreadCount = 0;
+              if (member.idUser._id.toString() !== newMessage.sender.toString()) {
+                unreadCount = 1; // Tạm thời chỉ cần biết có tin nhắn chưa đọc, client sẽ cập nhật số chính xác sau
+              }
+              
+              // Thêm unreadCount vào dữ liệu cập nhật
+              const memberUpdate = {
+                ...conversationUpdate,
+                unreadCount
+              };
+              
               io.to(member.idUser._id.toString()).emit("update_conversation_list", {
-                conversation: conversation,
-                newMessage: newMessage
+                conversation: memberUpdate
               });
             }
           });
@@ -517,16 +726,26 @@ export const ConnectSocket = (server) => {
     // Add new handler for member_removed_from_group
     socket.on("member_removed_from_group", async (data) => {
       try {
-        const { conversationId, memberId, removedBy } = data;
+        const { conversationId, memberId, removedBy, groupName, timestamp, memberName, removedByName } = data;
         
-        console.log(`🚫 Member removal event - Conversation: ${conversationId}, Member: ${memberId}, RemovedBy: ${removedBy}`);
+        console.log(`🔄 Member removal socket event - Conversation: ${conversationId}, Member: ${memberId} (${memberName || 'Unknown'}), RemovedBy: ${removedBy} (${removedByName || 'Unknown'}), Time: ${timestamp || 'N/A'}`);
         
-        // Emit to the specific member that was removed
-        io.to(memberId).emit("member_removed_from_group", {
-          conversationId,
-          memberId,
-          removedBy
-        });
+        // Trực tiếp thông báo cho người dùng bị xóa
+        if (memberId) {
+          // Thông báo người dùng đã bị xóa
+          io.to(memberId).emit("removed_from_group", {
+            ...data,
+            message: `Bạn đã bị xóa khỏi nhóm "${groupName || 'Group Chat'}" bởi người quản trị`
+          });
+          
+          // Xóa cuộc trò chuyện khỏi danh sách cuộc trò chuyện của người dùng
+          io.to(memberId).emit("conversation_deleted", {
+            conversationId,
+            timestamp: new Date().toISOString()
+          });
+          
+          console.log(`✉️ Sent removal notification to user ${memberId}`);
+        }
         
         // Get the updated conversation data
         const conversation = await ConversationModel.findById(conversationId)
@@ -534,27 +753,59 @@ export const ConnectSocket = (server) => {
             path: "members.idUser",
             select: { name: 1, avatar: 1 }
           })
+          .populate("admin", "name avatar")
+          .populate("admin2", "name avatar")
           .populate("lastMessage");
 
         if (conversation) {
-          // Emit to all members in the conversation
-          conversation.members.forEach(member => {
-            if (member.idUser && member.idUser._id) {
-              io.to(member.idUser._id.toString()).emit("update_conversation_list", {
-                conversation: conversation
-              });
+          console.log(`📢 Broadcasting member removal to all members in conversation ${conversationId}`);
+          
+          // Emit to all members in the conversation about the update
+          io.to(conversationId).emit("group_updated", {
+            _id: conversation._id,
+            name: conversation.name, 
+            type: conversation.type,
+            avatar: conversation.avatar,
+            members: conversation.members,
+            admin: conversation.admin,
+            admin2: conversation.admin2,
+            lastMessage: conversation.lastMessage
+          });
+          
+          // Broadcast the member_removed_from_group event to all members EXCEPT the removed member
+          // This ensures all members get real-time updates
+          io.to(conversationId).emit("member_removed_from_group", {
+            ...data,
+            conversation: {
+              _id: conversation._id,
+              name: conversation.name,
+              members: conversation.members,
+              admin: conversation.admin,
+              admin2: conversation.admin2
             }
           });
-
-          // Also emit member_removed event with full conversation data
-          io.to(conversationId).emit("member_removed", {
-            conversation: conversation,
-            memberId
-          });
+          
+          // Update conversation list for all members
+          if (conversation.members && Array.isArray(conversation.members)) {
+            conversation.members.forEach(member => {
+              if (member.idUser && member.idUser._id) {
+                const memberId = member.idUser._id.toString();
+                console.log(`📝 Updating conversation list for member: ${memberId}`);
+                
+                io.to(memberId).emit("update_conversation_list", {
+                  conversation: conversation,
+                  action: "member_removed",
+                  timestamp: new Date().toISOString()
+                });
+              }
+            });
+          }
+        } else {
+          console.log(`⚠️ Conversation ${conversationId} not found when handling member removal`);
         }
         
       } catch (error) {
-        console.error("Error handling member removal:", error);
+        console.error("Error handling member_removed_from_group event:", error);
       }
     });
 
@@ -602,6 +853,222 @@ export const ConnectSocket = (server) => {
 
     socket.on("disconnect", () => {
       console.log(`${socket.id} disconnected`);
+    });
+
+    // Xử lý tạo nhóm mới
+    socket.on("create_group", async (groupData) => {
+      try {
+        const { name, avatar, description, admin, members } = groupData;
+        console.log("🔸 Creating group:", name);
+        
+        // Tạo nhóm mới
+        const conversation = new ConversationModel({
+          name,
+          avatar,
+          description,
+          admin,
+          type: "group",
+          members: [
+            { idUser: admin, role: "admin" },
+            ...members.map(m => ({ idUser: m, role: "member" }))
+          ],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+        
+        // Lưu vào database
+        const savedConversation = await conversation.save();
+        
+        // Populate thông tin thành viên
+        const populatedConversation = await ConversationModel.findById(savedConversation._id)
+          .populate({
+            path: "members.idUser",
+            select: { name: 1, avatar: 1 }
+          })
+          .populate("admin", "name avatar")
+          .lean();
+        
+        // Thêm thông tin mở rộng trước khi gửi về client
+        const enhancedConversation = {
+          ...populatedConversation,
+          isGroup: true,
+          typing: false,
+          unreadCount: 0,
+          lastMessage: null,
+          createdAt: new Date()
+        };
+        
+        console.log("🔸 Group created:", savedConversation._id);
+        
+        // Thông báo cho admin (người tạo nhóm) - Chỉ gửi một lần
+        io.to(admin).emit("group_created", enhancedConversation);
+        
+        // Thông báo cho tất cả thành viên (trừ admin) sử dụng update_conversation_list thay vì group_created
+        // để tránh lặp vô hạn với group_created
+        members.forEach(memberId => {
+          if (memberId !== admin) {
+            // Sử dụng update_conversation_list thay vì group_created để đồng bộ
+            io.to(memberId).emit("update_conversation_list", {
+              conversation: enhancedConversation,
+              action: "add_group"
+            });
+          }
+        });
+      } catch (error) {
+        console.error("Error creating group:", error);
+        socket.emit("message_error", {
+          type: "group_creation_error",
+          message: "Cannot create group",
+          error: error.message
+        });
+      }
+    });
+    
+    // Thêm xử lý sự kiện chi tiết cho hoạt động nhóm
+    socket.on("group_activity", (data) => {
+      try {
+        const { conversationId, activityType, actorId, targetId, details } = data;
+        
+        if (!conversationId || !activityType) return;
+        
+        // Gửi thông báo hoạt động đến tất cả thành viên nhóm
+        io.to(conversationId).emit("group_activity", {
+          conversationId,
+          activityType,
+          actorId,
+          targetId,
+          details,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error("Error in group_activity event:", error);
+      }
+    });
+
+    socket.on("add_member_to_group", async (data) => {
+      try {
+        const { groupId, memberId } = data;
+        console.log(`Socket: Adding member ${memberId} to group ${groupId}`);
+        
+        if (!groupId || !memberId) {
+          console.error("Invalid data for add_member_to_group:", data);
+          return;
+        }
+        
+        // Tìm cuộc trò chuyện và cập nhật với thông tin đầy đủ
+        const conversation = await ConversationModel.findById(groupId)
+          .populate({
+            path: "members.idUser",
+            select: "name avatar"
+          })
+          .populate("admin", "name avatar")
+          .populate("admin2", "name avatar")
+          .populate({
+            path: "lastMessage",
+            populate: {
+              path: "sender",
+              select: "name avatar"
+            }
+          });
+        
+        if (!conversation) {
+          console.error(`Group ${groupId} not found`);
+          return;
+        }
+        
+        // Kiểm tra xem thành viên đã tồn tại trong nhóm chưa
+        const memberExists = conversation.members.some(member => 
+          member.idUser && 
+          ((member.idUser._id && member.idUser._id.toString() === memberId.toString()) ||
+           (typeof member.idUser === 'string' && member.idUser.toString() === memberId.toString()))
+        );
+        
+        if (!memberExists) {
+          console.log(`Member ${memberId} is not in group ${groupId}, cannot emit event`);
+          return;
+        }
+        
+        // Thông báo cho tất cả thành viên trong nhóm
+        console.log(`Emitting member_added event to room ${groupId}`);
+        io.to(groupId).emit("member_added", {
+          conversation: conversation,
+          member: { idUser: memberId }
+        });
+        
+        // Thông báo riêng cho thành viên mới
+        console.log(`Emitting member_added event to user ${memberId}`);
+        io.to(memberId).emit("member_added", {
+          conversation: conversation,
+          member: { idUser: memberId }
+        });
+        
+        // Cập nhật danh sách cuộc trò chuyện cho tất cả thành viên
+        if (conversation.members && Array.isArray(conversation.members)) {
+          conversation.members.forEach(member => {
+            if (member.idUser && member.idUser._id) {
+              console.log(`Updating conversation list for user ${member.idUser._id}`);
+              io.to(member.idUser._id.toString()).emit("update_conversation_list", {
+                conversation: conversation,
+                timestamp: new Date().toISOString()
+              });
+            }
+          });
+        }
+      } catch (error) {
+        console.error("Error handling add_member_to_group event:", error);
+      }
+    });
+
+    socket.on("member_added", async (data) => {
+      try {
+        const { conversation, member } = data;
+        
+        if (!conversation || !conversation._id || !member) {
+          console.error("Invalid data for member_added event:", data);
+          return;
+        }
+        
+        console.log(`Socket: Member added to group ${conversation._id}`, {
+          conversationName: conversation.name,
+          memberInfo: member.idUser?.name || member.idUser
+        });
+        
+        // Thông báo cho tất cả thành viên trong phòng
+        io.to(conversation._id.toString()).emit("member_added", {
+          conversation: conversation,
+          member: member
+        });
+        
+        // Thông báo riêng cho thành viên mới
+        const memberId = member.idUser?._id || member.idUser;
+        if (memberId) {
+          io.to(memberId.toString()).emit("member_added", {
+            conversation: conversation,
+            member: member
+          });
+          
+          // Thông báo cập nhật danh sách cuộc trò chuyện cho thành viên mới
+          io.to(memberId.toString()).emit("update_conversation_list", {
+            conversation: conversation,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        // Cập nhật danh sách cuộc trò chuyện cho tất cả thành viên
+        if (conversation.members && Array.isArray(conversation.members)) {
+          conversation.members.forEach(m => {
+            if (m.idUser && (m.idUser._id || typeof m.idUser === 'string')) {
+              const userId = m.idUser._id?.toString() || m.idUser.toString();
+              io.to(userId).emit("update_conversation_list", {
+                conversation: conversation,
+                timestamp: new Date().toISOString()
+              });
+            }
+          });
+        }
+      } catch (error) {
+        console.error("Error handling member_added event:", error);
+      }
     });
   });
 };
@@ -654,3 +1121,83 @@ export const emitNewMessage = async (message, socketId = null) => {
 
 // Xuất ioInstance để các module khác có thể sử dụng
 export const getIO = () => ioInstance;
+
+export const emitDeviceSync = async (userId, syncData) => {
+  if (!ioInstance || !userId) {
+    return false;
+  }
+  
+  try {
+    console.log(`📱 Gửi đồng bộ đến thiết bị của user ${userId}`);
+    
+    // Emit tới userId - sẽ gửi đến tất cả thiết bị đã join room của user này
+    ioInstance.to(userId).emit('device_sync', {
+      ...syncData,
+      timestamp: new Date()
+    });
+    
+    return true;
+  } catch (error) {
+    console.error(`Lỗi khi gửi đồng bộ đến thiết bị của user ${userId}:`, error);
+    return false;
+  }
+};
+
+export const emitSpecificUserTyping = async (userId, userName, conversationId) => {
+  if (!ioInstance || !userId || !conversationId) {
+    return false;
+  }
+  
+  try {
+    console.log(`⌨️ Gửi thông báo người dùng ${userName} đang nhập trong cuộc trò chuyện ${conversationId}`);
+    
+    // Emit đến tất cả thành viên trong cuộc trò chuyện
+    ioInstance.to(conversationId).emit('specific_user_typing', {
+      userId,
+      userName,
+      conversationId,
+      timestamp: new Date()
+    });
+    
+    return true;
+  } catch (error) {
+    console.error(`Lỗi khi gửi thông báo đang nhập:`, error);
+    return false;
+  }
+};
+
+export const emitUserActivity = async (userId, activityType, extraData = {}) => {
+  if (!ioInstance || !userId) {
+    return false;
+  }
+  
+  try {
+    console.log(`👤 Gửi thông báo hoạt động ${activityType} của user ${userId}`);
+    
+    // Tìm danh sách bạn bè hoặc liên hệ của người dùng
+    // Đây chỉ là ví dụ, thực tế cần thay thế bằng truy vấn thực tế
+    const { UsersModel } = await import("../models/UserModel.js");
+    const user = await UsersModel.findById(userId);
+    
+    if (!user || !user.friends || !Array.isArray(user.friends)) {
+      return false;
+    }
+    
+    // Emit hoạt động đến tất cả bạn bè/liên hệ
+    user.friends.forEach(friendId => {
+      if (friendId) {
+        ioInstance.to(friendId.toString()).emit('user_activity', {
+          userId,
+          activityType,
+          ...extraData,
+          timestamp: new Date()
+        });
+      }
+    });
+    
+    return true;
+  } catch (error) {
+    console.error(`Lỗi khi gửi thông báo hoạt động:`, error);
+    return false;
+  }
+};

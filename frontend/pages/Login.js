@@ -10,6 +10,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import AuthService from "../services/AuthService";
+import LoadingAnimation from "../components/LoadingAnimation";
 
 const Login = () => {
   const [phone, setPhone] = useState("");
@@ -39,10 +40,7 @@ const Login = () => {
         AuthService.setUserData(userDataToStore);
         
         if (userData._id) {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'Chat', params: { userId: userData._id } }],
-          });
+          window.location.reload();
         } else {
           throw new Error("Failed to retrieve user data");
         }
@@ -123,7 +121,11 @@ const Login = () => {
               sx={{ mt: 3, mb: 2 }}
               disabled={isLoading}
             >
-              {isLoading ? <CircularProgress size={24} /> : "Đăng nhập"}
+              {isLoading ? (
+                <LoadingAnimation size={30} />
+              ) : (
+                "Đăng Nhập"
+              )}
             </Button>
 
             <Typography align="center" sx={{ mt: 2 }}>

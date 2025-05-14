@@ -83,12 +83,12 @@ const CreateGroupDialog = ({ open, onClose, onGroupCreated }) => {
 
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
-      setError('Please enter a group name');
+      setError('Vui lòng nhập tên nhóm');
       return;
     }
 
     if (selectedFriends.length < 2) {
-      setError('Please select at least 2 friends');
+      setError('Vui lòng chọn ít nhất 2 bạn bè');
       return;
     }
 
@@ -100,7 +100,7 @@ const CreateGroupDialog = ({ open, onClose, onGroupCreated }) => {
       const token = AuthService.getAccessToken();
       
       if (!token) {
-        setError('Authentication token not found. Please log in again.');
+        setError('Không tìm thấy token xác thực. Vui lòng đăng nhập lại.');
         return;
       }
       
@@ -150,23 +150,23 @@ const CreateGroupDialog = ({ open, onClose, onGroupCreated }) => {
         <TextField
           autoFocus
           margin="dense"
-          label="Group Name"
+          label="Tên nhóm"
           type="text"
           fullWidth
           value={groupName}
           onChange={(e) => setGroupName(e.target.value)}
           error={!!error && !groupName.trim()}
-          helperText={!groupName.trim() && error ? 'Group name is required' : ''}
+          helperText={!groupName.trim() && error ? 'Vui lòng nhập tên nhóm' : ''}
           sx={{ mb: 2 }}
         />
         
         <Typography variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
-          Select Friends (at least 2)
+          Chọn bạn bè (ít nhất 2 người)
         </Typography>
         
         <TextField
           fullWidth
-          placeholder="Search friends"
+          placeholder="Tìm kiếm bạn bè..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           InputProps={{
@@ -188,7 +188,7 @@ const CreateGroupDialog = ({ open, onClose, onGroupCreated }) => {
         
         {error && selectedFriends.length < 2 && (
           <Typography color="error" variant="caption" sx={{ display: 'block', mb: 1 }}>
-            Please select at least 2 friends
+            Vui lòng chọn ít nhất 2 bạn bè
           </Typography>
         )}
         
@@ -198,7 +198,7 @@ const CreateGroupDialog = ({ open, onClose, onGroupCreated }) => {
           </Box>
         ) : friends.length === 0 ? (
           <Typography color="text.secondary" align="center" sx={{ my: 2 }}>
-            You don't have any friends yet. Add friends to create a group.
+            Bạn chưa có bạn bè nào. Hãy thêm bạn bè để tạo nhóm.
           </Typography>
         ) : (
           <List sx={{ maxHeight: 300, overflow: 'auto', bgcolor: 'background.paper' }}>
@@ -241,7 +241,7 @@ const CreateGroupDialog = ({ open, onClose, onGroupCreated }) => {
       </DialogContent>
       
       <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
+        <Button onClick={handleClose}>Hủy</Button>
         <Button 
           onClick={handleCreateGroup} 
           color="primary" 

@@ -37,17 +37,17 @@ const ProfileDialog = ({ open, onClose, user, currentUser }) => {
       <DialogContent>
         <Box sx={{ mt: 2 }}>
           <Typography variant="body1" sx={{ mb: 2 }}>
-            {user?.bio || 'No bio available'}
+            {user?.bio || 'Chưa có thông tin giới thiệu'}
           </Typography>
           <Divider sx={{ my: 2 }} />
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-            Contact Information
+            Thông tin liên hệ
           </Typography>
           <Typography variant="body2">
             Email: {user?.email}
           </Typography>
           <Typography variant="body2">
-            Phone: {user?.phone || 'Not provided'}
+            Số điện thoại: {user?.phone || 'Chưa cung cấp'}
           </Typography>
         </Box>
       </DialogContent>
@@ -62,7 +62,7 @@ const ProfileDialog = ({ open, onClose, user, currentUser }) => {
                 onClose();
               }}
             >
-              {isFriend ? 'Remove Friend' : 'Add Friend'}
+              {isFriend ? 'Hủy kết bạn' : 'Kết bạn'}
             </Button>
             <Button
               variant="contained"
@@ -72,7 +72,7 @@ const ProfileDialog = ({ open, onClose, user, currentUser }) => {
                 onClose();
               }}
             >
-              Message
+              Nhắn tin
             </Button>
           </>
         )}

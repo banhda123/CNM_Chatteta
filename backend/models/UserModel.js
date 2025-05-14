@@ -32,6 +32,18 @@ const UserSchema = new Schema(
     friends: [FriendSchema],
     myRequest: [FriendSchema], 
     peopleRequest: [FriendSchema],
+    deferredRequest: [
+      {
+        idUser: {
+          type: Schema.Types.ObjectId, 
+          ref: "User"
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ],
   },
   {
     timestamps: true,

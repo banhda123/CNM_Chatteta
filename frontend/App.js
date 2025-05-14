@@ -8,10 +8,15 @@ import Register from "./pages/Register";
 import ChatUI from "./pages/ChatDetailScreen";
 import ProfileScreen from "./pages/ProfileScreen";
 import GeminiChatPage from "./pages/GeminiChatPage";
+import Contacts from "./pages/Contacts";
+import Layout from "./components/Layout";
 import AuthService from './services/AuthService';
-import { CircularProgress, Box } from '@mui/material';
+import { Box, CircularProgress } from '@mui/material';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { useTheme } from './contexts/ThemeContext';
+import LoadingAnimation from './components/LoadingAnimation';
+import PageTransition from './components/PageTransition';
+import SocketService from './services/SocketService';
 
 const Stack = createNativeStackNavigator();
 
@@ -38,16 +43,42 @@ const AppContent = () => {
   });
 
   useEffect(() => {
+    // Không khởi tạo kết nối socket sớm nữa
+    // if (!SocketService.socket) {
+    //   console.log('Initializing socket connection early');
+    //   SocketService.connect();
+    // }
+
     // Kiểm tra xác thực khi tải ứng dụng
     const checkAuthentication = async () => {
       try {
         setIsLoading(true);
+        
+        // Kiểm tra nếu người dùng vừa đăng xuất
+        const isLoggedOut = localStorage.getItem("isLoggedOut");
+        if (isLoggedOut === "true") {
+          // Xóa cờ
+          localStorage.removeItem("isLoggedOut");
+          setIsAuthenticated(false);
+          setUserId(null);
+          setIsLoading(false);
+          return;
+        }
+        
         const isAuth = AuthService.isAuthenticated();
         if (isAuth) {
           const userData = AuthService.getUserData();
           if (userData && userData._id) {
             setUserId(userData._id);
             setIsAuthenticated(true);
+            
+            // Trì hoãn kết nối socket sau khi UI đã tải xong
+            // Socket sẽ được kết nối trong ChatDetailScreen khi cần thiết
+            // if (!SocketService.isConnected) {
+            //   SocketService.connect();
+            // }
+            // console.log('Joining user room for:', userData._id);
+            // SocketService.joinUserRoom(userData);
           } else {
             setIsAuthenticated(false);
           }
@@ -63,6 +94,15 @@ const AppContent = () => {
     };
 
     checkAuthentication();
+    
+    // Cleanup khi component unmount
+    return () => {
+      // Disconnect socket khi logout hoặc component unmount
+      if (SocketService.isConnected) {
+        console.log('Disconnecting socket');
+        SocketService.disconnect();
+      }
+    };
   }, []);
 
   if (isLoading) {
@@ -74,7 +114,7 @@ const AppContent = () => {
         height: '100vh',
         bgcolor: 'background.default'
       }}>
-        <CircularProgress />
+        <LoadingAnimation />
       </Box>
     );
   }
@@ -84,31 +124,65 @@ const AppContent = () => {
       <CssBaseline />
       <NavigationContainer>
         <Stack.Navigator initialRouteName={isAuthenticated ? "Chat" : "Login"}>
-          <Stack.Screen 
-            name="Login" 
-            component={Login} 
-            options={{ headerShown: false }} 
-          />
-          <Stack.Screen 
-            name="Register" 
-            component={Register} 
-            options={{ headerShown: false }} 
-          />
-          <Stack.Screen 
-            name="Chat" 
-            component={ChatUI} 
-            initialParams={{ userId: userId }}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen 
-            name="Profile" 
-            component={ProfileScreen} 
-          />
-          <Stack.Screen 
-            name="GeminiChat" 
-            component={GeminiChatPage} 
-            options={{ headerShown: false }}
-          />
+          {isAuthenticated ? (
+            // Authenticated routes with Layout
+            <>
+              <Stack.Screen 
+                name="Chat" 
+                options={{ headerShown: false }}
+              >
+                {(props) => (
+                  <Layout>
+                    <ChatUI {...props} initialParams={{ userId: userId }} />
+                  </Layout>
+                )}
+              </Stack.Screen>
+              <Stack.Screen 
+                name="Profile" 
+                options={{ headerShown: false }}
+              >
+                {(props) => (
+                  <Layout>
+                    <ProfileScreen {...props} />
+                  </Layout>
+                )}
+              </Stack.Screen>
+              <Stack.Screen 
+                name="GeminiChat" 
+                options={{ headerShown: false }}
+              >
+                {(props) => (
+                  <Layout>
+                    <GeminiChatPage {...props} />
+                  </Layout>
+                )}
+              </Stack.Screen>
+              <Stack.Screen 
+                name="Contacts" 
+                options={{ headerShown: false }}
+              >
+                {(props) => (
+                  <Layout>
+                    <Contacts {...props} />
+                  </Layout>
+                )}
+              </Stack.Screen>
+            </>
+          ) : (
+            // Unauthenticated routes
+            <>
+              <Stack.Screen 
+                name="Login" 
+                component={Login} 
+                options={{ headerShown: false }} 
+              />
+              <Stack.Screen 
+                name="Register" 
+                component={Register} 
+                options={{ headerShown: false }} 
+              />
+            </>
+          )}
         </Stack.Navigator>
       </NavigationContainer>
     </MuiThemeProvider>
@@ -118,7 +192,9 @@ const AppContent = () => {
 export default function App() {
   return (
     <ThemeProvider>
-      <AppContent />
+      <PageTransition>
+        <AppContent />
+      </PageTransition>
     </ThemeProvider>
   );
 }

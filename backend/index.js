@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import UserRouter from "./routers/UserRouter.js";
-import ConnectToDB from "./config/DB.js";
+import ConnectToDB from "./config/db.js";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { ConnectSocket } from "./config/Socket.js";

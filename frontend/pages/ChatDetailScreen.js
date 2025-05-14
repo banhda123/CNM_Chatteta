@@ -53,6 +53,13 @@ import {
   ExitToApp as ExitToAppIcon,
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
+  Contacts as ContactsIcon,
+  ArrowBack as ArrowBackIcon,
+  Check as CheckIcon,
+  Close as CloseIcon,
+  DeleteOutline as DeleteOutlineIcon,
+  Forward as ForwardIcon,
+  Undo as UndoIcon,
 } from "@mui/icons-material";
 import Button from "@mui/material/Button";
 import AddIcon from "@mui/icons-material/Add";
@@ -62,15 +69,12 @@ import UserService from "../services/UserService";
 import AuthService from "../services/AuthService";
 import SocketService from "../services/SocketService";
 import CancelIcon from '@mui/icons-material/Cancel';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import UndoIcon from '@mui/icons-material/Undo';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import AudiotrackIcon from '@mui/icons-material/Audiotrack';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import DescriptionIcon from '@mui/icons-material/Description';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
-import ForwardIcon from '@mui/icons-material/Forward';
 import RenderFileMessage from "../components/RenderFileMessage";
 import MessageReactions from "../components/MessageReactions";
 import CreateGroupDialog from "../components/CreateGroupDialog";
@@ -83,15 +87,100 @@ import PinnedMessagesDialog from "../components/PinnedMessagesDialog";
 import PinMessageButton from "../components/PinMessageButton";
 import { useTheme } from '../contexts/ThemeContext';
 import ProfileDialog from '../components/ProfileDialog';
+import FileUploadGroup from '../components/FileUploadGroup';
+import LoadingAnimation from '../components/LoadingAnimation';
+
+
+// Thêm một lớp ghi log đơn giản vào đầu file
+const Logger = {
+  // Các cấp độ log
+  levels: {
+    DEBUG: 0,  // Chi tiết nhất, hữu ích khi phát triển
+    INFO: 1,   // Thông tin chung
+    WARN: 2,   // Cảnh báo
+    ERROR: 3,  // Lỗi
+  },
+  
+  // Cấu hình cấp độ hiện tại
+  currentLevel: 1, // Mặc định chỉ hiện INFO trở lên
+  
+  // Bật/tắt group logs cho dễ đọc
+  useGroups: true,
+  
+  // Thiết lập cấp độ log
+  setLevel(level) {
+    this.currentLevel = level;
+  },
+  
+  // Các phương thức log theo cấp độ
+  debug(message, data) {
+    if (this.currentLevel <= this.levels.DEBUG) {
+      if (data && this.useGroups) {
+        console.groupCollapsed(`🔎 ${message}`);
+        console.log(data);
+        console.groupEnd();
+      } else {
+        console.log(`🔎 ${message}`, data || '');
+      }
+    }
+  },
+  
+  info(message, data) {
+    if (this.currentLevel <= this.levels.INFO) {
+      if (data && this.useGroups) {
+        console.groupCollapsed(`ℹ️ ${message}`);
+        console.log(data);
+        console.groupEnd();
+      } else {
+        console.log(`ℹ️ ${message}`, data || '');
+      }
+    }
+  },
+  
+  warn(message, data) {
+    if (this.currentLevel <= this.levels.WARN) {
+      if (data && this.useGroups) {
+        console.groupCollapsed(`⚠️ ${message}`);
+        console.log(data);
+        console.groupEnd();
+      } else {
+        console.warn(`⚠️ ${message}`, data || '');
+      }
+    }
+  },
+  
+  error(message, error) {
+    if (this.currentLevel <= this.levels.ERROR) {
+      if (error && this.useGroups) {
+        console.groupCollapsed(`❌ ${message}`);
+        console.error(error);
+        console.groupEnd();
+      } else {
+        console.error(`❌ ${message}`, error || '');
+      }
+    }
+  }
+};
+
+// Trong môi trường production, chỉ hiển thị lỗi
+if (process.env.NODE_ENV === 'production') {
+  Logger.setLevel(Logger.levels.ERROR);
+}
 
 const ChatUI = () => {
-  const route = useRoute();
   const navigation = useNavigation();
+  const route = useRoute();
   const { userId: routeUserId } = route.params || {};
-  const [userId, setUserId] = useState(routeUserId);
+  
+  // Các state quản lý UI
+  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showProfile, setShowProfile] = useState(false);
+  const [showSingleChat, setShowSingleChat] = useState(false);
+  const [userId, setUserId] = useState(routeUserId);
   const [newMessage, setNewMessage] = useState("");
+  const [messageType, setMessageType] = useState('text'); // Thêm state cho message type
   const [anchorEl, setAnchorEl] = useState(null);
+  const [sidebarMenuAnchorEl, setSidebarMenuAnchorEl] = useState(null); // New state for sidebar menu
   const [notificationAnchorEl, setNotificationAnchorEl] = useState(null);
   const [friendRequests, setFriendRequests] = useState([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
@@ -132,6 +221,16 @@ const ChatUI = () => {
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 
+  // Thêm state mới cho lazy loading
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [nextMessageCursor, setNextMessageCursor] = useState(null);
+  const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
+  const messagesContainerRef = useRef(null);
+  const topMessageRef = useRef(null);
+  const scrollPositionRef = useRef(null);  // Theo dõi vị trí cuộn
+  const socketConnectionInitialized = useRef(false); // Theo dõi trạng thái kết nối socket
+  const reportedUsers = useRef(new Set()); // Theo dõi người dùng đã nhận thông báo online
+
   // Function to check if the current conversation is with Gemini AI
   const isGeminiConversation = () => {
     if (!activeConversation || activeConversation.type !== 'private') return false;
@@ -145,7 +244,14 @@ const ChatUI = () => {
 
   const [typingUsers, setTypingUsers] = useState({});
   const [isTyping, setIsTyping] = useState(false);
+  // Thêm state cho danh sách người dùng online
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  // Thêm state để kiểm soát hiển thị danh sách cuộc trò chuyện trên mobile
+  const [showConversationList, setShowConversationList] = useState(true);
+  // Thêm useRef cho debounce timeout
   const typingTimeoutRef = useRef(null);
+  const typingLastSentRef = useRef(0);
+  const typingMinInterval = 2000; // Độ trễ tối thiểu giữa các sự kiện typing (2 giây)
   const [messageContextMenu, setMessageContextMenu] = useState(null);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [attachMenuAnchorEl, setAttachMenuAnchorEl] = useState(null);
@@ -202,16 +308,135 @@ const ChatUI = () => {
 
   // Helper function to safely get other participant
   const getOtherParticipant = (conversation) => {
-    console.log(conversation);
-    if (!conversation?.members) return { idUser: {} };
-    const members = Array.isArray(conversation.members)
-      ? conversation.members
-      : [];
-    return (
-      members.find((member) => member?.idUser?._id !== userId) || {
-        idUser: {},
+    if (!conversation?.members) {
+      console.log('No members in conversation:', conversation?._id);
+      return { idUser: {} };
+    }
+    
+    // Ensure members is always an array
+    const members = Array.isArray(conversation.members) ? conversation.members : [];
+    
+    if (members.length === 0) {
+      console.log('Empty members array in conversation:', conversation?._id);
+      return { idUser: {} };
+    }
+    
+    // Ensure we compare IDs as strings to avoid object comparison issues
+    const currentUserId = userId ? userId.toString() : '';
+    
+    // Find the other user in the conversation
+    const otherMember = members.find(member => {
+      // Get member ID as string for comparison
+      const memberId = member?.idUser?._id ? member.idUser._id.toString() : 
+                      (member?.idUser ? member.idUser.toString() : '');
+      
+      // Compare with current user ID
+      return memberId && memberId !== currentUserId;
+    });
+    
+    // Check if otherMember exists and has idUser data
+    if (otherMember && otherMember.idUser) {
+      // For populated idUser objects
+      if (typeof otherMember.idUser === 'object' && otherMember.idUser._id) {
+        // If we have name property, the object is properly populated
+        if (otherMember.idUser.name) {
+          return otherMember;
+        } else {
+          // We have an object with ID but no name, try to get full user data
+          console.log('Member has incomplete user data, need to fetch:', otherMember.idUser._id);
+        }
       }
-    );
+      
+      // For cases where idUser is just an ID string, try to find the full user object
+      // in other places (like conversation.lastMessageSender)
+      if (typeof otherMember.idUser === 'string' && conversation.lastMessageSender) {
+        const lastSenderId = conversation.lastMessageSender._id?.toString() || '';
+        
+        if (lastSenderId === otherMember.idUser) {
+          return {
+            ...otherMember,
+            idUser: conversation.lastMessageSender
+          };
+        }
+      }
+    }
+    
+    // If we couldn't find/reconstruct a proper user object, return a fallback
+    return otherMember || { idUser: {} };
+  };
+
+  // Hàm lấy tên người gửi trong tin nhắn nhóm
+  const getSenderName = (message, conversation) => {
+    // Nếu là tin nhắn của chính mình, trả về "Bạn"
+    if (isSentByCurrentUser(message)) {
+      return "Bạn";
+    }
+    
+    // Nếu là chat đơn (không phải nhóm), lấy tên từ người tham gia khác
+    if (conversation?.type === "private") {
+      const otherParticipant = getOtherParticipant(conversation);
+      return otherParticipant?.idUser?.name || "Người dùng";
+    }
+    
+    // Nếu có thông tin từ originalSender (đã được lưu khi nhận tin nhắn)
+    if (message.originalSender?.name) {
+      return message.originalSender.name;
+    }
+    
+    // Ensure we always use string IDs for comparison
+    const messageSenderId = message.sender?.toString() || '';
+    
+    // Tìm người gửi trong danh sách thành viên nhóm
+    if (conversation?.members && Array.isArray(conversation.members) && messageSenderId) {
+      const senderMember = conversation.members.find(member => 
+        member.idUser && (
+          (member.idUser._id && member.idUser._id.toString() === messageSenderId) ||
+          (typeof member.idUser === 'string' && member.idUser.toString() === messageSenderId)
+        )
+      );
+      
+      if (senderMember?.idUser?.name) {
+        return senderMember.idUser.name;
+      } else if (senderMember?.name) {
+        return senderMember.name;
+      }
+      
+      // Tìm kiếm trong mảng admin nếu đây là nhóm
+      if (conversation.admin && conversation.admin._id && 
+          conversation.admin._id.toString() === messageSenderId) {
+        return conversation.admin.name || "Quản trị viên";
+      }
+      
+      // Tìm kiếm trong admin2 nếu có
+      if (conversation.admin2 && conversation.admin2._id && 
+          conversation.admin2._id.toString() === messageSenderId) {
+        return conversation.admin2.name || "Phó nhóm";
+      }
+    }
+    
+    // Thử tìm trong conversation.lastMessageSender
+    if (conversation?.lastMessageSender && 
+        conversation.lastMessageSender._id && 
+        conversation.lastMessageSender._id.toString() === messageSenderId) {
+      return conversation.lastMessageSender.name;
+    }
+    
+    // Nếu không tìm thấy, trả về giá trị mặc định với sender ID
+    return "Người dùng";
+  };
+
+  //  Log để debug việc tìm kiếm thông tin người dùng
+  const logSenderInfo = (message, source) => {
+    if (!message || !message.sender) return;
+    
+    const senderId = typeof message.sender === 'object' ? message.sender._id : message.sender.toString();
+    console.log(`🔍 [${source}] Xử lý message từ sender: ${senderId}`);
+    
+    if (message.originalSender?.name) {
+      console.log(`✅ [${source}] Đã có thông tin sender: ${message.originalSender.name}`);
+    } else {
+      console.log(`⚠️ [${source}] Không có thông tin originalSender cho ID: ${senderId}`);
+    }
   };
 
   // Nếu không có userId từ route params, thử lấy từ localStorage
@@ -260,13 +485,30 @@ const ChatUI = () => {
 
   useEffect(() => {
     const fetchFriendRequests = async () => {
+      if (!userId) {
+        console.warn("Cannot fetch friend requests: Missing userId");
+        return;
+      }
+      
       try {
         setLoadingRequests(true);
+        console.log(`Fetching friend requests for user: ${userId}`);
+        
+        // The UserService now handles errors internally and returns empty array instead of throwing
         const requests = await UserService.getAllFriendRequests(userId);
-        setFriendRequests(requests || []);
+        
+        // Filter out any requests that have been rejected in this session
+        const filteredRequests = requests.filter(request => {
+          return !localStorage.getItem(`rejected_request_${request._id}`);
+        });
+        
+        setFriendRequests(filteredRequests);
+        
+        console.log(`Loaded ${filteredRequests.length} friend requests successfully`);
       } catch (error) {
-        Alert.alert("Error", "Failed to load friend requests");
         console.error("Error fetching friend requests:", error);
+        // Don't show alerts for this as it's not critical - just set empty array
+        setFriendRequests([]);
       } finally {
         setLoadingRequests(false);
       }
@@ -276,13 +518,29 @@ const ChatUI = () => {
   }, [userId]); // Add all dependencies here
 
   const handleNotificationMenuOpen = async (event) => {
+    if (!userId) {
+      console.warn("Cannot load notifications: Missing userId");
+      return;
+    }
+    
     setNotificationAnchorEl(event.currentTarget);
     setLoadingRequests(true);
+    
     try {
+      console.log(`Loading friend requests for user: ${userId}`);
       const requests = await UserService.getAllFriendRequests(userId);
-      setFriendRequests(requests || []);
+      
+      // Filter out any requests that have been rejected in this session
+      const filteredRequests = requests.filter(request => {
+        return !localStorage.getItem(`rejected_request_${request._id}`);
+      });
+      
+      setFriendRequests(filteredRequests);
+      console.log(`Loaded ${filteredRequests.length} friend requests successfully`);
     } catch (error) {
       console.error("Error loading friend requests:", error);
+      // Set to empty array to avoid UI issues
+      setFriendRequests([]);
     } finally {
       setLoadingRequests(false);
     }
@@ -300,65 +558,400 @@ const ChatUI = () => {
         throw new Error("No authentication token found");
       }
 
+      Logger.info('Fetching user conversations');
       const convs = await ChatService.getUserConversations(userId, token);
 
       if (!Array.isArray(convs)) {
         throw new Error("Invalid conversations data format");
       }
+      
+      // Log conversation structure for debugging
+      if (convs.length > 0) {
+        console.log(`Fetched ${convs.length} conversations`);
+        const sampleConv = convs[0];
+        console.log('Sample conversation structure:', {
+          type: sampleConv.type,
+          hasMembers: !!sampleConv.members,
+          memberCount: sampleConv.members?.length || 0,
+          hasMemberUserData: sampleConv.members?.some(m => m.idUser && typeof m.idUser === 'object' && m.idUser.name)
+        });
+      }
 
       setConversations(convs);
 
       if (convs.length > 0) {
-        const firstConv = convs[0];
-        setActiveConversation(firstConv);
-        await loadMessages(firstConv._id);
+        // Lưu thông tin admin vào localStorage cho mỗi cuộc trò chuyện
+        convs.forEach(conv => {
+          if (conv.type === 'group') {
+            if (conv.admin) {
+              const adminId = conv.admin._id || conv.admin;
+              localStorage.setItem(`adminId_${conv._id}`, adminId);
+              localStorage.setItem('adminId', adminId);
+            }
+            
+            if (conv.admin2) {
+              const admin2Id = conv.admin2._id || conv.admin2;
+              localStorage.setItem(`admin2Id_${conv._id}`, admin2Id);
+              localStorage.setItem('admin2Id', admin2Id);
+            }
+          }
+        });
+        
+        // Không tự động thiết lập cuộc trò chuyện hoạt động
+        // setActiveConversation(firstConv);
+        
+        // Không tải tin nhắn ngay lập tức để cải thiện tốc độ tải ban đầu
+        // await loadMessages(firstConv._id);
       }
+      
+      // Đánh dấu rằng đã hoàn thành tải danh sách cuộc trò chuyện
+      setLoading((prev) => ({ ...prev, conversations: false }));
     } catch (error) {
       Alert.alert("Error", "Failed to load conversations");
-      console.error("Error fetching conversations:", error);
-    } finally {
+      Logger.error("Error fetching conversations", error);
       setLoading((prev) => ({ ...prev, conversations: false }));
     }
   };
 
+  // Cập nhật phương thức loadMessages
   const loadMessages = async (conversationId) => {
     try {
       setLoading((prev) => ({ ...prev, messages: true }));
 
-      console.log(conversationId);
+      Logger.info("Loading messages for conversation", { conversationId });
 
       const token = AuthService.getAccessToken();
       if (!token) {
         throw new Error("No authentication token found");
       }
 
-      const msgs = await ChatService.getConversationMessages(conversationId);
-
-      if (!Array.isArray(msgs)) {
+      // Sử dụng phương thức có hỗ trợ lazy loading với limit đã giảm xuống 15
+      const result = await ChatService.getConversationMessages(conversationId);
+      
+      
+      // Kiểm tra dữ liệu response
+      if (!result || (!result.messages && !Array.isArray(result))) {
         throw new Error("Invalid messages data format");
       }
+      
+      // Lấy danh sách tin nhắn từ response
+      const msgs = result.messages || result;
+      
+      if (!Array.isArray(msgs)) {
+        throw new Error("Messages data is not an array");
+      }
 
-      // Lọc ra các tin nhắn không nằm trong danh sách đã xóa của người dùng hiện tại
-      const filteredMsgs = msgs.filter(msg => 
-        !msg.deletedBy || !msg.deletedBy.some(id => id.toString() === userId)
+      // Chuẩn hóa ID người dùng và tin nhắn
+      const normalizedMsgs = msgs.map(msg => {
+        // Đảm bảo ID người gửi luôn ở dạng string để so sánh nhất quán
+        if (msg.sender && typeof msg.sender === 'object' && msg.sender._id) {
+          // Lưu thông tin người gửi gốc để hiển thị trong UI
+          msg.originalSender = { 
+            _id: msg.sender._id,
+            name: msg.sender.name || "Người dùng",
+            avatar: msg.sender.avatar
+          };
+          // Chỉ dùng ID cho các phép so sánh
+          msg.sender = msg.sender._id;
+        } else if (msg.sender && typeof msg.sender === 'string') {
+          const senderId = msg.sender.toString();
+          
+          // Tìm trong danh sách thành viên nhóm
+          if (activeConversation?.members && Array.isArray(activeConversation.members)) {
+            const senderMember = activeConversation.members.find(member => 
+              member.idUser && (
+                (member.idUser._id && member.idUser._id.toString() === senderId) ||
+                (typeof member.idUser === 'string' && member.idUser.toString() === senderId)
+              )
+            );
+            
+            if (senderMember?.idUser && typeof senderMember.idUser === 'object') {
+              msg.originalSender = {
+                _id: senderMember.idUser._id,
+                name: senderMember.idUser.name || "Người dùng",
+                avatar: senderMember.idUser.avatar
+              };
+            }
+            // Kiểm tra admin
+            else if (activeConversation.admin && 
+                   activeConversation.admin._id && 
+                   activeConversation.admin._id.toString() === senderId) {
+              msg.originalSender = {
+                _id: activeConversation.admin._id,
+                name: activeConversation.admin.name || "Quản trị viên",
+                avatar: activeConversation.admin.avatar
+              };
+            }
+            // Kiểm tra admin2
+            else if (activeConversation.admin2 && 
+                   activeConversation.admin2._id && 
+                   activeConversation.admin2._id.toString() === senderId) {
+              msg.originalSender = {
+                _id: activeConversation.admin2._id,
+                name: activeConversation.admin2.name || "Phó nhóm",
+                avatar: activeConversation.admin2.avatar
+              };
+            }
+            else {
+              // Mặc định sử dụng ID người gửi nếu không tìm thấy thông tin
+              msg.originalSender = {
+                _id: senderId,
+                name: "Người dùng",
+                avatar: null
+              };
+            }
+          }
+        }
+        
+        // Đảm bảo ID tin nhắn nhất quán
+        if (msg._id) {
+          msg.id = msg._id;
+        }
+        
+        // Debug: Kiểm tra thông tin người gửi sau khi xử lý
+        logSenderInfo(msg, 'loadMessages');
+        
+        return msg;
+      });
+
+      // Lọc tin nhắn không nằm trong danh sách đã xóa
+      const filteredMsgs = normalizedMsgs.filter(msg => 
+        !msg.deletedBy || !msg.deletedBy.some(id => id.toString() === userId.toString())
       );
       
+      Logger.info(`Loaded ${filteredMsgs.length} messages for display`);
+      
+      // Cập nhật state
       setMessages(filteredMsgs);
-      console.log(messages);
-      await ChatService.markMessagesAsSeen(conversationId, token);
+      
+      // Cập nhật trạng thái lazy loading
+      setHasMoreMessages(result.hasMore || false);
+      setNextMessageCursor(result.nextCursor || null);
+      
+      // Đánh dấu tin nhắn đã xem (không đợi hoàn thành để tránh chặn UI)
+      ChatService.markMessagesAsSeen(conversationId, token)
+        .catch(err => Logger.error("Error marking messages as seen", err));
+      
+      // Tải tin nhắn đã ghim nếu là nhóm (không đồng bộ để không chặn UI)
+      if (activeConversation && activeConversation.type === 'group') {
+        ChatService.getPinnedMessages(conversationId, token)
+          .then(response => {
+            if (response.success && response.pinnedMessages) {
+              setActiveConversation(prev => ({
+                ...prev,
+                pinnedMessages: response.pinnedMessages
+              }));
+            }
+          })
+          .catch(err => Logger.error("Error loading pinned messages", err));
+      }
+      
+      // Cuộn xuống tin nhắn mới nhất (giảm thời gian chờ)
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+      
     } catch (error) {
       Alert.alert("Error", "Failed to load messages");
-      console.error("Error loading messages:", error);
+      Logger.error("Error loading messages", error);
     } finally {
       setLoading((prev) => ({ ...prev, messages: false }));
     }
   };
 
+  // Cải thiện phương thức loadMoreMessages
+  const loadMoreMessages = async () => {
+    // Chỉ tải thêm nếu còn tin nhắn cũ và không đang tải
+    if (!hasMoreMessages || loadingMoreMessages || !nextMessageCursor || !activeConversation) {
+      return;
+    }
+    
+    try {
+      setLoadingMoreMessages(true);
+      Logger.info("Loading more messages", { before: nextMessageCursor });
+      
+      // Lưu vị trí scroll hiện tại
+      if (messagesContainerRef.current) {
+        scrollPositionRef.current = {
+          scrollHeight: messagesContainerRef.current.scrollHeight,
+          scrollTop: messagesContainerRef.current.scrollTop,
+        };
+      }
+      
+      // Tải thêm tin nhắn cũ hơn - giới hạn 20 tin nhắn mỗi lần
+      const result = await ChatService.loadMoreMessages(
+        activeConversation._id,
+        nextMessageCursor,
+        20 // Giới hạn số tin nhắn tải thêm
+      );
+      
+      if (!result || !result.messages || !Array.isArray(result.messages)) {
+        throw new Error("Invalid messages data format");
+      }
+      
+      // Không tải thêm nếu không có tin nhắn mới
+      if (result.messages.length === 0) {
+        Logger.info("No more messages to load");
+        setHasMoreMessages(false);
+        return;
+      }
+      
+      // Chuẩn hóa ID người dùng và tin nhắn
+      const normalizedMsgs = result.messages.map(msg => {
+        // Đảm bảo ID người gửi luôn ở dạng string để so sánh nhất quán
+        if (msg.sender && typeof msg.sender === 'object' && msg.sender._id) {
+          // Lưu thông tin người gửi gốc để hiển thị trong UI
+          msg.originalSender = { 
+            _id: msg.sender._id,
+            name: msg.sender.name || "Người dùng",
+            avatar: msg.sender.avatar
+          };
+          // Chỉ dùng ID cho các phép so sánh
+          msg.sender = msg.sender._id;
+        } else if (msg.sender && typeof msg.sender === 'string') {
+          // Tìm trong danh sách thành viên nhóm
+          if (activeConversation?.members && Array.isArray(activeConversation.members)) {
+            const senderMember = activeConversation.members.find(member => 
+              member.idUser && 
+              ((member.idUser._id && member.idUser._id.toString() === msg.sender.toString()) ||
+              (typeof member.idUser === 'string' && member.idUser.toString() === msg.sender.toString()))
+            );
+            
+            if (senderMember?.idUser) {
+              msg.originalSender = {
+                _id: typeof senderMember.idUser === 'object' ? senderMember.idUser._id : senderMember.idUser,
+                name: typeof senderMember.idUser === 'object' ? senderMember.idUser.name : "Người dùng",
+                avatar: typeof senderMember.idUser === 'object' ? senderMember.idUser.avatar : null
+              };
+            }
+            // Kiểm tra admin
+            else if (activeConversation.admin && 
+                   activeConversation.admin._id && 
+                   activeConversation.admin._id.toString() === msg.sender.toString()) {
+              msg.originalSender = {
+                _id: activeConversation.admin._id,
+                name: activeConversation.admin.name || "Quản trị viên",
+                avatar: activeConversation.admin.avatar
+              };
+            }
+            // Kiểm tra admin2
+            else if (activeConversation.admin2 && 
+                   activeConversation.admin2._id && 
+                   activeConversation.admin2._id.toString() === msg.sender.toString()) {
+              msg.originalSender = {
+                _id: activeConversation.admin2._id,
+                name: activeConversation.admin2.name || "Phó nhóm",
+                avatar: activeConversation.admin2.avatar
+              };
+            }
+          }
+        }
+        
+        // Đảm bảo ID tin nhắn nhất quán
+        if (msg._id) {
+          msg.id = msg._id;
+        }
+        
+        return msg;
+      });
+      
+      // Lọc tin nhắn đã xóa
+      const filteredNewMsgs = normalizedMsgs.filter(msg => 
+        !msg.deletedBy || !msg.deletedBy.some(id => id.toString() === userId.toString())
+      );
+      
+      Logger.info(`Loaded ${filteredNewMsgs.length} additional messages`);
+      
+      // Cập nhật state với tin nhắn mới + tin nhắn hiện tại
+      setMessages(prevMessages => [...filteredNewMsgs, ...prevMessages]);
+      
+      // Cập nhật trạng thái lazy loading
+      setHasMoreMessages(result.hasMore);
+      setNextMessageCursor(result.nextCursor);
+      
+      // Khôi phục vị trí scroll sau khi DOM cập nhật
+      setTimeout(() => {
+        if (messagesContainerRef.current && scrollPositionRef.current) {
+          // Tính toán offset mới - đảm bảo vị trí tương đối được giữ nguyên
+          const newScrollTop = 
+            messagesContainerRef.current.scrollHeight - 
+            scrollPositionRef.current.scrollHeight + 
+            scrollPositionRef.current.scrollTop;
+            
+          messagesContainerRef.current.scrollTop = newScrollTop;
+        }
+      }, 50);
+      
+    } catch (error) {
+      Logger.error("Error loading more messages", error);
+    } finally {
+      setLoadingMoreMessages(false);
+    }
+  };
+
+  // Cải thiện Intersection Observer
+  useEffect(() => {
+    // Chỉ thiết lập observer nếu có các điều kiện cần thiết
+    if (!hasMoreMessages || !messagesContainerRef.current || messages.length === 0) return;
+    
+    // Tạo phần tử top message ref nếu chưa có
+    let topMessageElement = topMessageRef.current;
+    
+    if (!topMessageElement) {
+      // Sử dụng tin nhắn đầu tiên làm điểm mốc
+      topMessageElement = document.getElementById(`message-${messages[0]._id || messages[0].id}`);
+      topMessageRef.current = topMessageElement;
+    }
+    
+    if (!topMessageElement) return;
+    
+    Logger.debug("Setting up Intersection Observer for lazy loading");
+    
+    const options = {
+      root: messagesContainerRef.current,
+      rootMargin: "100px 0px 0px 0px", // Tải trước khi đến đỉnh 100px
+      threshold: 0.1 // Kích hoạt khi phần tử hiển thị ít nhất 10%
+    };
+    
+    const handleIntersect = (entries) => {
+      const [entry] = entries;
+      
+      if (entry.isIntersecting && hasMoreMessages && !loadingMoreMessages) {
+        Logger.info("Top message visible, loading more messages");
+        loadMoreMessages();
+      }
+    };
+    
+    const observer = new IntersectionObserver(handleIntersect, options);
+    observer.observe(topMessageElement);
+    
+    return () => {
+      if (topMessageElement) {
+        observer.unobserve(topMessageElement);
+      }
+      observer.disconnect();
+    };
+  }, [hasMoreMessages, loadingMoreMessages, messages, activeConversation]);
+
   // Save draft to localStorage
   useEffect(() => {
-    const draft = localStorage.getItem(`draft-${activeConversation?._id}`);
-    if (draft) setNewMessage(draft);
+    // Chỉ tải bản nháp nếu không có tin nhắn nào đang được soạn
+    if (activeConversation && !newMessage.trim()) {
+      const draft = localStorage.getItem(`draft-${activeConversation._id}`);
+      if (draft) setNewMessage(draft);
+    }
   }, [activeConversation]);
+
+  // Cải thiện hàm kiểm tra sender ID để đồng nhất việc so sánh
+  const isSentByCurrentUser = (message) => {
+    if (!message || !userId) return false;
+    
+    // Đảm bảo tất cả ID được chuyển thành string để so sánh
+    const senderId = message.sender?.toString() || message.idUser?.toString() || '';
+    const currentUserId = userId.toString();
+    
+    return senderId === currentUserId;
+  };
 
   // Đoạn xử lý nhận tin nhắn từ socket
   useEffect(() => {
@@ -374,16 +967,85 @@ const ChatUI = () => {
         return; // Bỏ qua tin nhắn không thuộc cuộc trò chuyện hiện tại
       }
       
-      // Log chi tiết cho các loại file
-      if (message.type !== 'text') {
-        console.log(`📁 Received ${message.type} message:`, {
-          id: message._id,
-          type: message.type,
-          url: message.fileUrl,
-          fileName: message.fileName,
-          fileType: message.fileType
-        });
+      // Chuẩn hóa ID người gửi từ server để đảm bảo so sánh đúng
+      if (message.sender && typeof message.sender === 'object' && message.sender._id) {
+        // Lưu thông tin người gửi gốc để hiển thị trong UI
+        message.originalSender = { 
+          _id: message.sender._id,
+          name: message.sender.name || "Người dùng",
+          avatar: message.sender.avatar 
+        };
+        // Chỉ dùng ID cho các phép so sánh
+        message.sender = message.sender._id;
+      } 
+      // Nếu có sender_info riêng biệt thì sử dụng
+      else if (message.sender_info && typeof message.sender_info === 'object' && message.sender_info._id) {
+        message.originalSender = {
+          _id: message.sender_info._id,
+          name: message.sender_info.name || "Người dùng",
+          avatar: message.sender_info.avatar
+        };
       }
+      // Nếu là một ID đơn giản mà chúng ta cần tìm kiếm thông tin
+      else if (message.sender && typeof message.sender === 'string' && activeConversation) {
+        const senderId = message.sender.toString();
+        
+        // Log để debug
+        console.log(`🔍 Tìm thông tin cho sender ID: ${senderId}`);
+        
+        // Tìm trong danh sách thành viên nhóm
+        if (activeConversation?.members && Array.isArray(activeConversation.members)) {
+          const senderMember = activeConversation.members.find(member => 
+            member.idUser && (
+              (member.idUser._id && member.idUser._id.toString() === senderId) ||
+              (typeof member.idUser === 'string' && member.idUser.toString() === senderId)
+            )
+          );
+          
+          if (senderMember?.idUser && typeof senderMember.idUser === 'object') {
+            console.log(`✅ Tìm thấy thông tin sender từ members: ${senderMember.idUser.name || 'Không có tên'}`);
+            message.originalSender = {
+              _id: senderMember.idUser._id,
+              name: senderMember.idUser.name || "Người dùng",
+              avatar: senderMember.idUser.avatar
+            };
+          }
+          // Kiểm tra admin
+          else if (activeConversation.admin && 
+                 activeConversation.admin._id && 
+                 activeConversation.admin._id.toString() === senderId) {
+            console.log(`✅ Tìm thấy thông tin sender từ admin: ${activeConversation.admin.name || 'Quản trị viên'}`);
+            message.originalSender = {
+              _id: activeConversation.admin._id,
+              name: activeConversation.admin.name || "Quản trị viên",
+              avatar: activeConversation.admin.avatar
+            };
+          }
+          // Kiểm tra admin2
+          else if (activeConversation.admin2 && 
+                 activeConversation.admin2._id && 
+                 activeConversation.admin2._id.toString() === senderId) {
+            console.log(`✅ Tìm thấy thông tin sender từ admin2: ${activeConversation.admin2.name || 'Phó nhóm'}`);
+            message.originalSender = {
+              _id: activeConversation.admin2._id,
+              name: activeConversation.admin2.name || "Phó nhóm",
+              avatar: activeConversation.admin2.avatar
+            };
+          }
+          else {
+            console.log(`⚠️ Không tìm thấy thông tin sender đầy đủ`);
+            // Mặc định sử dụng ID người gửi nếu không tìm thấy thông tin
+            message.originalSender = {
+              _id: senderId,
+              name: "Người dùng",
+              avatar: null
+            };
+          }
+        }
+      }
+      
+      // Debug: Kiểm tra thông tin người gửi sau khi xử lý
+      logSenderInfo(message, 'socket');
       
       // Add or update message in the list
       setMessages((prev) => {
@@ -414,6 +1076,7 @@ const ChatUI = () => {
                 _id: message._id,                     // Ensure ID is set
                 id: message._id,                      // Ensure id is also set for consistent checking
                 status: "delivered",                  // Update status
+                originalSender: message.originalSender || msg.originalSender, // Giữ thông tin người gửi
                 fileUrl: message.fileUrl || msg.fileUrl,     // Keep file URL
                 fileName: message.fileName || msg.fileName,  // Keep file name
                 fileType: message.fileType || msg.fileType,  // Keep file type
@@ -472,6 +1135,27 @@ const ChatUI = () => {
         message.sender.toString() !== userId.toString() && 
         message.idConversation.toString() === activeConversation?._id.toString()
       ) {
+        // Đánh dấu tin nhắn đã xem
+        SocketService.markMessageAsSeen(activeConversation._id);
+      }
+
+      // Cập nhật activeConversation với tin nhắn mới nhưng giữ nguyên thông tin members
+      if (activeConversation && activeConversation._id === message.idConversation) {
+        setActiveConversation(prev => {
+          // Tạo bản sao sâu của activeConversation
+          return {
+            ...prev,
+            lastMessage: {
+              _id: message._id,
+              content: message.content,
+              type: message.type,
+              fileUrl: message.fileUrl,
+              fileName: message.fileName,
+              sender: message.sender
+            }
+            // Giữ nguyên các thuộc tính khác, đặc biệt là members
+          };
+        });
       }
     });
     
@@ -581,16 +1265,26 @@ const ChatUI = () => {
       if (isCurrentUserRemoved) {
         console.log('Current user was removed from admin2 role');
         
+        // Xóa admin2Id từ localStorage
+        localStorage.removeItem(`admin2Id_${conversation._id}`);
+        localStorage.removeItem('admin2Id');
+        
         // Update the conversation in the list
         setConversations(prev => 
           prev.map(conv => 
-            conv._id === conversation._id ? conversation : conv
+            conv._id === conversation._id ? {
+              ...conv,
+              admin2: null // Đảm bảo admin2 là null để cập nhật đúng quyền
+            } : conv
           )
         );
         
         // Update active conversation if it's the one that was updated
         if (activeConversation && activeConversation._id === conversation._id) {
-          setActiveConversation(conversation);
+          setActiveConversation(prev => ({
+            ...prev,
+            admin2: null // Đảm bảo admin2 là null để cập nhật đúng quyền
+          }));
           
           // Add a system message to the UI about the admin2 removal
           const systemMessage = {
@@ -603,6 +1297,25 @@ const ChatUI = () => {
           
           // Add the system message to the messages list
           setMessages(prev => [...prev, systemMessage]);
+        }
+      } else {
+        // Nếu người bị xóa không phải là người dùng hiện tại, vẫn cập nhật state để UI nhất quán
+        // Update the conversation in the list
+        setConversations(prev => 
+          prev.map(conv => 
+            conv._id === conversation._id ? {
+              ...conv,
+              admin2: null
+            } : conv
+          )
+        );
+        
+        // Update active conversation if it's the one that was updated
+        if (activeConversation && activeConversation._id === conversation._id) {
+          setActiveConversation(prev => ({
+            ...prev,
+            admin2: null
+          }));
         }
       }
     });
@@ -745,6 +1458,62 @@ const ChatUI = () => {
       }
     });
     
+    // Member removed from group event (real-time update)
+    SocketService.onMemberRemovedFromGroup((data) => {
+      console.log('🔔 Thành viên bị xóa khỏi nhóm (socket event):', data);
+      const { conversationId, memberId } = data;
+      
+      // Get current user data
+      const userData = AuthService.getUserData();
+      const currentUserId = userData?._id;
+      
+      // If the current user is the one being removed, handle it differently
+      if (memberId === currentUserId) {
+        // Remove the conversation from the list
+        setConversations(prev => prev.filter(conv => conv._id !== conversationId));
+        
+        // If the active conversation is the one the user was removed from, clear it
+        if (activeConversation && activeConversation._id === conversationId) {
+          setActiveConversation(null);
+          setMessages([]);
+          // Navigate back to conversation list if needed
+          if (window.innerWidth <= 768) {
+            setShowConversationList(true);
+          }
+        }
+      } else {
+        // For other members, fetch the updated conversation to refresh the member list
+        ChatService.getConversationById(conversationId)
+          .then(updatedConversation => {
+            if (updatedConversation) {
+              // Update the conversation in the list
+              setConversations(prev => 
+                prev.map(conv => 
+                  conv._id === conversationId ? updatedConversation : conv
+                )
+              );
+              
+              // Update active conversation if it's the one that was updated
+              if (activeConversation && activeConversation._id === conversationId) {
+                setActiveConversation(updatedConversation);
+                
+                // Add a system message about the member being removed
+                const systemMessage = {
+                  _id: Date.now().toString(),
+                  type: 'system',
+                  content: `Một thành viên đã bị xóa khỏi nhóm`,
+                  createdAt: new Date(),
+                  temporary: true
+                };
+                
+                setMessages(prev => [...prev, systemMessage]);
+              }
+            }
+          })
+          .catch(error => console.error('Error updating conversation after member removal:', error));
+      }
+    });
+    
     return () => {
       // Cleanup socket listeners
       SocketService.removeListener('new_message');
@@ -752,6 +1521,7 @@ const ChatUI = () => {
       SocketService.removeListener('group_updated');
       SocketService.removeListener('member_added');
       SocketService.removeListener('member_removed');
+      SocketService.removeListener('member_removed_from_group');
       SocketService.removeListener('group_left');
       SocketService.removeListener('group_deleted');
     };
@@ -761,6 +1531,21 @@ const ChatUI = () => {
   const handleSendMessage = async () => {
     // Kiểm tra nếu không có tin nhắn hoặc không có cuộc trò chuyện
     if ((!newMessage.trim() && !selectedFile) || !activeConversation?._id) return;
+
+    // Log thông tin thành viên trước khi gửi tin nhắn
+    console.log(`📊 Trước khi gửi tin nhắn - Số thành viên: ${activeConversation.members?.length || 0}`);
+    
+    // Lưu bản sao của activeConversation để tránh mất thông tin thành viên
+    // Sử dụng deep copy cho các thuộc tính quan trọng
+    const conversationCopy = {
+      ...activeConversation,
+      members: activeConversation.members ? [...activeConversation.members] : [],
+      admin: activeConversation.admin ? {...activeConversation.admin} : null,
+      admin2: activeConversation.admin2 ? {...activeConversation.admin2} : null,
+    };
+    
+    // Log thông tin bản sao
+    console.log(`📋 Bản sao cuộc trò chuyện - Số thành viên: ${conversationCopy.members?.length || 0}`);
 
     // Dừng trạng thái typing nếu đang nhập
     if (isTyping) {
@@ -791,6 +1576,11 @@ const ChatUI = () => {
       text: newMessage,
       content: newMessage,
       sender: userId,
+      originalSender: { 
+        _id: userId,
+        name: user.name,
+        avatar: user.avatar
+      },
       time: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -821,6 +1611,11 @@ const ChatUI = () => {
     // Thêm tin nhắn vào UI ngay lập tức
     setMessages((prev) => [...prev, tempMessage]);
     setNewMessage("");
+    
+    // Xóa bản nháp tin nhắn khỏi localStorage
+    if (activeConversation?._id) {
+      localStorage.removeItem(`draft-${activeConversation._id}`);
+    }
     
     // Cuộn xuống dưới khi có tin nhắn mới
     setTimeout(() => {
@@ -877,7 +1672,7 @@ const ChatUI = () => {
           
           // Cập nhật danh sách cuộc trò chuyện (thay vì đợi socket)
           const updatedConversation = {
-            ...activeConversation,
+            ...conversationCopy, // Sử dụng bản sao đã lưu để giữ nguyên thông tin thành viên
             lastMessage: {
               _id: fileResponse._id,
               content: fileResponse.content || `File: ${fileResponse.fileName}`,
@@ -887,6 +1682,9 @@ const ChatUI = () => {
               sender: userId
             }
           };
+          
+          // Log thông tin cuộc trò chuyện sau khi cập nhật
+          console.log(`📈 Sau khi cập nhật (file) - Số thành viên: ${updatedConversation.members?.length || 0}`);
           
           setActiveConversation(updatedConversation);
           
@@ -957,6 +1755,21 @@ const ChatUI = () => {
               : msg
           )
         );
+        
+        // Cập nhật danh sách cuộc trò chuyện với tin nhắn mới
+        const updatedConversation = {
+          ...conversationCopy, // Sử dụng bản sao để giữ nguyên thông tin thành viên
+          lastMessage: {
+            content: newMessage,
+            type: "text",
+            sender: userId
+          }
+        };
+        
+        // Log thông tin cuộc trò chuyện sau khi cập nhật
+        console.log(`📈 Sau khi cập nhật - Số thành viên: ${updatedConversation.members?.length || 0}`);
+        
+        setActiveConversation(updatedConversation);
       }
     } catch (error) {
       console.error("❌ Lỗi khi gửi tin nhắn:", error);
@@ -983,32 +1796,38 @@ const ChatUI = () => {
   };
 
   const handleConversationSelect = async (conversation) => {
-    console.log('🔄 Chọn cuộc trò chuyện:', conversation?._id);
-    
-    if (!conversation?._id) return;
-    
-    // Lưu cuộc trò chuyện hiện tại
-    setActiveConversation(conversation);
-    
     try {
-      // Tải tin nhắn của cuộc trò chuyện
+      // Log thông tin về members của cuộc trò chuyện
+      console.log(`🔍 Chọn cuộc trò chuyện: ${conversation._id}`);
+      console.log(`👥 Số thành viên: ${conversation.members?.length || 0}`);
+      if (conversation.members && conversation.members.length > 0) {
+        console.log('👤 Danh sách thành viên:', conversation.members.map(m => m.name || m._id).join(', '));
+      }
+      
+      // Đặt cuộc trò chuyện đang hoạt động trước
+      setActiveConversation(conversation);
+      
+      // Hiển thị trạng thái đang tải tin nhắn
+      setLoading((prev) => ({ ...prev, messages: true }));
+      
+      // Tải tin nhắn cho cuộc trò chuyện được chọn
       await loadMessages(conversation._id);
       
-      // Tham gia phòng socket
-      console.log('🔌 Tham gia phòng socket của cuộc trò chuyện:', conversation._id);
+      // Tham gia phòng socket cho cuộc trò chuyện này
       SocketService.joinConversation(conversation._id);
       
       // Đánh dấu tin nhắn đã xem
-      console.log('👁️ Đánh dấu tin nhắn đã xem');
-      SocketService.markMessageAsSeen(conversation._id);
+      await ChatService.markMessagesAsSeen(conversation._id);
       
-      // Rời khỏi cuộc trò chuyện cũ nếu có
-      if (activeConversation?._id && activeConversation._id !== conversation._id) {
-        console.log('🚪 Rời khỏi phòng socket của cuộc trò chuyện cũ:', activeConversation._id);
-        SocketService.leaveConversation(activeConversation._id);
-      }
+      // Cập nhật trạng thái UI
+      setShowSingleChat(true);
+      
+      // Cuộn xuống tin nhắn mới nhất
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
     } catch (error) {
-      console.error('❌ Lỗi khi chọn cuộc trò chuyện:', error);
+      Logger.error("Error selecting conversation", error);
       Alert.alert("Error", "Failed to load conversation");
     }
   };
@@ -1026,9 +1845,13 @@ const ChatUI = () => {
 
   const handleMenuClose = () => {
     setAnchorEl(null);
+    setSidebarMenuAnchorEl(null);
+    localStorage.removeItem('currentMenu');
   };
 
-
+  const handleSidebarMenuOpen = (event) => {
+    setSidebarMenuAnchorEl(event.currentTarget);
+  };
 
   const handleChange = (event) => {
     const input = event.target.value;
@@ -1044,7 +1867,7 @@ const ChatUI = () => {
   const handleEmojiOpen = (event) => {
     setEmojiAnchorEl(event.currentTarget);
     setShowEmojiPicker(true);
-    setActiveTab('emoji'); // Default to emoji tab
+    setActiveTab('emoji');
   };
 
   const handleEmojiClose = () => {
@@ -1054,7 +1877,7 @@ const ChatUI = () => {
   };
 
   const handleTabChange = (tab) => {
-    if (typeof tab === 'object') { // If it's an event from IconButton click
+    if (typeof tab === 'object') {
       setEmojiAnchorEl(tab.currentTarget);
       setActiveTab('gif');
       setShowEmojiPicker(false);
@@ -1075,16 +1898,13 @@ const ChatUI = () => {
     try {
       if (!activeConversation?._id || !userId) return;
       
-      // Lấy token xác thực
       const token = AuthService.getAccessToken();
       if (!token) {
         throw new Error("Không có token xác thực");
       }
       
-      // Lấy nội dung chú thích nếu có
       const caption = newMessage.trim();
       
-      // Send GIF message
       await ChatService.sendGifMessage(
         activeConversation._id,
         userId,
@@ -1093,12 +1913,13 @@ const ChatUI = () => {
         caption
       );
       
-      // Xóa tin nhắn chú thích sau khi gửi
       if (caption) {
         setNewMessage("");
+        if (activeConversation?._id) {
+          localStorage.removeItem(`draft-${activeConversation._id}`);
+        }
       }
       
-      // Close the GIF gallery
       handleEmojiClose();
     } catch (error) {
       console.error('Error sending GIF:', error);
@@ -1178,11 +1999,10 @@ const ChatUI = () => {
       await AuthService.logout();
       // Đóng menu
       handleMenuClose();
-      // Chuyển về trang đăng nhập
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Login' }],
-      });
+      // Đặt cờ để App.js biết người dùng đã đăng xuất
+      localStorage.setItem("isLoggedOut", "true");
+      // Reload trang để App.js có thể kiểm tra lại trạng thái xác thực
+      window.location.reload();
     } catch (error) {
       console.error("Logout error:", error);
       Alert.alert("Error", "Failed to logout");
@@ -1191,62 +2011,111 @@ const ChatUI = () => {
 
   // Thêm useEffect mới để kết nối socket khi component mount
   useEffect(() => {
-    console.log('⚡ Thiết lập kết nối socket realtime...');
-    // Kết nối socket khi component mount
-    const socket = SocketService.connect();
+    // Tránh tạo nhiều connection 
+    if (socketConnectionInitialized.current) return;
     
-    // Khi socket kết nối thành công
-    const handleConnect = () => {
-      console.log('✅ Socket đã kết nối thành công:', socket.id);
-      
-      // Tham gia phòng user
-      if (userId) {
-        const userData = AuthService.getUserData();
-        if (userData) {
-          console.log('👤 Tham gia phòng user:', userData._id);
-          SocketService.joinUserRoom(userData);
-        }
-      }
-      
-      // Tham gia cuộc trò chuyện hiện tại
-      if (activeConversation?._id) {
-        console.log('💬 Tham gia cuộc trò chuyện:', activeConversation._id);
-        SocketService.joinConversation(activeConversation._id);
+    Logger.info('Thiết lập kết nối socket realtime...');
+    
+    try {
+      // Kết nối socket khi component mount - nhưng trì hoãn một chút để cho phép UI hiển thị trước
+      setTimeout(() => {
+        const socket = SocketService.connect();
+        socketConnectionInitialized.current = true;
         
-        // Đánh dấu tin nhắn đã xem
-        SocketService.markMessageAsSeen(activeConversation._id);
-      }
+        // Khi socket kết nối thành công
+        const handleConnect = () => {
+          Logger.info('Socket đã kết nối thành công:', socket.id);
+          
+          // Tham gia phòng user
+          if (userId) {
+            const userData = AuthService.getUserData();
+            if (userData) {
+              Logger.info('Tham gia phòng user:', userData._id);
+              SocketService.joinUserRoom(userData);
+            }
+          }
+          
+          // Tham gia cuộc trò chuyện hiện tại
+          if (activeConversation?._id) {
+            Logger.info('Tham gia cuộc trò chuyện:', activeConversation._id);
+            SocketService.joinConversation(activeConversation._id);
+          }
+          
+          // Tham gia tất cả các cuộc trò chuyện - nhưng trì hoãn để không làm chậm UI
+          if (conversations?.length > 0) {
+            setTimeout(() => {
+              const conversationIds = conversations.map(c => c._id);
+              Logger.info('Tham gia tất cả cuộc trò chuyện:', conversationIds.length);
+              SocketService.joinAllConversations(conversationIds);
+            }, 1000); // Trì hoãn 1 giây để UI có thể hiển thị trước
+          }
+        };
+        
+        // Khi socket ngắt kết nối
+        const handleDisconnect = (reason) => {
+          Logger.info('Socket đã ngắt kết nối, lý do:', reason);
+          
+          // Đặt lại trạng thái kết nối nếu bị ngắt bởi server hoặc lỗi mạng
+          if (reason === 'io server disconnect' || reason === 'transport close' || reason === 'transport error') {
+            // Đánh dấu là cần khởi tạo lại kết nối khi component rerender
+            socketConnectionInitialized.current = false;
+          }
+        };
+        
+        // Thiết lập các sự kiện socket
+        socket.on('connect', handleConnect);
+        socket.on('disconnect', handleDisconnect);
+        
+        // Nếu đã kết nối thì gọi ngay handler
+        if (socket.connected) {
+          handleConnect();
+        }
+      }, 500); // Trì hoãn 500ms để UI có thể hiển thị trước
       
-      // Tham gia tất cả các cuộc trò chuyện
-      if (conversations?.length > 0) {
-        const conversationIds = conversations.map(c => c._id);
-        console.log('📚 Tham gia tất cả cuộc trò chuyện:', conversationIds.length);
-        SocketService.joinAllConversations(conversationIds);
-      }
-    };
+      // Cleanup khi component unmount
+      return () => {
+        Logger.info('Dọn dẹp các sự kiện socket');
+        if (SocketService.socket) {
+          SocketService.socket.off('connect');
+          SocketService.socket.off('disconnect');
+        }
+        
+        // Chỉ đặt lại flag nếu component thực sự unmount
+        // KHÔNG gọi SocketService.disconnect() ở đây để tránh kết nối lại không cần thiết
+        // khi component rerender
+        socketConnectionInitialized.current = false;
+      };
+    } catch (error) {
+      Logger.error('Lỗi khi thiết lập kết nối socket:', error);
+      // Đặt lại flag nếu có lỗi
+      socketConnectionInitialized.current = false;
+    }
+  }, [userId]); // Chỉ phụ thuộc vào userId để khởi tạo một lần
+  
+  // useEffect riêng để cập nhật khi activeConversation thay đổi
+  useEffect(() => {
+    if (!SocketService.socket || !SocketService.isConnected) return;
     
-    // Khi socket ngắt kết nối
-    const handleDisconnect = () => {
-      console.log('❌ Socket đã ngắt kết nối');
-    };
-    
-    // Thiết lập các sự kiện socket
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    
-    // Nếu đã kết nối thì gọi ngay handler
-    if (socket.connected) {
-      handleConnect();
+    // Tham gia cuộc trò chuyện hiện tại
+    if (activeConversation?._id) {
+      console.log('💬 Tham gia cuộc trò chuyện mới:', activeConversation._id);
+      SocketService.joinConversation(activeConversation._id);
+      
+      // Đánh dấu tin nhắn đã xem
+      SocketService.markMessageAsSeen(activeConversation._id);
     }
     
-    // Cleanup khi component unmount
+    // Thông báo rằng người dùng đang xem tin nhắn
+    if (activeConversation?._id) {
+      SocketService.viewingMessages(activeConversation._id);
+    }
+    
     return () => {
-      console.log('🧹 Dọn dẹp các sự kiện socket');
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      // Các sự kiện khác sẽ được dọn dẹp ở các useEffect riêng
+      if (activeConversation?._id) {
+        SocketService.stopViewingMessages(activeConversation._id);
+      }
     };
-  }, [userId, activeConversation, conversations]);
+  }, [activeConversation]);
 
   // Xử lý trạng thái typing
   useEffect(() => {
@@ -1358,6 +2227,61 @@ const ChatUI = () => {
     };
   }, []);
 
+  // Xử lý sự kiện nhóm mới được tạo
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('👥 Thiết lập listener cho nhóm mới được tạo');
+    
+    const handleGroupCreatedSocket = (newGroup) => {
+      console.log('👥 Nhóm mới đã được tạo:', newGroup);
+      
+      // Kiểm tra xem nhóm này đã được thêm thủ công chưa
+      const isAlreadyAdded = window.addedGroupIds && window.addedGroupIds.has(newGroup._id);
+      
+      if (isAlreadyAdded) {
+        console.log('👥 Nhóm này đã được thêm thủ công, bỏ qua');
+        return;
+      }
+      
+      // Thêm nhóm mới vào danh sách cuộc trò chuyện
+      setConversations(prev => {
+        // Kiểm tra xem đã tồn tại chưa
+        const exists = prev.some(conv => conv._id === newGroup._id);
+        if (!exists) {
+          // Đưa nhóm mới lên đầu danh sách
+          console.log('👥 Thêm nhóm mới vào danh sách cuộc trò chuyện');
+          
+          // Đánh dấu nhóm đã được thêm để tránh thêm lại từ socket event khác
+          window.addedGroupIds = window.addedGroupIds || new Set();
+          window.addedGroupIds.add(newGroup._id);
+          
+          // Thiết lập timeout để xóa ID sau 5 giây
+          setTimeout(() => {
+            if (window.addedGroupIds && window.addedGroupIds.has(newGroup._id)) {
+              window.addedGroupIds.delete(newGroup._id);
+            }
+          }, 5000);
+          
+          return [newGroup, ...prev];
+        }
+        console.log('👥 Nhóm đã tồn tại trong danh sách, bỏ qua');
+        return prev;
+      });
+      
+      // Tham gia vào nhóm mới
+      SocketService.joinConversation(newGroup._id);
+    };
+    
+    // Đăng ký event listener
+    SocketService.onGroupCreated(handleGroupCreatedSocket);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('group_created');
+    };
+  }, [conversations]);
+
   // Xử lý sự kiện ghim và bỏ ghim tin nhắn
   useEffect(() => {
     if (!SocketService.socket) return;
@@ -1392,7 +2316,25 @@ const ChatUI = () => {
         
         // Thêm thông báo hệ thống nếu có
         if (data.systemMessage) {
-          setMessages(prevMessages => [...prevMessages, data.systemMessage]);
+          // Kiểm tra xem thông báo này đã tồn tại chưa
+          setMessages(prevMessages => {
+            // Kiểm tra xem đã có thông báo tương tự chưa (trong khoảng 2 giây gần đây)
+            const recentSystemMessage = prevMessages.find(msg => 
+              msg.type === 'system' && 
+              msg.systemType === 'pin_message' &&
+              msg.createdAt && 
+              (new Date().getTime() - new Date(msg.createdAt).getTime() < 2000)
+            );
+            
+            // Nếu đã có thông báo tương tự, không thêm nữa
+            if (recentSystemMessage) {
+              return prevMessages;
+            }
+            
+            // Nếu chưa có, thêm thông báo mới
+            return [...prevMessages, data.systemMessage];
+          });
+          
           // Cuộn xuống tin nhắn mới
           setTimeout(() => {
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1408,9 +2350,11 @@ const ChatUI = () => {
       }
       
       console.log(`📌 Tin nhắn đã bỏ ghim: ${data.messageId}`);
+      console.log('📌 Chi tiết data bỏ ghim:', JSON.stringify(data));
       
       // Cập nhật tin nhắn trong danh sách tin nhắn hiện tại
       if (activeConversation && activeConversation._id === data.conversation.toString()) {
+        console.log('📌 Cập nhật trạng thái tin nhắn trong danh sách tin nhắn');
         // Update the messages array
         setMessages(prevMessages => 
           prevMessages.map(msg => 
@@ -1421,20 +2365,51 @@ const ChatUI = () => {
         // Update the active conversation to reflect the unpinned message
         // This is crucial for components like PinnedMessageBanner to update immediately
         setActiveConversation(prevConversation => {
+          console.log('📌 Cập nhật activeConversation.pinnedMessages');
+          console.log('📌 Trước khi cập nhật:', prevConversation.pinnedMessages?.length || 0, 'tin nhắn đã ghim');
+          
           if (prevConversation.pinnedMessages) {
-            return {
+            const updatedConversation = {
               ...prevConversation,
               pinnedMessages: prevConversation.pinnedMessages.filter(
                 msg => msg._id !== data.messageId
               )
             };
+            
+            console.log('📌 Sau khi cập nhật:', updatedConversation.pinnedMessages?.length || 0, 'tin nhắn đã ghim');
+            return updatedConversation;
           }
           return prevConversation;
         });
         
         // Thêm thông báo hệ thống nếu có
         if (data.systemMessage) {
-          setMessages(prevMessages => [...prevMessages, data.systemMessage]);
+          // Kiểm tra xem thông báo này đã tồn tại chưa
+          setMessages(prevMessages => {
+            // Kiểm tra xem đã có thông báo tương tự chưa (trong khoảng 2 giây gần đây)
+            const recentSystemMessage = prevMessages.find(msg => 
+              msg.type === 'system' && 
+              msg.systemType === 'unpin_message' &&
+              msg.createdAt && 
+              (new Date().getTime() - new Date(msg.createdAt).getTime() < 2000)
+            );
+            
+            // Nếu đã có thông báo tương tự, không thêm nữa
+            if (recentSystemMessage) {
+              return prevMessages;
+            }
+            
+            // Cập nhật nội dung thông báo nếu hiển thị "ai đó"
+            const updatedSystemMessage = {...data.systemMessage};
+            if (updatedSystemMessage.content && updatedSystemMessage.content.includes('Ai đó')) {
+              const currentUserName = user?.name || AuthService.getUserData()?.name || "Bạn";
+              updatedSystemMessage.content = updatedSystemMessage.content.replace('Ai đó', currentUserName);
+            }
+            
+            // Nếu chưa có, thêm thông báo mới
+            return [...prevMessages, updatedSystemMessage];
+          });
+          
           // Cuộn xuống tin nhắn mới
           setTimeout(() => {
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1452,7 +2427,7 @@ const ChatUI = () => {
       SocketService.removeListener('message_pinned');
       SocketService.removeListener('message_unpinned');
     };
-  }, [activeConversation]);
+  }, [activeConversation, user]);
   
   // Xử lý cập nhật danh sách cuộc trò chuyện khi có tin nhắn mới
   useEffect(() => {
@@ -1481,9 +2456,23 @@ const ChatUI = () => {
         
         // Tạo bản sao của mảng hiện tại
         const updatedConversations = [...prev];
+        const existingConv = updatedConversations[index];
         
-        // Cập nhật cuộc trò chuyện với tin nhắn mới nhất
-        updatedConversations[index] = data.conversation;
+        // Luôn giữ nguyên thông tin members từ phiên bản cũ
+        const updatedConversation = {
+          ...data.conversation,
+          members: existingConv.members || data.conversation.members,
+          // Giữ nguyên các thông tin quan trọng khác
+          admin: existingConv.admin || data.conversation.admin,
+          admin2: existingConv.admin2 || data.conversation.admin2
+        };
+        
+        // Nếu là chat đơn, giữ nguyên tên cuộc trò chuyện
+        if (data.conversation.type === 'private') {
+          updatedConversation.name = existingConv.name;
+        }
+        
+        updatedConversations[index] = updatedConversation;
         
         // Đưa cuộc trò chuyện vừa cập nhật lên đầu danh sách
         console.log(`🔝 Đưa cuộc trò chuyện ${data.conversation._id} lên đầu danh sách`);
@@ -1494,7 +2483,19 @@ const ChatUI = () => {
       
       // Nếu đang ở trong cuộc trò chuyện này, cập nhật active conversation
       if (activeConversation && activeConversation._id === data.conversation._id) {
-        setActiveConversation(data.conversation);
+        // Luôn giữ nguyên thông tin members từ phiên bản cũ
+        setActiveConversation(prev => ({
+          ...prev,
+          lastMessage: data.conversation.lastMessage,
+          // Giữ nguyên các thông tin quan trọng
+          members: prev.members || data.conversation.members,
+          admin: prev.admin || data.conversation.admin,
+          admin2: prev.admin2 || data.conversation.admin2,
+          // Đối với chat đơn, giữ nguyên tên
+          name: data.conversation.type === 'private' ? prev.name : data.conversation.name,
+        }));
+        
+        console.log('🔄 Cập nhật activeConversation với tin nhắn mới nhưng giữ nguyên thông tin members');
       }
     };
     
@@ -1509,36 +2510,57 @@ const ChatUI = () => {
 
   // Hàm xử lý khi nhập tin nhắn (để gửi trạng thái typing)
   const handleMessageTyping = (e) => {
-    const content = e.target.value;
-    setNewMessage(content);
+    setNewMessage(e.target.value);
     
-    // Nếu không có cuộc trò chuyện hoặc không có user ID thì không gửi
-    if (!activeConversation?._id || !userId) return;
+    // Chỉ gửi sự kiện typing nếu đang trong một cuộc trò chuyện
+    if (!activeConversation?._id) return;
     
-    // Gửi trạng thái typing nếu có nội dung và chưa đang typing
-    if (content.trim().length > 0 && !isTyping) {
-      setIsTyping(true);
-      SocketService.sendTypingStatus(activeConversation._id, userId);
-    }
+    // Thiết lập is typing
+    const isNowTyping = e.target.value.length > 0;
     
-    // Hủy trạng thái typing nếu không có nội dung và đang typing
-    if (content.trim().length === 0 && isTyping) {
-      setIsTyping(false);
-      SocketService.sendStopTypingStatus(activeConversation._id, userId);
-    }
-    
-    // Reset timeout
+    // Sử dụng debounce để giảm số lượng sự kiện gửi đi
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
     
-    // Đặt timeout để tự động hủy trạng thái typing sau 3 giây
-    typingTimeoutRef.current = setTimeout(() => {
-      if (isTyping) {
-        setIsTyping(false);
-        SocketService.sendStopTypingStatus(activeConversation._id, userId);
+    // Kiểm tra nếu đã gửi sự kiện gần đây, không gửi nữa
+    const now = Date.now();
+    const canSendTypingEvent = now - typingLastSentRef.current > typingMinInterval;
+    
+    if (isNowTyping) {
+      // Nếu đang typing và chưa gửi event hoặc đã quá thời gian debounce
+      if (canSendTypingEvent && !isTyping) {
+        // Gửi trạng thái typing và cập nhật timestamp
+        console.log('⌨️ Gửi trạng thái typing');
+        SocketService.sendTypingStatus(activeConversation._id, userId);
+        typingLastSentRef.current = now;
+        setIsTyping(true);
       }
-    }, 3000);
+      
+      // Đặt timeout để gửi stop_typing sau một khoảng thời gian không đánh
+      typingTimeoutRef.current = setTimeout(() => {
+        if (isTyping) {
+          console.log('⌨️ Gửi trạng thái stop_typing sau thời gian không đánh');
+          SocketService.sendStopTypingStatus(activeConversation._id, userId);
+          setIsTyping(false);
+        }
+      }, 3000);
+    } else if (isTyping) {
+      // Nếu không còn đang nhập mà trước đó đang typing
+      console.log('⌨️ Gửi trạng thái stop_typing vì không còn nhập');
+      SocketService.sendStopTypingStatus(activeConversation._id, userId);
+      setIsTyping(false);
+    }
+    
+    // Lưu nháp tin nhắn vào localStorage
+    if (activeConversation?._id) {
+      const key = `draft-${activeConversation._id}`;
+      if (e.target.value.trim()) {
+        localStorage.setItem(key, e.target.value);
+      } else {
+        localStorage.removeItem(key);
+      }
+    }
   };
 
   // Thêm CSS cho hiệu ứng typing
@@ -1679,8 +2701,31 @@ const ChatUI = () => {
   };
 
   const handleGroupCreated = (newConversation) => {
-    // Add the new group conversation to the list
-    setConversations(prev => [newConversation, ...prev]);
+    console.log('🔄 Xử lý nhóm mới được tạo:', newConversation._id);
+    
+    // Đánh dấu nhóm đã được thêm để tránh thêm lại từ socket event
+    window.addedGroupIds = window.addedGroupIds || new Set();
+    window.addedGroupIds.add(newConversation._id);
+    
+    // Thiết lập timeout để xóa ID sau 10 giây
+    setTimeout(() => {
+      if (window.addedGroupIds && window.addedGroupIds.has(newConversation._id)) {
+        window.addedGroupIds.delete(newConversation._id);
+        console.log('🔄 Đã xóa ID nhóm khỏi danh sách theo dõi:', newConversation._id);
+      }
+    }, 10000);
+    
+    // Thêm nhóm mới vào danh sách cuộc trò chuyện
+    setConversations(prev => {
+      // Kiểm tra xem đã tồn tại chưa
+      const exists = prev.some(conv => conv._id === newConversation._id);
+      if (exists) {
+        console.log('🔄 Nhóm đã tồn tại trong danh sách, không thêm lại');
+        return prev;
+      }
+      console.log('🔄 Thêm nhóm mới vào đầu danh sách cuộc trò chuyện');
+      return [newConversation, ...prev];
+    });
     
     // Select the new conversation
     handleConversationSelect(newConversation);
@@ -1691,6 +2736,20 @@ const ChatUI = () => {
 
   const handleOpenGroupMembers = () => {
     if (activeConversation && activeConversation.type === 'group') {
+      // Log các thông tin quan trọng để debug
+      console.log('Current active conversation:', activeConversation);
+      
+      const adminId = activeConversation.admin?._id || activeConversation.admin || 
+                     localStorage.getItem(`adminId_${activeConversation._id}`) || 
+                     localStorage.getItem('adminId');
+      const admin2Id = activeConversation.admin2?._id || activeConversation.admin2 || 
+                     localStorage.getItem(`admin2Id_${activeConversation._id}`) || 
+                     localStorage.getItem('admin2Id');
+                     
+      console.log('Admin check - Current user:', userId);
+      console.log('Admin check - Admin ID:', adminId);
+      console.log('Admin check - Admin2 ID:', admin2Id);
+      
       setGroupMembersDialogOpen(true);
       handleMenuClose();
     }
@@ -1698,12 +2757,38 @@ const ChatUI = () => {
 
   const handleEditGroup = () => {
     if (activeConversation && activeConversation.type === 'group') {
-      setEditGroupDialogOpen(true);
-      handleMenuClose();
+      // Kiểm tra quyền admin trước khi mở dialog chỉnh sửa nhóm
+      if (isGroupAdmin(activeConversation) || isGroupAdmin2(activeConversation)) {
+        setEditGroupDialogOpen(true);
+        handleMenuClose();
+      } else {
+        Alert.alert("Thông báo", "Bạn không có quyền chỉnh sửa nhóm này");
+      }
     }
   };
 
   const handleGroupUpdated = (updatedConversation) => {
+    console.log('🔄 Group updated:', updatedConversation);
+    console.log('Admin:', updatedConversation.admin);
+    console.log('Admin2:', updatedConversation.admin2);
+
+    // Lưu thông tin admin vào localStorage khi nhóm được cập nhật
+    if (updatedConversation.type === 'group') {
+      if (updatedConversation.admin) {
+        const adminId = updatedConversation.admin._id || updatedConversation.admin;
+        localStorage.setItem(`adminId_${updatedConversation._id}`, adminId);
+        localStorage.setItem('adminId', adminId);
+        console.log('📝 Stored admin ID in localStorage:', adminId);
+      }
+      
+      if (updatedConversation.admin2) {
+        const admin2Id = updatedConversation.admin2._id || updatedConversation.admin2;
+        localStorage.setItem(`admin2Id_${updatedConversation._id}`, admin2Id);
+        localStorage.setItem('admin2Id', admin2Id);
+        console.log('📝 Stored admin2 ID in localStorage:', admin2Id);
+      }
+    }
+    
     // Update the conversation in the list
     setConversations(prev => 
       prev.map(conv => 
@@ -1721,6 +2806,25 @@ const ChatUI = () => {
   };
 
   const handleMemberAdded = (updatedConversation) => {
+    console.log('👤 Member added to group:', updatedConversation);
+    console.log('Admin:', updatedConversation.admin);
+    console.log('Admin2:', updatedConversation.admin2);
+    
+    // Lưu thông tin admin vào localStorage
+    if (updatedConversation.type === 'group') {
+      if (updatedConversation.admin) {
+        const adminId = updatedConversation.admin._id || updatedConversation.admin;
+        localStorage.setItem(`adminId_${updatedConversation._id}`, adminId);
+        localStorage.setItem('adminId', adminId);
+      }
+      
+      if (updatedConversation.admin2) {
+        const admin2Id = updatedConversation.admin2._id || updatedConversation.admin2;
+        localStorage.setItem(`admin2Id_${updatedConversation._id}`, admin2Id);
+        localStorage.setItem('admin2Id', admin2Id);
+      }
+    }
+    
     // Update conversation in list
     setConversations(prev =>
       prev.map(conv =>
@@ -1746,6 +2850,29 @@ const ChatUI = () => {
   };
 
   const handleMemberRemoved = (updatedConversation) => {
+    console.log('👤 Member removed from group:', updatedConversation);
+    console.log('Admin:', updatedConversation.admin);
+    console.log('Admin2:', updatedConversation.admin2);
+    
+    // Lưu thông tin admin vào localStorage
+    if (updatedConversation.type === 'group') {
+      if (updatedConversation.admin) {
+        const adminId = updatedConversation.admin._id || updatedConversation.admin;
+        localStorage.setItem(`adminId_${updatedConversation._id}`, adminId);
+        localStorage.setItem('adminId', adminId);
+      }
+      
+      if (updatedConversation.admin2) {
+        const admin2Id = updatedConversation.admin2._id || updatedConversation.admin2;
+        localStorage.setItem(`admin2Id_${updatedConversation._id}`, admin2Id);
+        localStorage.setItem('admin2Id', admin2Id);
+      } else {
+        // Nếu không có admin2, xóa khỏi localStorage
+        localStorage.removeItem(`admin2Id_${updatedConversation._id}`);
+        localStorage.removeItem('admin2Id');
+      }
+    }
+    
     // Update conversation in list
     setConversations(prev =>
       prev.map(conv =>
@@ -1758,11 +2885,19 @@ const ChatUI = () => {
       setActiveConversation(updatedConversation);
     }
 
+    // Determine appropriate content for system message
+    let messageContent = 'Một thành viên đã bị xóa khỏi nhóm';
+    
+    // Only try to access lastMessage.content if it exists
+    if (updatedConversation.lastMessage && updatedConversation.lastMessage.content) {
+      messageContent = updatedConversation.lastMessage.content;
+    }
+
     // Add system message about member removal
     const systemMessage = {
       type: 'system',
       systemType: 'member_removed',
-      content: `${updatedConversation.lastMessage.content}`,
+      content: messageContent,
       conversationId: updatedConversation._id,
       createdAt: new Date().toISOString()
     };
@@ -2334,19 +3469,727 @@ const ChatUI = () => {
     setSelectedUser(null);
   };
 
+  // Xử lý trạng thái online/offline của người dùng
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('🟢 Thiết lập listener cho trạng thái online/offline');
+    
+    // Map để lưu trạng thái online của các user
+    const onlineStatusMap = new Map();
+    
+    // Tạo Set để theo dõi người dùng đã báo cáo nếu chưa tồn tại
+    if (!reportedUsers.current) {
+      reportedUsers.current = new Set();
+    }
+    
+    const handleUserOnline = (userId) => {
+      // Tránh xử lý cùng một userId nhiều lần - ngăn vòng lặp vô hạn
+      if (reportedUsers.current.has(userId)) {
+        console.log('⚠️ Bỏ qua sự kiện user_online trùng lặp cho:', userId);
+        return;
+      }
+      
+      console.log('🟢 Người dùng online:', userId);
+      reportedUsers.current.add(userId);
+      
+      // Cập nhật trạng thái online trong state
+      onlineStatusMap.set(userId, true);
+      
+      // Cập nhật danh sách cuộc trò chuyện để hiển thị trạng thái online
+      setConversations(prev => prev.map(conv => {
+        // Với cuộc trò chuyện nhóm, không cập nhật trạng thái online
+        if (conv.type === 'group') return conv;
+        
+        // Với cuộc trò chuyện 1-1, kiểm tra người dùng
+        const otherUser = conv.members?.find(
+          m => m.idUser && (
+            (m.idUser._id && m.idUser._id.toString() === userId.toString()) ||
+            (typeof m.idUser === 'string' && m.idUser.toString() === userId.toString())
+          )
+        )?.idUser;
+        
+        if (otherUser) {
+          return {
+            ...conv,
+            isOnline: true,
+            lastSeen: new Date()
+          };
+        }
+        
+        return conv;
+      }));
+      
+      // Sau 10 phút, xóa khỏi danh sách reported để cho phép nhận lại thông báo online
+      setTimeout(() => {
+        if (reportedUsers.current) {
+          reportedUsers.current.delete(userId);
+          console.log('🕒 Đã xóa user khỏi danh sách reported sau 10 phút:', userId);
+        }
+      }, 10 * 60 * 1000); // 10 phút
+    };
+    
+    const handleUserOffline = (userId) => {
+      console.log('🔴 Người dùng offline:', userId);
+      
+      // Xóa khỏi danh sách đã report để cho phép báo online lần sau
+      reportedUsers.current.delete(userId);
+      
+      // Cập nhật trạng thái offline trong state
+      onlineStatusMap.set(userId, false);
+      
+      // Cập nhật danh sách cuộc trò chuyện để hiển thị trạng thái offline
+      setConversations(prev => prev.map(conv => {
+        // Với cuộc trò chuyện nhóm, không cập nhật trạng thái online
+        if (conv.type === 'group') return conv;
+        
+        // Với cuộc trò chuyện 1-1, kiểm tra người dùng
+        const otherUser = conv.members?.find(
+          m => m.idUser && (
+            (m.idUser._id && m.idUser._id.toString() === userId.toString()) ||
+            (typeof m.idUser === 'string' && m.idUser.toString() === userId.toString())
+          )
+        )?.idUser;
+        
+        if (otherUser) {
+          return {
+            ...conv,
+            isOnline: false,
+            lastSeen: new Date()
+          };
+        }
+        
+        return conv;
+      }));
+    };
+    
+    // Đăng ký event listener một cách an toàn sử dụng registerEventListener
+    SocketService.onUserOnline(handleUserOnline);
+    SocketService.onUserOffline(handleUserOffline);
+    
+    // Khi người dùng thay đổi cuộc trò chuyện hoặc vào trang chat
+    // Thông báo rằng họ đang xem tin nhắn
+    if (activeConversation?._id) {
+      SocketService.viewingMessages(activeConversation._id);
+    }
+    
+    // Cleanup
+    return () => {
+      console.log('🧹 Dọn dẹp listener trạng thái online/offline');
+      if (activeConversation?._id) {
+        SocketService.stopViewingMessages(activeConversation._id);
+      }
+      
+      // Xóa listener sử dụng phương thức của SocketService
+      SocketService.removeListener('user_online');
+      SocketService.removeListener('user_offline');
+    };
+  }, [activeConversation]);
+
+  // Xử lý tin nhắn đã chuyển giao
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('📬 Thiết lập listener cho tin nhắn đã chuyển giao');
+    
+    const handleMessageDelivered = (data) => {
+      console.log('📬 Tin nhắn đã được chuyển giao:', data.messageId);
+      
+      // Cập nhật trạng thái tin nhắn
+      setMessages(prev => prev.map(msg => {
+        if (msg._id === data.messageId) {
+          return {
+            ...msg,
+            delivered: true,
+            deliveredAt: data.deliveredAt
+          };
+        }
+        return msg;
+      }));
+    };
+    
+    // Đăng ký event listener
+    SocketService.onMessageDelivered(handleMessageDelivered);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('message_delivered');
+    };
+  }, []);
+
+  // Xử lý ai đang xem tin nhắn
+  useEffect(() => {
+    if (!SocketService.socket || !activeConversation) return;
+    
+    console.log('👀 Thiết lập listener cho ai đang xem tin nhắn');
+    
+    const viewingUsers = new Map();
+    
+    const handleUserViewingMessages = (data) => {
+      const { userId, conversationId } = data;
+      
+      // Chỉ quan tâm đến cuộc trò chuyện hiện tại
+      if (conversationId !== activeConversation._id) return;
+      
+      console.log('👀 Người dùng đang xem tin nhắn:', userId);
+      
+      // Tìm tên người dùng từ members
+      let userName = "Ai đó";
+      if (activeConversation?.members) {
+        const member = activeConversation.members.find(
+          m => m.idUser && m.idUser._id === userId
+        );
+        if (member?.idUser?.name) {
+          userName = member.idUser.name;
+        }
+      }
+      
+      // Cập nhật danh sách người đang xem
+      viewingUsers.set(userId, userName);
+      
+      // TODO: Có thể hiển thị UI "X đang xem tin nhắn" nếu cần
+    };
+    
+    const handleUserStopViewingMessages = (data) => {
+      const { userId, conversationId } = data;
+      
+      // Chỉ quan tâm đến cuộc trò chuyện hiện tại
+      if (conversationId !== activeConversation._id) return;
+      
+      console.log('👀 Người dùng ngừng xem tin nhắn:', userId);
+      
+      // Xóa khỏi danh sách người đang xem
+      viewingUsers.delete(userId);
+      
+      // TODO: Cập nhật UI nếu cần
+    };
+    
+    // Đăng ký event listener
+    SocketService.onUserViewingMessages(handleUserViewingMessages);
+    SocketService.socket.on('user_stop_viewing_messages', handleUserStopViewingMessages);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('user_viewing_messages');
+      SocketService.socket.off('user_stop_viewing_messages');
+    };
+  }, [activeConversation]);
+
+  // Xử lý đồng bộ tin nhắn sau khi mất kết nối
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('🔄 Thiết lập listener cho đồng bộ tin nhắn');
+    
+    // Khi socket đã ngắt kết nối và kết nối lại
+    const handleReconnect = () => {
+      console.log('🔄 Socket kết nối lại, đồng bộ tin nhắn...');
+      
+      // Đồng bộ tin nhắn cho cuộc trò chuyện hiện tại
+      if (activeConversation?._id && messages.length > 0) {
+        // Lấy thời gian của tin nhắn mới nhất
+        const latestMessage = messages.reduce((latest, msg) => {
+          const msgTime = new Date(msg.createdAt).getTime();
+          const latestTime = new Date(latest.createdAt).getTime();
+          return msgTime > latestTime ? msg : latest;
+        }, messages[0]);
+        
+        // Gửi yêu cầu đồng bộ từ tin nhắn cuối cùng
+        SocketService.syncMessages(latestMessage.createdAt, activeConversation._id);
+      }
+    };
+    
+    const handleSyncMessages = (data) => {
+      console.log('🔄 Nhận tin nhắn đồng bộ:', data.messages?.length || 0);
+      
+      if (!data.messages || data.messages.length === 0) return;
+      
+      // Chỉ cập nhật nếu đang ở đúng cuộc trò chuyện
+      if (activeConversation?._id === data.conversationId) {
+        // Lọc những tin nhắn mới chưa có trong state
+        const messageIds = new Set(messages.map(m => m._id));
+        const newMessages = data.messages.filter(m => !messageIds.has(m._id));
+        
+        if (newMessages.length > 0) {
+          // Thêm tin nhắn mới vào state và sắp xếp theo thời gian
+          setMessages(prev => [...prev, ...newMessages].sort((a, b) => 
+            new Date(a.createdAt) - new Date(b.createdAt)
+          ));
+        }
+      }
+    };
+    
+    // Đăng ký event listener
+    SocketService.socket.on('reconnect', handleReconnect);
+    SocketService.onSyncMessages(handleSyncMessages);
+    
+    // Cleanup
+    return () => {
+      SocketService.socket.off('reconnect');
+      SocketService.removeListener('sync_messages_result');
+    };
+  }, [activeConversation, messages]);
+
+  // Xử lý sự kiện group_created
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('👥 Thiết lập listener cho nhóm mới được tạo');
+    
+    const handleGroupCreated = (data) => {
+      console.log('👥 Nhóm mới được tạo:', data.groupId);
+      
+      // Nếu đã có thông tin đầy đủ về nhóm, cập nhật danh sách cuộc trò chuyện
+      if (data._id) {
+        const newGroup = data;
+        
+        // Kiểm tra xem nhóm đã tồn tại trong danh sách chưa
+        const exists = conversations.some(conv => conv._id === newGroup._id);
+        
+        if (!exists) {
+          console.log('👥 Thêm nhóm mới vào danh sách cuộc trò chuyện');
+          setConversations(prev => [newGroup, ...prev]);
+        }
+      } else {
+        // Nếu chỉ có ID, cần tải thông tin nhóm
+        console.log('👥 Tải thông tin nhóm mới');
+        
+        // Tải lại danh sách cuộc trò chuyện để có thông tin nhóm mới
+        fetchConversations();
+      }
+    };
+    
+    // Đăng ký event listener
+    SocketService.onGroupCreated(handleGroupCreated);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('group_created');
+    };
+  }, [conversations]);
+
+  // Xử lý chi tiết hoạt động nhóm
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('👥 Thiết lập listener cho hoạt động chi tiết nhóm');
+    
+    const handleGroupActivity = (data) => {
+      console.log('👥 Hoạt động nhóm:', data.activityType);
+      
+      // Chỉ xử lý nếu liên quan đến cuộc trò chuyện hiện tại
+      if (activeConversation?._id !== data.conversationId) return;
+      
+      // Hiển thị thông báo hoạt động trong tin nhắn nếu cần
+      const activityMessage = {
+        _id: `activity_${Date.now()}`,
+        type: 'activity',
+        content: '',
+        activityType: data.activityType,
+        sender: data.actorId,
+        target: data.targetId,
+        details: data.details,
+        createdAt: data.timestamp || new Date(),
+        idConversation: data.conversationId
+      };
+      
+      // Thêm thông báo hoạt động vào danh sách tin nhắn
+      setMessages(prev => [...prev, activityMessage]);
+    };
+    
+    // Đăng ký event listener
+    SocketService.onGroupActivity(handleGroupActivity);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('group_activity');
+    };
+  }, [activeConversation]);
+
+  // Xử lý khi người dùng bị xóa khỏi nhóm
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('🚫 Thiết lập listener cho khi người dùng bị xóa khỏi nhóm');
+    
+    const handleRemovedFromGroup = (data) => {
+      console.log('🚫 Người dùng hiện tại bị xóa khỏi nhóm:', data);
+      
+      // Xóa conversation khỏi danh sách
+      setConversations(prev => 
+        prev.filter(conv => conv._id !== data.conversationId)
+      );
+      
+      // Nếu đang xem conversation bị xóa thì chuyển về danh sách
+      if (activeConversation && activeConversation._id === data.conversationId) {
+        setActiveConversation(null);
+        setMessages([]);
+        
+        // Hiển thị dialog thông báo
+        toast.info(data.message || `Bạn đã bị xóa khỏi nhóm "${data.groupName}"`);
+        
+        // Nếu đang ở mobile view, chuyển về danh sách cuộc trò chuyện
+        if (window.innerWidth <= 768) {
+          setShowConversationList(true);
+        }
+      }
+    };
+    
+    // Thêm listener cho sự kiện khi nhóm bị xóa bởi admin
+    const handleGroupDeletedEvent = (data) => {
+      console.log('🚫 Nhóm đã bị admin xóa:', data);
+      
+      // Xóa conversation khỏi danh sách
+      setConversations(prev => 
+        prev.filter(conv => conv._id !== data.conversationId)
+      );
+      
+      // Nếu đang xem conversation bị xóa thì chuyển về danh sách
+      if (activeConversation && activeConversation._id === data.conversationId) {
+        setActiveConversation(null);
+        setMessages([]);
+        
+        // Hiển thị thông báo
+        Alert.alert("Thông báo", `Nhóm "${data.groupName || 'chat'}" đã bị xóa bởi admin`);
+        
+        // Nếu đang ở mobile view, chuyển về danh sách cuộc trò chuyện
+        if (window.innerWidth <= 768) {
+          setShowConversationList(true);
+        }
+      }
+    };
+    
+    // Đăng ký event listener
+    SocketService.onRemovedFromGroup(handleRemovedFromGroup);
+    SocketService.onGroupDeleted(handleGroupDeletedEvent);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('removed_from_group');
+      SocketService.removeListener('group_deleted');
+    };
+  }, [activeConversation]);
+
+  // Xử lý lỗi tin nhắn
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('⚠️ Thiết lập listener cho lỗi tin nhắn');
+    
+    const handleMessageError = (data) => {
+      console.error('⚠️ Lỗi tin nhắn:', data);
+      
+      // Hiển thị thông báo lỗi
+      if (data.messageId) {
+        // Cập nhật trạng thái lỗi cho tin nhắn cụ thể
+        setMessages(prev => prev.map(msg => {
+          if (msg._id === data.messageId) {
+            return {
+              ...msg,
+              error: true,
+              errorMessage: data.message || 'Không thể gửi tin nhắn'
+            };
+          }
+          return msg;
+        }));
+      } else {
+        // Hiển thị thông báo lỗi chung
+        toast.error(data.message || 'Đã xảy ra lỗi với tin nhắn');
+      }
+    };
+    
+    // Đăng ký event listener
+    SocketService.onMessageError(handleMessageError);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('message_error');
+    };
+  }, []);
+
+  // Xử lý người dùng cụ thể đang nhập trong nhóm
+  useEffect(() => {
+    if (!SocketService.socket || !activeConversation || activeConversation.type !== 'group') return;
+    
+    console.log('⌨️ Thiết lập listener cho người dùng cụ thể đang nhập trong nhóm');
+    
+    const handleSpecificUserTyping = (data) => {
+      // Chỉ xử lý nếu là cuộc trò chuyện hiện tại và là nhóm
+      if (activeConversation._id !== data.conversationId) return;
+      
+      console.log('⌨️ Người dùng cụ thể đang nhập:', data.userName);
+      
+      // Cập nhật state người đang nhập
+      setTypingUsers(prev => ({
+        ...prev,
+        [data.userId]: data.userName
+      }));
+      
+      // Tự động xóa sau 3 giây nếu không có cập nhật mới
+      setTimeout(() => {
+        setTypingUsers(current => {
+          const updated = { ...current };
+          if (updated[data.userId]) {
+            delete updated[data.userId];
+          }
+          return updated;
+        });
+      }, 3000);
+    };
+    
+    // Đăng ký event listener
+    SocketService.onSpecificUserTyping(handleSpecificUserTyping);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('specific_user_typing');
+    };
+  }, [activeConversation]);
+
+  // Thêm hàm tiện ích kiểm tra quyền admin
+  const isGroupAdmin = (conversation) => {
+    if (!conversation || !userId || conversation.type !== 'group') return false;
+    
+    // Lấy thông tin admin từ nhiều nguồn (conversation object và localStorage)
+    const adminId = conversation.admin?._id || conversation.admin || 
+                    localStorage.getItem(`adminId_${conversation._id}`) || 
+                    localStorage.getItem('adminId');
+    
+    console.log('Admin check - AdminId:', adminId, 'UserId:', userId);
+    
+    return adminId && userId.toString() === adminId.toString();
+  };
+  
+  // Thêm hàm tiện ích kiểm tra quyền admin2
+  const isGroupAdmin2 = (conversation) => {
+    if (!conversation || !userId || conversation.type !== 'group') return false;
+    
+    // Lấy thông tin admin2 từ nhiều nguồn (conversation object và localStorage)
+    const admin2Id = conversation.admin2?._id || conversation.admin2 || 
+                     localStorage.getItem(`admin2Id_${conversation._id}`) || 
+                     localStorage.getItem('admin2Id');
+    
+    console.log('Admin2 check - Admin2Id:', admin2Id, 'UserId:', userId);
+    
+    return admin2Id && userId.toString() === admin2Id.toString();
+  };
+
+  // Xử lý sự kiện nhóm bị xóa
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('🗑️ Thiết lập listener cho sự kiện nhóm bị xóa');
+    
+    const handleGroupDeleted = (data) => {
+      console.log('🗑️ Nhận thông báo nhóm bị xóa:', data);
+      
+      // Xóa cuộc trò chuyện khỏi danh sách
+      setConversations(prev => 
+        prev.filter(conv => conv._id !== data.conversationId)
+      );
+      
+      // Nếu đang xem cuộc trò chuyện đã bị xóa, chuyển về mặc định
+      if (activeConversation && activeConversation._id === data.conversationId) {
+        setActiveConversation(null);
+        setMessages([]);
+        
+        // Hiển thị thông báo
+        Alert.alert(
+          "Thông báo", 
+          data.message || `Nhóm "${data.groupName || 'chat'}" đã bị xóa bởi admin`
+        );
+      }
+    };
+    
+    // Đăng ký lắng nghe sự kiện
+    SocketService.onGroupDeleted(handleGroupDeleted);
+    
+    return () => {
+      // Dọn dẹp khi unmount
+      SocketService.removeListener('group_deleted');
+    };
+  }, [activeConversation]);
+
+  const handleFileSelectFromGroup = (file, type) => {
+    setSelectedFile(file);
+    
+    // Create preview for images
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setSelectedFilePreview(e.target.result);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setSelectedFilePreview(null);
+    }
+    
+    // Set message type based on the group selection
+    setMessageType(type || 'file');
+    
+    // Create temp file URL
+    file.tempFileUrl = `temp_file_${Date.now()}_${file.name}`;
+    
+    // Focus input for caption
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+  };
+
+  // Tải tin nhắn đã ghim khi component được tải hoặc khi conversation thay đổi
+  useEffect(() => {
+    const loadPinnedMessagesForConversation = async () => {
+      if (!activeConversation || !activeConversation._id || activeConversation.type !== 'group') return;
+      
+      try {
+        console.log('Tải tin nhắn đã ghim cho cuộc trò chuyện nhóm:', activeConversation._id);
+        const token = AuthService.getAccessToken();
+        const response = await ChatService.getPinnedMessages(activeConversation._id, token);
+        
+        if (response.success && response.pinnedMessages) {
+          console.log(`Đã tải ${response.pinnedMessages.length} tin nhắn đã ghim`);
+          // Cập nhật conversation với danh sách tin nhắn đã ghim
+          setActiveConversation(prev => ({
+            ...prev,
+            pinnedMessages: response.pinnedMessages
+          }));
+        } else {
+          console.log('Không có tin nhắn đã ghim hoặc lỗi:', response.message);
+        }
+      } catch (error) {
+        console.error('Lỗi khi tải tin nhắn đã ghim:', error);
+      }
+    };
+    
+    // Chỉ tải tin nhắn đã ghim nếu là chat nhóm
+    if (activeConversation?.type === 'group') {
+      loadPinnedMessagesForConversation();
+    }
+  }, [activeConversation?._id, activeConversation?.type]);
+
+  // Xử lý sự kiện thêm thành viên vào nhóm
+  useEffect(() => {
+    if (!SocketService.socket) return;
+    
+    console.log('👥 Thiết lập listener cho sự kiện thêm thành viên vào nhóm');
+    
+    const handleMemberAddedToGroup = (data) => {
+      console.log('👤 Thành viên mới được thêm vào nhóm:', data);
+      
+      // Cập nhật danh sách cuộc trò chuyện
+      if (data.conversation) {
+        setConversations(prev => 
+          prev.map(conv => 
+            conv._id === data.conversation._id ? data.conversation : conv
+          )
+        );
+        
+        // Cập nhật cuộc trò chuyện hiện tại nếu đang xem
+        if (activeConversation && activeConversation._id === data.conversation._id) {
+          console.log('🔄 Cập nhật thông tin nhóm hiện tại với thành viên mới');
+          setActiveConversation(data.conversation);
+          
+          // Thêm thông báo hệ thống về việc thêm thành viên mới
+          if (data.conversation.lastMessage && 
+              data.conversation.lastMessage.type === 'system' && 
+              data.conversation.lastMessage.systemType === 'add_member') {
+            
+            const systemMessage = {
+              _id: `system_${Date.now()}`,
+              type: 'system',
+              content: data.conversation.lastMessage.content,
+              createdAt: new Date().toISOString()
+            };
+            
+            setMessages(prev => [...prev, systemMessage]);
+            
+            // Cuộn xuống tin nhắn mới
+            setTimeout(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+          }
+        }
+      }
+    };
+    
+    // Đăng ký lắng nghe sự kiện
+    SocketService.onMemberAdded(handleMemberAddedToGroup);
+    
+    // Cleanup
+    return () => {
+      SocketService.removeListener('member_added');
+    };
+  }, [activeConversation]);
+
+  useEffect(() => {
+    // Ensure the static/images directory exists
+    const createStaticImagesDirIfNeeded = async () => {
+      try {
+        // Create directories if needed - this is a client-side check
+        const staticDir = 'public/static';
+        const imagesDir = `${staticDir}/images`;
+        console.log('Ensuring static image directories exist');
+      } catch (error) {
+        console.error('Error handling static directories:', error);
+      }
+    };
+    
+    createStaticImagesDirIfNeeded();
+  }, []);
+
+  // Tải dữ liệu người dùng và khởi tạo socket
+  useEffect(() => {
+    const initializeChat = async () => {
+      try {
+        // Tải dữ liệu người dùng
+        await fetchUserData();
+        
+        // Tải danh sách cuộc trò chuyện
+        await fetchConversations();
+        
+        // Khởi tạo kết nối socket sau khi tải dữ liệu cơ bản
+        if (!SocketService.isConnected) {
+          Logger.info('Initializing socket connection after basic data load');
+          SocketService.connect();
+          
+          // Join user room sau khi kết nối
+          const userData = AuthService.getUserData();
+          if (userData && userData._id) {
+            SocketService.joinUserRoom(userData);
+          }
+        }
+      } catch (error) {
+        Logger.error("Error initializing chat", error);
+      }
+    };
+
+    initializeChat();
+    
+    // Cleanup khi component unmount
+    return () => {
+      // Disconnect socket nếu cần
+    };
+  }, [userId]);
+
   if (showProfile) {
     return <ProfileScreen onBack={() => setShowProfile(false)} />;
   }
 
+  // Hiển thị trạng thái tải
   if (loading.conversations) {
     return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        height="100vh"
-      >
-        <CircularProgress />
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        bgcolor: 'background.default'
+      }}>
+        <LoadingAnimation />
+        <Typography variant="body1" sx={{ mt: 2 }}>
+          Đang tải dữ liệu cuộc trò chuyện...
+        </Typography>
       </Box>
     );
   }
@@ -2355,362 +4198,114 @@ const ChatUI = () => {
     <Box
       sx={{
         display: "flex",
-        height: "100vh",
-        width: "100vw",
-        overflow: "hidden",
+        flexDirection: "column",
+        height: "100%",
         bgcolor: "background.default",
       }}
     >
-      {/* Sidebar */}
+      {/* Main Content Area with Conversation List and Chat Area */}
       <Box
         sx={{
-          width: 380,
-          borderRight: "1px solid",
-          borderColor: "divider",
-          display: { xs: "none", md: "flex" },
-          flexDirection: "column",
-          bgcolor: "background.paper",
+          display: "flex",
+          height: "100%",
+          width: "100%",
         }}
       >
-        {/* Sidebar Header */}
-        <Box
-          sx={{
+        {/* Conversation List */}
+      <Box
+        sx={{
+            width: { xs: '100%', md: '320px' },
+            height: '100%',
+            display: { xs: showConversationList && !activeConversation ? 'flex' : 'none', md: 'flex' },
+            flexDirection: 'column',
+            borderRight: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+            overflow: 'hidden', // Ngăn không cho toàn bộ container cuộn
+        }}
+      >
+          {/* Header cố định */}
+          <Box sx={{ 
             p: 2,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            bgcolor: "background.paper",
-            borderBottom: "1px solid",
-            borderColor: "divider",
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            <Avatar
-              src={user?.avatar || "/static/images/avatar/1.jpg"}
-              sx={{ width: 40, height: 40, cursor: "pointer" }}
-              onClick={() => handleAvatarClick(user)}
-            />
-            <Typography variant="h6" sx={{ ml: 2 }}>
-              {user?.name || "User"}
-            </Typography>
-          </Box>
-          <Box>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mr: 1 }}>
-              <IconButton 
-                onClick={() => navigation.navigate('GeminiChat')}
-                aria-label="Gemini AI Assistant"
-                color="primary"
-              >
-                <Avatar
-                  src="https://storage.googleapis.com/gweb-uniblog-publish-prod/images/gemini_1.width-1000.format-webp.webp"
-                  sx={{ width: 24, height: 24 }}
-                />
-              </IconButton>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                Gemini AI
-              </Typography>
-            </Box>
-            <IconButton onClick={handleNotificationMenuOpen} id="notification-button" aria-label="Friend requests">
-              <Badge badgeContent={friendRequests.length} color="error">
-                <NotificationsIcon />
-              </Badge>
-            </IconButton>
-
-            {/* Friend Requests Menu */}
-            <Menu
-              anchorEl={notificationAnchorEl}
-              open={Boolean(notificationAnchorEl)}
-              onClose={handleNotificationMenuClose}
-              PaperProps={{
-                style: {
-                  width: "350px",
-                  padding: "8px 0",
-                },
-              }}
-              keepMounted={false}
-              disablePortal
-              MenuListProps={{
-                'aria-labelledby': 'notification-button',
-              }}
-            >
-              <Typography
-                variant="h6"
-                sx={{ px: 2, py: 1, fontWeight: "bold" }}
-                id="notification-menu-title"
-              >
-                Friend Requests
-              </Typography>
-
-              {loadingRequests ? (
-                <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
-                  <CircularProgress size={24} />
-                </Box>
-              ) : friendRequests.length === 0 ? (
-                <Typography sx={{ px: 2, py: 1, color: "text.secondary" }}>
-                  No pending requests
-                </Typography>
-              ) : (
-                friendRequests.map((request) => (
-                  <MenuItem
-                    key={request._id}
-                    sx={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "flex-start",
-                      gap: 1,
-                      py: 2,
-                      borderBottom: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        width: "100%",
-                      }}
-                    >
-                      <Avatar
-                        src={request.idUser?.avatar}
-                        sx={{ width: 40, height: 40, mr: 2 }}
-                      />
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="subtitle1" fontWeight="medium">
-                          {request.idUser?.name || "Unknown User"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Sent{" "}
-                          {new Date(request.createdAt).toLocaleDateString()}
-                        </Typography>
-                      </Box>
-                    </Box>
-
-                    <Box
-                      sx={{
-                        display: "flex",
-                        gap: 1,
-                        width: "100%",
-                        justifyContent: "flex-end",
-                      }}
-                    >
-                      <Button
-                        variant="contained"
-                        size="small"
-                        color="success"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            const token = AuthService.getAccessToken();
-                            const response = await UserService.acceptFriend(
-                              userId,
-                              request.idUser,
-                              token
-                            );
-                            setFriendRequests((prev) =>
-                              prev.filter((req) => req._id !== request._id)
-                            );
-                            setFriends((prev) => [
-                              ...prev,
-                              ...response.friends,
-                            ]);
-                            Alert.alert("Accepted", "You are now friends!");
-                          } catch (error) {
-                            Alert.alert("Error", "Failed to accept request");
-                          }
-                        }}
-                        sx={{ textTransform: "none" }}
-                      >
-                        Accept
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        color="error"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            await UserService.declineFriendRequest(request._id);
-                            setFriendRequests((prev) =>
-                              prev.filter((req) => req._id !== request._id)
-                            );
-                          } catch (error) {
-                            Alert.alert("Error", "Failed to decline request");
-                          }
-                        }}
-                        sx={{ textTransform: "none" }}
-                      >
-                        Decline
-                      </Button>
-                    </Box>
-                  </MenuItem>
-                ))
-              )}
-            </Menu>
-            {/* Settings Menu (original menu) */}
-            <IconButton onClick={handleMenuOpen} id="settings-button" aria-label="Settings menu">
-              <MoreVert />
-            </IconButton>
-            <Menu
-              anchorEl={anchorEl}
-              open={Boolean(anchorEl)}
-              onClose={handleMenuClose}
-              keepMounted={false}
-              disablePortal
-              MenuListProps={{
-                'aria-labelledby': 'settings-button',
-              }}
-            >
-              <MenuItem>
-                <ListItemIcon>
-                  {isDarkMode ? <DarkModeIcon /> : <LightModeIcon />}
-                </ListItemIcon>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={isDarkMode}
-                      onChange={toggleTheme}
-                      name="theme-toggle"
-                    />
-                  }
-                  label={isDarkMode ? "Chế độ tối" : "Chế độ sáng"}
-                  sx={{ m: 0 }}
-                />
-              </MenuItem>
-              <MenuItem onClick={handleCreateGroup}>
-                <ListItemIcon>
-                  <GroupAddIcon fontSize="small" />
-                </ListItemIcon>
-                <Typography>Tạo nhóm mới</Typography>
-              </MenuItem>
-              {activeConversation && activeConversation.type === 'group' && (
-                <MenuItem onClick={handleEditGroup}>
-                  <ListItemIcon>
-                    <EditIcon fontSize="small" />
-                  </ListItemIcon>
-                  <Typography>Chỉnh sửa nhóm</Typography>
-                </MenuItem>
-              )}
-              {activeConversation && activeConversation.type === 'group' && (
-                <MenuItem onClick={handleOpenGroupMembers}>
-                  <ListItemIcon>
-                    <PeopleIcon fontSize="small" />
-                  </ListItemIcon>
-                  <Typography>Quản lý thành viên nhóm</Typography>
-                </MenuItem>
-              )}
-              <MenuItem onClick={() => setShowProfile(true)}>
-                <ListItemIcon>
-                  <Avatar sx={{ width: 24, height: 24 }} src={user.avatar} />
-                </ListItemIcon>
-                <Typography>Hồ sơ cá nhân</Typography>
-              </MenuItem>
-              <MenuItem onClick={handleLogout}>
-                <ListItemIcon>
-                  <ExitToAppIcon fontSize="small" />
-                </ListItemIcon>
-                <Typography>Đăng xuất</Typography>
-              </MenuItem>
-            </Menu>
-          </Box>
+            borderBottom: '1px solid', 
+            borderColor: 'divider',
+            flexShrink: 0 // Ngăn phần header co lại
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6">Cuộc trò chuyện</Typography>
+              <Box>
+                <IconButton 
+                  aria-label="more" 
+                  onClick={handleSidebarMenuOpen}
+                >
+            <MoreVert />
+          </IconButton>
+        </Box>
         </Box>
 
-        <Box sx={{ p: 2 }}>
           <TextField
+              variant="outlined"
+              placeholder="Tìm kiếm..."
             fullWidth
-            value={phone}
-            onChange={handleChange}
-            placeholder="Search by phone number"
+              size="small"
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
                   <SearchIcon />
                 </InputAdornment>
               ),
-              sx: { borderRadius: 3 },
             }}
           />
-
-          {foundUser ? (
-            <Paper elevation={2} sx={{ mt: 2, p: 2, borderRadius: 2 }}>
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <Box>
-                  <Typography variant="subtitle1">{foundUser.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Phone: {foundUser.phone}
-                  </Typography>
+          </Box>
+          
+          {/* Danh sách cuộc trò chuyện có thể cuộn */}
+          <Box sx={{ 
+            flex: 1, 
+            overflow: 'auto' // Chỉ phần này có thể cuộn
+          }}>
+            <List sx={{ width: '100%' }}>
+              {loading.conversations ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                  <CircularProgress size={24} />
                 </Box>
+              ) : conversations.length === 0 ? (
+                <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Typography color="text.secondary">Chưa có cuộc trò chuyện nào</Typography>
                 <Button
                   variant="contained"
-                  size="small"
-                  startIcon={<AddIcon />}
-                  onClick={async () => {
-                    try {
-                      const token = AuthService.getAccessToken();
-                      await UserService.addFriend(foundUser, token);
-                      Alert.alert(
-                        "Success",
-                        "Friend request sent successfully"
-                      );
-                      setFoundUser(null);
-                      setPhone("");
-                    } catch (error) {
-                      Alert.alert(
-                        "Error",
-                        error.response?.data?.message ||
-                          "Failed to send friend request"
-                      );
-                      console.error("Error sending friend request:", error);
-                    }
-                  }}
-                  sx={{
-                    minWidth: 120, // Give the button a consistent width
-                  }}
-                >
-                  Add Friend
+                    startIcon={<PersonAddIcon />}
+                    sx={{ mt: 2 }}
+                    onClick={() => navigation.navigate('Contacts')}
+                  >
+                    Tìm bạn bè
                 </Button>
               </Box>
-            </Paper>
-          ) : (
-            phone && (
-              <Typography sx={{ mt: 2, color: "gray" }}>
-                No user found
-              </Typography>
-            )
-          )}
-        </Box>
-
-        {/* Chat List */}
-        <Box sx={{ flex: 1, overflowY: "auto" }}>
-          {conversations.map((conversation) => {
-            const lastMessage =
-              conversation?.lastMessage?.content || "No messages yet";
-            const avatarIndex = conversation?._id
-              ? (conversation._id.charCodeAt(0) % 5) + 1
-              : 1;
+              ) : (
+                conversations.map((conversation) => {
+                  const otherUser = conversation.type === 'group' 
+                    ? null 
+                    : getOtherParticipant(conversation)?.idUser;
+                  
+                  const isOnline = otherUser && onlineUsers.includes(otherUser._id);
+                  const lastMessage = conversation.lastMessage;
+                  const isSelected = activeConversation?._id === conversation._id;
 
             return (
               <ListItem
-                key={conversation?._id || `conv-${Math.random()}`}
+                      key={conversation._id}
+                      button
+                      selected={isSelected}
                 onClick={() => handleConversationSelect(conversation)}
-                selected={activeConversation?._id === conversation?._id}
                 sx={{
-                  "&:hover": { 
-                    bgcolor: "action.hover",
-                    transform: "translateY(-2px)",
-                    transition: "transform 0.2s ease"
-                  },
-                  borderBottom: "1px solid",
-                  borderColor: "divider",
-                  bgcolor: conversation?.unreadCount > 0 ? "rgba(25, 118, 210, 0.08)" : "transparent",
-                  transition: "all 0.3s ease",
-                  py: 1.5,
-                  cursor: "pointer"
+                        mb: 0.5,
+                        borderRadius: 1,
+                        mx: 0.5,
+                        '&.Mui-selected': {
+                          bgcolor: 'action.selected',
+                          '&:hover': {
+                            bgcolor: 'action.hover',
+                          },
+                        },
                 }}
               >
                 <ListItemAvatar>
@@ -2724,11 +4319,132 @@ const ChatUI = () => {
                         </Avatar>
                       }
                     >
-                      <Avatar
-                        src={conversation.avatar || ""}
-                        alt={conversation.name || "Group"}
-                      >
+                            <Avatar src={conversation.avatar || ""}>
                         {!conversation.avatar && (conversation.name?.[0] || 'G')}
+                      </Avatar>
+                    </Badge>
+                  ) : (
+                    <Badge
+                      overlap="circular"
+                            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                      variant="dot"
+                            color={isOnline ? 'success' : 'error'}
+                    >
+                            <Avatar src={otherUser?.avatar || ""}>
+                              {!otherUser?.avatar && otherUser?.name?.[0]}
+                            </Avatar>
+                    </Badge>
+                  )}
+                </ListItemAvatar>
+                <ListItemText
+                  primary={
+                          <Typography 
+                            variant="body1" 
+                            noWrap 
+                  sx={{
+                              fontWeight: conversation.unreadCount > 0 ? 'bold' : 'normal',
+                              maxWidth: '180px'
+                  }}
+                >
+                            {conversation.type === 'group' ? conversation.name : otherUser?.name || (otherUser?._id ? 'Người dùng' : 'Chọn cuộc trò chuyện...')}
+                  </Typography>
+                        }
+                        secondary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            {lastMessage && (
+                              <Typography 
+                                variant="body2" 
+                                color="text.secondary" 
+                                noWrap
+                      sx={{
+                                  maxWidth: '120px',
+                                  fontWeight: conversation.unreadCount > 0 ? 'medium' : 'normal'
+                                }}
+                              >
+                                {lastMessage.type === 'text' 
+                                  ? lastMessage.content 
+                                  : lastMessage.type === 'image'
+                                    ? '🖼️ Hình ảnh'
+                                    : lastMessage.type === 'video'
+                                      ? '🎬 Video'
+                                      : lastMessage.type === 'system'
+                                        ? lastMessage.content
+                                        : '📎 Tệp đính kèm'
+                                }
+                      </Typography>
+                            )}
+                            {lastMessage && (
+                              <Typography variant="caption" color="text.secondary">
+                                · {formatChatTime(lastMessage.createdAt)}
+          </Typography>
+                            )}
+            </Box>
+                        }
+                      />
+                      {conversation.unreadCount > 0 && (
+                        <Badge 
+                          badgeContent={conversation.unreadCount} 
+                          color="primary"
+                          sx={{ ml: 1 }}
+                        />
+                      )}
+                    </ListItem>
+                        );
+                })
+              )}
+            </List>
+                </Box>
+      </Box>
+
+        {/* Chat Area */}
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+            height: "100%",
+            width: { xs: '100%', md: 'calc(100% - 320px)' },
+            display: { xs: !showConversationList || activeConversation ? 'flex' : 'none', md: 'flex' },
+        }}
+      >
+        {activeConversation ? (
+          <>
+            {/* Chat Header */}
+              <Box
+              sx={{
+                  p: 2,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                borderBottom: "1px solid",
+                borderColor: "divider",
+                bgcolor: "background.paper",
+              }}
+            >
+                <Box sx={{ display: "flex", alignItems: "center" }}>
+                  {/* Back button for mobile */}
+                  <IconButton 
+                    sx={{ display: { xs: 'flex', md: 'none' }, mr: 1 }}
+                    onClick={() => setShowConversationList(true)}
+                  >
+                    <ArrowBackIcon />
+                  </IconButton>
+                  
+                  {activeConversation.type === 'group' ? (
+                    <Badge
+                      overlap="circular"
+                      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                      badgeContent={
+                        <Avatar sx={{ width: 16, height: 16, bgcolor: 'primary.main' }}>
+                          <GroupIcon sx={{ fontSize: 12 }} />
+                        </Avatar>
+                      }
+                    >
+                      <Avatar
+                        src={activeConversation.avatar || ""}
+                        alt={activeConversation.name || "Group"}
+                        sx={{ mr: 2 }}
+                      >
+                        {!activeConversation.avatar && (activeConversation.name?.[0] || 'G')}
                       </Avatar>
                     </Badge>
                   ) : (
@@ -2736,1014 +4452,592 @@ const ChatUI = () => {
                       overlap="circular"
                       anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
                       variant="dot"
-                      color="success"
-                    >
-                      <Avatar
-                        src={
-                          getOtherParticipant(conversation)?.idUser?.avatar ||
-                          `/static/images/avatar/${avatarIndex}.jpg`
-                        }
-                      />
-                    </Badge>
-                  )}
-                </ListItemAvatar>
-                <ListItemText
-                  primary={
-                    conversation.type === 'group' 
-                      ? conversation.name || "Group Chat"
-                      : getOtherParticipant(conversation)?.idUser?.name ||
-                        `User ${conversation?._id?.slice(-4) || "unknown"}`
-                  }
-                  secondary={
-                    <Box>
-                      {conversation.type === 'group' && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          {conversation.members?.length || 0} members
-                        </Typography>
-                      )}
-                      <Typography variant="caption" color="text.secondary" sx={{
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        display: 'block'
-                      }}>
-                        {lastMessage}
-                      </Typography>
-                    </Box>
-                  }
-                />
-                <Box
-                  sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-end",
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary">
-                    {conversation?.updatedAt
-                      ? new Date(conversation.updatedAt).toLocaleTimeString(
-                          [],
-                          {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }
+                      color={
+                        onlineUsers.includes(
+                          getOtherParticipant(activeConversation)?.idUser?._id
                         )
-                      : ""}
-                  </Typography>
-                  {conversation?.unreadCount > 0 && (
-                    <Box
-                      sx={{
-                        bgcolor: "primary.main",
-                        color: "white",
-                        borderRadius: "50%",
-                        width: 20,
-                        height: 20,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        mt: 0.5,
-                      }}
+                          ? "success"
+                          : "error"
+                      }
                     >
-                      <Typography variant="caption">
-                        {conversation.unreadCount}
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-              </ListItem>
-            );
-          })}
-        </Box>
-      </Box>
-
-      {/* Main Chat Area */}
-      <Box
-        sx={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          bgcolor: "background.paper",
-        }}
-      >
-        {activeConversation ? (
-          <>
-            {/* Chat Header */}
-            <AppBar
-              position="static"
-              color="default"
-              elevation={0}
-              sx={{
-                borderBottom: "1px solid",
-                borderColor: "divider",
-                bgcolor: "background.paper",
-              }}
-            >
-              <Toolbar>
-                <Box sx={{ display: "flex", alignItems: "center", flex: 1 }}>
-                  {activeConversation.type === 'group' ? (
-                    <>
-                      <Avatar
-                        src={activeConversation.avatar || ''}
-                        sx={{ mr: 2 }}
-                      >
-                        {!activeConversation.avatar && (activeConversation.name?.[0] || 'G')}
-                      </Avatar>
-                      <Box>
-                        <Typography variant="subtitle1" fontWeight="medium">
-                          {activeConversation.name || 'Group Chat'}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {activeConversation.members?.length || 0} members
-                        </Typography>
-                      </Box>
-                    </>
-                  ) : (
-                    <>
                       <Avatar
                         src={
                           getOtherParticipant(activeConversation)?.idUser?.avatar ||
-                          "/static/images/avatar/2.jpg"
+                          ""
                         }
                         sx={{ mr: 2 }}
-                      />
-                      <Box>
-                        <Typography variant="subtitle1" fontWeight="medium">
-                          {getOtherParticipant(activeConversation)?.idUser?.name ||
-                            "Unknown User"}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Online
-                        </Typography>
-                        
-                        {/* Display Gemini indicator if conversation is with Gemini AI */}
-                        {isGeminiConversation() && (
-                          <Box sx={{ mt: 1 }}>
-                            <GeminiIndicator />
-                          </Box>
-                        )}
-                      </Box>
-                    </>
+                      >
+                        {!getOtherParticipant(activeConversation)?.idUser?.avatar && 
+                         getOtherParticipant(activeConversation)?.idUser?.name?.[0]}
+                      </Avatar>
+                    </Badge>
                   )}
-                </Box>
-                <IconButton>
-                  <SearchIcon />
-                </IconButton>
+                      <Box>
+                    <Typography variant="h6">
+                      {activeConversation.type === 'group' 
+                        ? activeConversation.name || "Group Chat"
+                        : getOtherParticipant(activeConversation)?.idUser?.name ||
+                          (getOtherParticipant(activeConversation)?.idUser?._id ? "Người dùng" : "User")
+                      }
+                        </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {activeConversation.type === 'group' 
+                        ? `${activeConversation.members?.length || 0} members`
+                        : onlineUsers.includes(
+                            getOtherParticipant(activeConversation)?.idUser?._id
+                          )
+                          ? "Online"
+                          : "Offline"
+                      }
+                      {Object.keys(typingUsers).includes(
+                        getOtherParticipant(activeConversation)?.idUser?._id
+                      ) && " • typing..."}
+                        </Typography>
+                          </Box>
+                      </Box>
+                <Box>
                 {activeConversation.type === 'group' && (
-                  <Tooltip title="Group Members">
+                    <>
                     <IconButton onClick={handleOpenGroupMembers}>
                       <PeopleIcon />
                     </IconButton>
-                  </Tooltip>
-                )}
-                <IconButton onClick={handleMenuOpen}>
+                      {isGroupAdmin(activeConversation) && (
+                        <IconButton onClick={handleEditGroup}>
+                          <EditIcon />
+                        </IconButton>
+                      )}
+                    </>
+                  )}
+                  <IconButton
+                    onClick={handleMenuOpen}
+                    aria-label="more"
+                    aria-controls="long-menu"
+                    aria-haspopup="true"
+                  >
                   <MoreVert />
                 </IconButton>
-              </Toolbar>
-            </AppBar>
+            <Menu
+                    id="long-menu"
+              anchorEl={anchorEl}
+              keepMounted={false}
+              disablePortal
+                    open={Boolean(anchorEl)}
+                    onClose={handleMenuClose}
+                    MenuListProps={{
+                      'aria-labelledby': 'more-button',
+                    }}
+            >
+                    {/* Chỉ hiển thị menu xem tin nhắn đã ghim khi đang ở trong nhóm */}
+                    {activeConversation.type === 'group' && (
+                      <MenuItem onClick={() => setPinnedMessagesDialogOpen(true)}>
+                        Xem tin nhắn đã ghim
+                      </MenuItem>
+                    )}
+                    
+                    {activeConversation.type === 'group' && (
+                      <>
+                        <MenuItem onClick={handleOpenGroupMembers}>
+                          Thành viên nhóm
+                        </MenuItem>
+                        {isGroupAdmin(activeConversation) && (
+                          <MenuItem onClick={handleEditGroup}>
+                            Chỉnh sửa nhóm
+                          </MenuItem>
+                        )}
+                        <MenuItem onClick={() => handleLeaveGroup(activeConversation._id)}>
+                          Rời nhóm
+                        </MenuItem>
+                        {isGroupAdmin(activeConversation) && (
+                          <MenuItem onClick={() => handleDeleteGroup(activeConversation._id)}>
+                            Xóa nhóm
+                          </MenuItem>
+                        )}
+                      </>
+                    )}
+            </Menu>
+                </Box>
+              </Box>
 
-            {/* Pinned Message Banner - Fixed Position */}
-            {activeConversation && activeConversation.type === 'group' && (
-              <Box sx={{ position: 'sticky', top: 0, zIndex: 10 }}>
+              {/* Pinned Message Banner - Chỉ hiển thị trong chat nhóm */}
+              {activeConversation.type === 'group' && activeConversation.pinnedMessages?.length > 0 && (
                 <PinnedMessageBanner 
                   conversation={activeConversation}
                   onViewAllPinned={() => setPinnedMessagesDialogOpen(true)}
                   onUnpinMessage={(messageId) => {
-                    // Update the messages list to reflect the unpinned status
+                    // Cập nhật tin nhắn trong danh sách tin nhắn hiện tại
                     setMessages(prevMessages => 
                       prevMessages.map(msg => 
-                        msg._id === messageId ? {...msg, isPinned: false} : msg
+                        msg._id === messageId ? {...msg, isPinned: false, pinnedBy: null, pinnedAt: null} : msg
                       )
                     );
+                    
+                    // Cập nhật activeConversation để loại bỏ tin nhắn đã bỏ ghim
+                    setActiveConversation(prevConversation => ({
+                      ...prevConversation,
+                      pinnedMessages: prevConversation.pinnedMessages.filter(
+                        msg => msg._id !== messageId
+                      )
+                    }));
                   }}
                 />
-              </Box>
             )}
             
-            {/* Messages */}
+              {/* Chat Messages */}
             <Box
               sx={{
                 flex: 1,
+                display: "flex",
+                flexDirection: "column",
                 overflowY: "auto",
                 p: 2,
-                bgcolor: "#f0f2f5",
-                backgroundImage:
-                  "url('https://web.whatsapp.com/img/bg-chat-tile-light_a4be512e7195b6b733d9110b408f075d.png')",
-                backgroundRepeat: "repeat",
-                backgroundSize: "410px 410px",
+                bgcolor: "background.default",
+                backgroundImage: theme => theme.palette.mode === 'dark' 
+                  ? 'linear-gradient(rgba(0,0,0,0.8), rgba(0,0,0,0.8)), url("/static/images/chat-bg-pattern.png")' 
+                  : 'linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)), url("/static/images/chat-bg-pattern.png")',
+                backgroundSize: '200px',
+                backgroundRepeat: 'repeat',
+                backgroundAttachment: 'fixed'
+              }}
+              ref={messagesContainerRef}
+              onScroll={e => {
+                const { scrollTop } = e.currentTarget;
+                if (scrollTop === 0 && hasMoreMessages && !loadingMoreMessages) {
+                  loadMoreMessages();
+                }
               }}
             >
-              {/* Pinned Message Banner moved to fixed position */}
-
-              <Container maxWidth="md" disableGutters>
-                {loading.messages ? (
-                  <Box display="flex" justifyContent="center" pt={4}>
-                    <CircularProgress />
+                    {loadingMoreMessages && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                        <CircularProgress size={24} />
+                      </Box>
+                    )}
+                  
+                {messages.length === 0 && !loading.messages ? (
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    height: '100%'
+                  }}>
+                    <Typography color="text.secondary" gutterBottom>
+                      Chưa có tin nhắn nào
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Hãy gửi tin nhắn đầu tiên để bắt đầu cuộc trò chuyện
+                    </Typography>
                   </Box>
-                ) : messages.length > 0 ? (
-                  <Box 
-                    sx={{
-                      pt: 2,
-                      pb: 2,
-                      px: { xs: 0.5, sm: 2 },
-                      borderRadius: 2,
-                      bgcolor: 'rgba(255, 255, 255, 0.05)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      width: '100%',
-                    }}
-                  >
-                    {messages.map((message, index) => (
-                      <Box
-                        key={message?._id || index}
-                        sx={{
-                          mb: 2,
-                          display: "flex",
-                          justifyContent: message.type === 'system' 
-                            ? "center"
-                            : (message?.sender?.toString() === userId?.toString() ||
-                              message?.idUser?.toString() === userId?.toString())
-                              ? "flex-end"
-                              : "flex-start",
-                          width: "100%",
-                        }}
-                      >
-                        {message.type === 'system' ? (
-                          // System message centered
-                          <Box
-                            sx={{
-                              maxWidth: "80%",
-                              textAlign: "center",
-                            }}
-                          >
-                            <Paper
-                              elevation={0}
-                              sx={{
-                                p: 1.5,
-                                borderRadius: 1,
-                                bgcolor: "rgba(0, 0, 0, 0.04)",
-                                width: "auto",
-                                wordBreak: "break-word",
-                                position: "relative",
-                                boxShadow: "none",
-                              }}
-                            >
-                              <Typography 
-                                variant="body2" 
-                                align="center"
-                                sx={{ 
-                                  color: 'text.secondary',
-                                  fontSize: '0.85rem',
-                                }}
-                              >
-                                {message?.content || message?.text}
-                              </Typography>
-                            </Paper>
-                            <Box
-                              sx={{
-                                display: "flex",
-                                justifyContent: "center",
-                                mt: 0.5,
-                                opacity: 0.7,
-                                fontSize: '0.75rem',
-                                color: 'text.secondary',
-                              }}
-                            >
-                              {formatChatTime(message?.createdAt)}
+                ) : (
+                  loading.messages ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                      <CircularProgress />
+                    </Box>
+                  ) : (
+                    messages.map((message, index) => {
+                      const isCurrentUser = isSentByCurrentUser(message);
+                      const showSender = activeConversation.type === 'group' && 
+                                       !isCurrentUser && 
+                                       (index === 0 || 
+                                        !messages[index - 1].sender || 
+                                        !message.sender ||
+                                        messages[index - 1].sender.toString() !== message.sender.toString());
+                                          
+                      const messageDate = new Date(message.createdAt);
+                      const showDateSeparator = index === 0 || 
+                        new Date(messages[index - 1].createdAt).toDateString() !== messageDate.toDateString();
+                      
+                      return (
+                        <React.Fragment key={message._id || message.id || index}>
+                          {showDateSeparator && (
+                            <Box sx={{ 
+                              display: 'flex', 
+                              justifyContent: 'center', 
+                              my: 2 
+                            }}>
+                                <Typography 
+                                variant="caption" 
+                                  sx={{ 
+                                  bgcolor: theme => theme.palette.mode === 'dark' ? 'rgba(50,50,50,0.9)' : 'background.paper',
+                                    color: 'text.secondary',
+                                  px: 2,
+                                  py: 0.5,
+                                  borderRadius: 4,
+                                  boxShadow: theme => theme.palette.mode === 'dark' ? '0 1px 3px rgba(0,0,0,0.3)' : 'none'
+                                  }}
+                                >
+                                {messageDate.toLocaleDateString()}
+                                </Typography>
                             </Box>
-                          </Box>
-                        ) : (
-                          // Normal message with left/right alignment
-                          <Box
-                            sx={{
-                              display: "flex",
-                              flexDirection:
-                                (message?.sender?.toString() === userId?.toString() ||
-                                message?.idUser?.toString() === userId?.toString())
-                                  ? "row-reverse"
-                                  : "row",
-                              alignItems: "flex-end",
-                              maxWidth: {
-                                xs: "85%",
-                                sm: "70%",
-                              },
-                            }}
-                          >
-                            {/* Hiển thị avatar bên tin nhắn của đối phương */}
-                            {!(message?.sender?.toString() === userId?.toString() ||
-                              message?.idUser?.toString() === userId?.toString()) && (
-                              <Avatar
-                                src={getOtherParticipant(activeConversation)?.idUser?.avatar ||
-                                  "/static/images/avatar/2.jpg"}
-                                sx={{ 
-                                  width: 28, 
-                                  height: 28, 
-                                  mr: 1, 
-                                  mb: 1,
-                                  display: { xs: 'none', sm: 'flex' },
-                                  cursor: 'pointer'
-                                }}
-                                onClick={() => handleAvatarClick(getOtherParticipant(activeConversation)?.idUser)}
-                              />
-                            )}
-                            <Box
-                              sx={{
-                                maxWidth: {
-                                  xs: "100%",
-                                  sm: "90%",
-                                },
-                                minWidth: "120px",
-                                position: "relative",
-                                "&:hover": {
-                                  "& .message-time": {
-                                    opacity: 1,
-                                  },
-                                },
-                              }}
-                            >
-                              <Paper
-                                elevation={0}
+                          )}
+                          
+                          {message.type === 'system' ? (
+                            <Box sx={{ 
+                              display: 'flex', 
+                              justifyContent: 'center', 
+                              my: 1 
+                            }}>
+                              <Typography 
+                                variant="caption" 
                                 sx={{
-                                  p: 1.5,
-                                  borderRadius: message.type === 'system' ? 1 : 2,
-                                  maxWidth: (message.type === 'gif') 
-                                    ? "350px" // Rộng hơn cho GIF
-                                    : (message.type === 'image' || message.type === 'video' || message.type === 'file' || message.hasFile) 
-                                      ? "250px" 
-                                      : "100%",
-                                  width: "auto",
-                                  wordBreak: "break-word",
-                                  bgcolor: message.type === 'system' 
-                                    ? "rgba(0, 0, 0, 0.04)" // Light gray background for system messages
-                                    : (message?.sender?.toString() === userId?.toString() ||
-                                      message?.idUser?.toString() === userId?.toString())
-                                        ? "#d9fdd3"
-                                        : "white",
-                                  position: "relative",
-                                  boxShadow: message.type === 'system'
-                                    ? "none"
-                                    : ((message?.sender?.toString() === userId?.toString() ||
-                                      message?.idUser?.toString() === userId?.toString())
-                                      ? "0 1px 0.5px rgba(0, 0, 0, 0.13)"
-                                      : "0 1px 0.5px rgba(0, 0, 0, 0.13)"),
-                                  borderLeft: message.type === 'system'
-                                    ? "none"
-                                    : ((message?.sender?.toString() === userId?.toString() ||
-                                      message?.idUser?.toString() === userId?.toString())
-                                      ? "none"
-                                      : "3px solid #00a884"),
-                                  borderBottom: message.type === 'system'
-                                    ? "none"
-                                    : ((message?.sender?.toString() === userId?.toString() ||
-                                      message?.idUser?.toString() === userId?.toString())
-                                      ? "none"
-                                      : "1px solid #f0f2f5"),
-                                  '&::before': message.type === 'system' 
-                                    ? {} // No pseudo-element for system messages
-                                    : {
-                                      content: '""',
-                                      position: 'absolute',
-                                      width: '12px',
-                                      height: '12px',
-                                      transform: 'rotate(45deg)',
-                                      zIndex: 0,
-                                      ...(!(message?.sender?.toString() === userId?.toString() ||
-                                          message?.idUser?.toString() === userId?.toString()) && {
-                                        left: '-6px',
-                                        top: '10px',
-                                        backgroundColor: 'white',
-                                        borderLeft: '1px solid rgba(0, 0, 0, 0.1)',
-                                        borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
-                                      }),
-                                      ...((message?.sender?.toString() === userId?.toString() ||
-                                          message?.idUser?.toString() === userId?.toString()) && {
-                                        right: '-6px',
-                                        top: '10px',
-                                        backgroundColor: '#d9fdd3',
-                                        borderRight: '1px solid rgba(0, 0, 0, 0.1)',
-                                        borderTop: '1px solid rgba(0, 0, 0, 0.1)',
-                                      }),
-                                    }
+                                  bgcolor: theme => theme.palette.mode === 'dark' ? 'rgba(50,50,50,0.9)' : 'background.paper',
+                                  color: theme => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.8)' : 'text.secondary',
+                                  px: 2,
+                                  py: 0.5,
+                                  borderRadius: 4,
+                                  boxShadow: theme => theme.palette.mode === 'dark' ? '0 1px 3px rgba(0,0,0,0.3)' : 'none'
                                 }}
-                                onContextMenu={(e) => message.type !== 'system' ? handleMessageContextMenu(e, message) : null}
-                                id={`message-${message?._id || index}`}
-                                aria-haspopup={message.type !== 'system' ? "true" : undefined}
                               >
-                                {/* Display file if message has file */}
-                                {!message.isRevoked && (
-                                  message.type === 'image' || message.type === 'file' || message.type === 'video' || message.type === 'audio' || 
-                                  message.type === 'pdf' || message.type === 'doc' || message.type === 'excel' || message.type === 'presentation' || 
-                                  message.type === 'gif' || 
-                                  message.hasFile
-                                ) && (
-                                  <RenderFileMessage message={message} handleOpenFile={handleOpenFile} />
+                                {message.content}
+                              </Typography>
+                            </Box>
+                          ) : (
+                            <Box
+                              id={`message-${message._id || message.id || 'temp-' + index}`}
+                              sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: isCurrentUser ? 'flex-end' : 'flex-start',
+                                mb: 1,
+                                maxWidth: '80%',
+                                alignSelf: isCurrentUser ? 'flex-end' : 'flex-start',
+                              }}
+                              onContextMenu={(e) => handleMessageContextMenu(e, message)}
+                            >
+                              {/* Hiển thị tên người gửi trong chat nhóm */}
+                              {showSender && !isCurrentUser && activeConversation.type === 'group' && (
+                                <Typography 
+                                  variant="caption" 
+                                  sx={{ 
+                                    ml: 2, 
+                                    mb: 0.5,
+                                    color: theme => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.8)' : 'text.secondary',
+                                    fontWeight: 500
+                                  }}
+                                >
+                                  {getSenderName(message, activeConversation)}
+                                </Typography>
+                              )}
+                              
+                              <Box sx={{ 
+                                display: 'flex', 
+                                alignItems: 'flex-start',
+                                flexDirection: isCurrentUser ? 'row-reverse' : 'row',
+                                gap: 1
+                              }}>
+                                {/* Hiển thị avatar trong cả chat đơn và nhóm */}
+                                {!isCurrentUser && (
+                                  <Avatar 
+                                    src={message.originalSender?.avatar || ''} 
+                                    sx={{ width: 32, height: 32 }}
+                                    onClick={() => message.originalSender && handleAvatarClick(message.originalSender)}
+                                  >
+                                    {!message.originalSender?.avatar && message.originalSender?.name?.[0]}
+                                  </Avatar>
                                 )}
                                 
-                                {/* Hiển thị nội dung tin nhắn */}
                                 {message.isRevoked ? (
-                                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                    <UndoIcon fontSize="small" sx={{ color: 'text.disabled', mr: 1 }} />
-                                    <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.disabled' }}>
-                                      {(message.type === 'image') 
-                                        ? "Hình ảnh đã bị thu hồi" 
-                                        : (message.type === 'video')
-                                          ? "Video đã bị thu hồi"
-                                          : (message.type === 'audio')
-                                            ? "Âm thanh đã bị thu hồi"
-                                            : (message.type === 'pdf')
-                                              ? "Tài liệu PDF đã bị thu hồi"
-                                              : (message.type === 'doc')
-                                                ? "Tài liệu Word đã bị thu hồi"
-                                                : (message.type === 'excel')
-                                                  ? "Bảng tính Excel đã bị thu hồi"
-                                                  : (message.type === 'presentation')
-                                                    ? "Bài thuyết trình đã bị thu hồi"
-                                                    : (message.type === 'gif')
-                                                      ? "GIF đã bị thu hồi"
-                                                      : (message.type === 'file')
-                                                        ? "Tệp đính kèm đã bị thu hồi"
-                                                        : "Tin nhắn đã bị thu hồi"}
+                                  <Box sx={{ 
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    p: 1.5,
+                                    borderRadius: 2,
+                                    bgcolor: theme => theme.palette.mode === 'dark' ? 'rgba(60,60,60,0.8)' : 'action.hover',
+                                    color: theme => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'text.secondary',
+                                    maxWidth: '100%',
+                                    border: theme => theme.palette.mode === 'dark' ? '1px solid rgba(255,255,255,0.1)' : 'none'
+                                  }}>
+                                    <Typography variant="body2" color="inherit" fontStyle="italic">
+                                      Tin nhắn đã bị thu hồi
                                     </Typography>
                                   </Box>
-                                ) : (
-                                  <>
-                                    {/* Hiển thị tên người gửi cho tin nhắn đối phương hoặc tin nhắn được chuyển tiếp */}
-                                    {!(message?.sender?.toString() === userId?.toString() ||
-                                      message?.idUser?.toString() === userId?.toString()) && (
-                                      <Typography 
-                                        variant="subtitle2" 
-                                        sx={{ 
-                                          fontSize: '0.75rem',
-                                          fontWeight: 'bold', 
-                                          color: '#00a884',
-                                          mb: 0.5
-                                        }}
-                                      >
-                                        {getOtherParticipant(activeConversation)?.idUser?.name || "Unknown User"}
-                                      </Typography>
-                                    )}
-                                    
-                                    {/* Hiển thị thông tin người gửi gốc nếu là tin nhắn được chuyển tiếp */}
-                                    {message.isForwarded && (
-                                      <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                                        <ForwardIcon fontSize="small" sx={{ mr: 0.5, color: 'text.secondary', fontSize: '0.85rem' }} />
-                                         <Box sx={{ 
-                                             display: 'flex',
-                                             alignItems: 'center',
-                                             fontStyle: 'italic',
-                                             color: 'text.secondary',
-                                             fontSize: '0.75rem' // Equivalent to caption variant
-                                           }}
-                                         >
-                                           <Typography 
-                                             variant="caption" 
-                                             component="span"
-                                             sx={{ fontStyle: 'italic', color: 'text.secondary' }}
-                                           >
-                                             Đã chuyển tiếp từ 
-                                           </Typography>
-                                           <Typography 
-                                             variant="caption" 
-                                             component="span"
-                                             sx={{ fontWeight: 'bold', ml: 0.5, color: 'text.secondary' }}
-                                           >
-                                             {message.originalSenderName || "Unknown User"}
-                                           </Typography>
-                                           {message.originalSenderAvatar && (
-                                             <Avatar 
-                                               src={message.originalSenderAvatar} 
-                                               sx={{ width: 16, height: 16, ml: 0.5 }}
-                                             />
-                                           )}
-                                         </Box>
-                                      </Box>
-                                    )}
-                                    
-                                    {/* Nội dung tin nhắn */}
-                                    {message.type === 'system' ? (
-                                      // System message - centered, subtle styling like a notification
-                                      <Typography 
-                                        variant="body2" 
-                                        align="center"
-                                        sx={{ 
-                                          color: 'text.secondary',
-                                          fontSize: '0.85rem',
-                                          px: 3,
-                                          py: 1,
-                                          width: '100%',
-                                          maxWidth: '80%',
-                                          borderRadius: '8px',
-                                          bgcolor: 'rgba(0, 0, 0, 0.04)',
-                                          mx: 'auto'
-                                        }}
-                                      >
-                                        {message?.content || message?.text}
-                                      </Typography>
-                                    ) : (message.type === 'text' || !message.type) && (
-                                      <Typography variant="body1">
-                                        {message?.content || message?.text}
-                                      </Typography>
-                                    )}
-                                  </>
-                                )}
-                              </Paper>
-                              <Box
-                                sx={{
-                                  display: "flex",
-                                  flexDirection: "column", // Use column for system messages to center them properly
-                                  alignItems: message.type === 'system' ? "center" : 
-                                    (message?.sender?.toString() === userId?.toString() ||
-                                    message?.idUser?.toString() === userId?.toString())
-                                      ? "flex-end"
-                                      : "flex-start", // Align based on sender
-                                  justifyContent: message.type === 'system'
-                                    ? "center" // Center system messages
-                                    : (message?.sender?.toString() === userId?.toString() ||
-                                      message?.idUser?.toString() === userId?.toString())
-                                        ? "flex-end"
-                                        : "flex-start",
-                                  width: message.type === 'system' ? "100%" : "auto", // Full width for system messages
-                                  mb: 1.5,
-                                }}
-                                key={message?._id || index}
-                              >
-                                {/* Message time display - special styling for system messages */}
-                                {message.type === 'system' ? (
-                                  <Box
-                                    sx={{
-                                      display: "flex",
-                                      justifyContent: "center",
-                                      mt: 0.5,
-                                      opacity: 0.7,
-                                      transition: "opacity 0.2s",
-                                      fontSize: '0.75rem',
-                                      color: 'text.secondary',
-                                      width: '100%',
-                                      textAlign: 'center'
+                                ) : message.type === 'text' ? (
+                                  <Paper
+                                    elevation={0}
+                                    sx={{ 
+                                      p: 1.5,
+                                      borderRadius: isCurrentUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                                      bgcolor: isCurrentUser ? 'primary.main' : 'background.paper',
+                                      color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
+                                      maxWidth: '100%',
+                                      wordBreak: 'break-word',
+                                      boxShadow: !isCurrentUser ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+                                      border: !isCurrentUser ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                                      position: 'relative',
+                                      '&::before': !isCurrentUser ? {
+                                        content: '""',
+                                        position: 'absolute',
+                                        bottom: 0,
+                                        left: -8,
+                                        width: 15,
+                                        height: 15,
+                                        backgroundColor: 'background.paper',
+                                        borderBottom: '1px solid rgba(0,0,0,0.05)',
+                                        borderLeft: '1px solid rgba(0,0,0,0.05)',
+                                        borderBottomLeftRadius: '50%',
+                                        clipPath: 'polygon(0 0, 100% 100%, 0 100%)',
+                                        transformOrigin: 'bottom left',
+                                        zIndex: 0,
+                                      } : {},
+                                      // Improve dark mode contrast by adding these styles
+                                      '.MuiTypography-root': {
+                                        color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
+                                      },
+                                      // Dark mode specific styling
+                                      '.MuiPaper-root.MuiPaper-elevation': {
+                                        borderColor: theme => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                      }
                                     }}
                                   >
-                                    {formatChatTime(message?.createdAt)}
-                                  </Box>
+                                    <Typography 
+                                      variant="body1" 
+                                      sx={{ 
+                                        color: isCurrentUser ? 'inherit' : 'text.primary'
+                                      }}
+                                    >{message.content}</Typography>
+                                  </Paper>
                                 ) : (
-                                  <Box
-                                    className="message-time"
-                                    sx={{
-                                      display: "flex",
-                                      justifyContent: "flex-end",
-                                      mt: 0.5,
-                                      opacity: { xs: 0.7, sm: 0.5 },
-                                      transition: "opacity 0.2s",
-                                      fontSize: '0.75rem',
-                                      color: 'text.secondary',
-                                      ml: 1,
-                                      mr: 1
-                                    }}
-                                  >
-                                    {formatChatTime(message?.createdAt)}
-                                    {/* Read receipt indicator - only for user's messages */}
-                                    {message.type !== 'system' && (message?.sender?.toString() === userId?.toString() || 
-                                      message?.idUser?.toString() === userId?.toString()) && (
-                                      <Box
-                                        sx={{ display: "flex", alignItems: "center", ml: 0.5 }}
-                                      >
-                                        {message?.seen || message?.read ? (
-                                          <DoneAllIcon
-                                            fontSize="small"
-                                            color="primary"
-                                          />
-                                        ) : (
-                                          <DoneAllIcon
-                                            fontSize="small"
-                                            color="disabled"
-                                          />
-                                        )}
-                                      </Box>
-                                    )}
-                                  </Box>
+                                  <RenderFileMessage 
+                                    message={message}
+                                    handleOpenFile={handleOpenFile}
+                                  />
                                 )}
-                                
-                                {/* Add MessageReactions component - only for non-system messages */}
-                                {!message.isRevoked && message.type !== 'system' && (
-                                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                    <MessageReactions 
+                              </Box>
+                              
+                              {/* Message reactions if any */}
+                              {message.reactions && Object.keys(message.reactions).length > 0 && (
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  justifyContent: isCurrentUser ? 'flex-end' : 'flex-start', 
+                                  mt: 0.5, 
+                                  alignItems: 'center',
+                                  ml: !isCurrentUser ? 5 : 0, // Thêm margin left khi không phải người dùng hiện tại
+                                  mr: isCurrentUser ? 5 : 0   // Thêm margin right khi là người dùng hiện tại
+                                }}>
+                                  <MessageReactions 
+                                    reactions={message.reactions}
+                                    messageId={message._id || message.id}
+                                    currentUserId={userId}
+                                    onAddReaction={handleAddReaction} 
+                                    onRemoveReaction={handleRemoveReaction}
+                                  />
+                                  
+                                  {/* Add Pin button for group chats */}
+                                  {activeConversation?.type === 'group' && !message.isRevoked && (
+                                    <PinMessageButton 
                                       message={message} 
-                                      userId={userId} 
-                                      onAddReaction={handleAddReaction} 
+                                      conversation={activeConversation}
+                                      onPinStatusChange={(messageId, isPinned) => {
+                                        setMessages(prevMessages => 
+                                          prevMessages.map(msg => 
+                                            msg._id === messageId ? { ...msg, isPinned } : msg
+                                          )
+                                        );
+                                      }}
                                     />
-                                    
-                                    {/* Add Pin Message Button for group chats */}
-                                    {activeConversation && activeConversation.type === 'group' && (
-                                      <PinMessageButton
-                                        message={message}
-                                        conversation={activeConversation}
-                                        onPinStatusChange={(messageId, isPinned) => {
-                                          // Update the messages list to reflect the pinned/unpinned status
-                                          setMessages(prevMessages => 
-                                            prevMessages.map(msg => 
-                                              msg._id === messageId ? {...msg, isPinned: isPinned} : msg
-                                            )
-                                          );
-                                        }}
-                                      />
+                                  )}
+                                </Box>
+                              )}
+                              
+                              {/* Add reaction button if not showing reactions */}
+                              {(!message.reactions || Object.keys(message.reactions).length === 0) && !message.isRevoked && (
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  justifyContent: isCurrentUser ? 'flex-end' : 'flex-start', 
+                                  mt: 0.5,
+                                  ml: !isCurrentUser ? 5 : 0, // Thêm margin left khi không phải người dùng hiện tại
+                                  mr: isCurrentUser ? 5 : 0   // Thêm margin right khi là người dùng hiện tại
+                                }}>
+                                  <MessageReactions 
+                                    reactions={{}}
+                                    messageId={message._id || message.id}
+                                    currentUserId={userId}
+                                    onAddReaction={handleAddReaction} 
+                                    onRemoveReaction={handleRemoveReaction}
+                                  />
+                                  
+                                  {/* Add Pin button for group chats */}
+                                  {activeConversation?.type === 'group' && !message.isRevoked && (
+                                    <PinMessageButton 
+                                      message={message} 
+                                      conversation={activeConversation}
+                                      onPinStatusChange={(messageId, isPinned) => {
+                                        setMessages(prevMessages => 
+                                          prevMessages.map(msg => 
+                                            msg._id === messageId ? { ...msg, isPinned } : msg
+                                          )
+                                        );
+                                      }}
+                                    />
+                                  )}
+                                </Box>
+                              )}
+                              
+                              <Box sx={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                mt: 0.5,
+                                mx: 1,
+                                ml: !isCurrentUser ? 5 : 1, // Thêm margin left khi không phải người dùng hiện tại
+                                mr: isCurrentUser ? 5 : 1   // Thêm margin right khi là người dùng hiện tại
+                              }}>
+                                <Typography 
+                                  variant="caption" 
+                                  color={theme => 
+                                    theme.palette.mode === 'dark' 
+                                      ? isCurrentUser ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.5)' 
+                                      : 'text.secondary'
+                                  }
+                                  sx={{ fontSize: '0.7rem' }}
+                                >
+                                  {formatChatTime(message.createdAt)}
+                                </Typography>
+                                
+                                {isCurrentUser && (
+                                  <Box sx={{ display: 'flex', alignItems: 'center', ml: 0.5 }}>
+                                    {message.status === "sending" ? (
+                                      <CircularProgress size={8} sx={{ ml: 0.5 }} />
+                                    ) : message.status === "failed" ? (
+                                      <Typography variant="caption" color="error" sx={{ ml: 0.5 }}>
+                                        !
+                                      </Typography>
+                                    ) : message.seen ? (
+                                      <DoneAllIcon sx={{ fontSize: 12, ml: 0.5, color: 'primary.main' }} />
+                                    ) : message.delivered ? (
+                                      <DoneAllIcon sx={{ 
+                                        fontSize: 12, 
+                                        ml: 0.5, 
+                                        color: theme => 
+                                          theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'text.secondary' 
+                                      }} />
+                                    ) : (
+                                      <DoneAllIcon sx={{ 
+                                        fontSize: 12, 
+                                        ml: 0.5, 
+                                        color: theme => 
+                                          theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'text.secondary' 
+                                      }} />
                                     )}
                                   </Box>
                                 )}
                               </Box>
                             </Box>
-                          </Box>
-                        )}
-                      </Box>
-                    ))}
-                  </Box>
-                ) : (
-                  <Typography
-                    variant="body1"
-                    color="text.secondary"
-                    textAlign="center"
-                    pt={4}
-                  >
-                    No messages yet. Start the conversation!
-                  </Typography>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )
                 )}
                 <div ref={messagesEndRef} />
+              </Box>
                 
-                {/* Typing indicator - Chuyển xuống cuối box chat */}
-                {Object.keys(typingUsers).length > 0 && (
+              {/* Chat Input */}
                   <Box
                     sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "flex-start",
-                      position: "sticky",
-                      bottom: 0,
-                      mt: 2,
-                      mb: 1,
-                      ml: 2,
-                      zIndex: 1,
+                  p: 2,
+                  bgcolor: "background.paper",
+                  borderTop: "1px solid",
+                  borderColor: "divider",
                     }}
                   >
-                    {/* Hiển thị avatar của người đang nhập */}
-                    {Object.keys(typingUsers).length === 1 && (
-                      <Avatar
-                        src={
-                          activeConversation?.members?.find(
-                            m => m.idUser?._id === Object.keys(typingUsers)[0]
-                          )?.idUser?.avatar || "/static/images/avatar/2.jpg"
-                        }
-                        sx={{
-                          width: 28,
-                          height: 28,
-                          mr: 1
-                        }}
-                      />
-                    )}
-                    
-                    <Paper
-                      elevation={0}
-                      sx={{
-                        p: 1,
-                        pl: 2,
-                        pr: 2,
-                        borderRadius: "18px 18px 18px 4px",
-                        bgcolor: "rgba(230, 230, 230, 0.9)",
-                        maxWidth: "75%",
-                        display: "flex",
-                        alignItems: "center"
-                      }}
-                    >
-                      <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', fontSize: '0.85rem' }}>
-                        {Object.keys(typingUsers).length === 1 
-                          ? `${typingUsers[Object.keys(typingUsers)[0]]} đang nhập...`
-                          : 'Có người đang nhập...'}
-                      </Typography>
+                {/* Display typing indicator */}
+                {Object.keys(typingUsers).length > 0 && (
+                  <Box sx={{ mb: 1, height: 20 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {Object.values(typingUsers).join(', ')} đang nhập...
                       <span className="typing-animation">
                         <span className="dot"></span>
                         <span className="dot"></span>
                         <span className="dot"></span>
                       </span>
-                    </Paper>
+                    </Typography>
                   </Box>
                 )}
-              </Container>
-            </Box>
 
-            {/* Message Input */}
-            <Box
-              sx={{
-                p: 2,
-                borderTop: "1px solid",
-                borderColor: "divider",
-                bgcolor: "background.paper",
-                position: "sticky", 
-                bottom: 0,
-                zIndex: 5,
-                boxShadow: "0px -1px 4px rgba(0, 0, 0, 0.05)",
-              }}
-            >
-              <Container maxWidth="md" disableGutters>
-                {selectedFilePreview && (
-                  <Box 
-                    sx={{ 
+                {/* File preview */}
+                {selectedFile && (
+                  <Box sx={{ 
                       mb: 2, 
-                      position: 'relative',
-                      display: 'inline-block', 
-                      borderRadius: 2,
-                      overflow: 'hidden',
-                      boxShadow: 2
-                    }}
-                  >
-                    <img 
-                      src={selectedFilePreview} 
-                      alt="Selected file preview" 
-                      style={{ 
-                        maxHeight: '200px',
-                        maxWidth: '100%',
-                        display: 'block'
-                      }} 
-                    />
-                    <IconButton
-                      size="small"
-                      sx={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 8,
-                        bgcolor: 'rgba(0,0,0,0.5)',
-                        color: 'white',
-                        '&:hover': {
-                          bgcolor: 'rgba(0,0,0,0.7)'
-                        }
-                      }}
-                      onClick={handleCancelFileSelection}
-                    >
-                      <CancelIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                )}
-                
-                {selectedFile && !selectedFilePreview && (
-                  <Box 
-                    sx={{ 
-                      mb: 2, 
-                      position: 'relative',
-                      display: 'inline-block', 
-                      borderRadius: 2,
-                      padding: 2,
-                      backgroundColor: 'rgba(0,0,0,0.04)',
-                      minWidth: 200
-                    }}
-                  >
+                    p: 1, 
+                    bgcolor: 'action.hover', 
+                    borderRadius: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      {selectedFile.type.startsWith('video/') ? (
-                        <VideocamIcon fontSize="large" sx={{ mr: 2, color: '#f44336' }} />
+                      {selectedFile.type.startsWith('image/') && selectedFilePreview ? (
+                        <Avatar 
+                          variant="rounded" 
+                      src={selectedFilePreview} 
+                          sx={{ width: 40, height: 40, mr: 1 }} 
+                    />
+                      ) : selectedFile.type.startsWith('video/') ? (
+                        <Avatar variant="rounded" sx={{ width: 40, height: 40, mr: 1, bgcolor: 'primary.dark' }}>
+                          <VideocamIcon />
+                        </Avatar>
                       ) : selectedFile.type.startsWith('audio/') ? (
-                        <AudiotrackIcon fontSize="large" sx={{ mr: 2, color: '#9c27b0' }} />
+                        <Avatar variant="rounded" sx={{ width: 40, height: 40, mr: 1, bgcolor: 'secondary.dark' }}>
+                          <AudiotrackIcon />
+                        </Avatar>
                       ) : selectedFile.type.includes('pdf') ? (
-                        <PictureAsPdfIcon fontSize="large" sx={{ mr: 2, color: '#f44336' }} />
-                      ) : selectedFile.type.includes('word') || selectedFile.type.includes('document') ? (
-                        <DescriptionIcon fontSize="large" sx={{ mr: 2, color: '#2196f3' }} />
-                      ) : selectedFile.type.includes('excel') || selectedFile.type.includes('sheet') ? (
-                        <TableChartIcon fontSize="large" sx={{ mr: 2, color: '#4caf50' }} />
+                        <Avatar variant="rounded" sx={{ width: 40, height: 40, mr: 1, bgcolor: 'error.dark' }}>
+                          <PictureAsPdfIcon />
+                        </Avatar>
+                      ) : selectedFile.type.includes('word') || selectedFile.name.endsWith('.doc') || selectedFile.name.endsWith('.docx') ? (
+                        <Avatar variant="rounded" sx={{ width: 40, height: 40, mr: 1, bgcolor: 'info.dark' }}>
+                          <DescriptionIcon />
+                        </Avatar>
+                      ) : selectedFile.type.includes('excel') || selectedFile.name.endsWith('.xls') || selectedFile.name.endsWith('.xlsx') ? (
+                        <Avatar variant="rounded" sx={{ width: 40, height: 40, mr: 1, bgcolor: 'success.dark' }}>
+                          <TableChartIcon />
+                        </Avatar>
                       ) : (
-                        <InsertDriveFileIcon fontSize="large" sx={{ mr: 2, color: '#607d8b' }} />
+                        <Avatar variant="rounded" sx={{ width: 40, height: 40, mr: 1, bgcolor: 'grey.700' }}>
+                          <InsertDriveFileIcon />
+                        </Avatar>
                       )}
-                      <Box sx={{ overflow: 'hidden' }}>
-                        <Typography noWrap variant="body2" sx={{ fontWeight: 'medium', maxWidth: '180px' }}>
+                      <Typography variant="body2" noWrap sx={{ maxWidth: '200px' }}>
                           {selectedFile.name}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {(selectedFile.size / 1024).toFixed(1)} KB
-                        </Typography>
                       </Box>
-                    </Box>
-                    
-                    <IconButton
-                      size="small"
-                      sx={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 8,
-                        bgcolor: 'rgba(0,0,0,0.1)',
-                        color: 'text.secondary',
-                        '&:hover': {
-                          bgcolor: 'rgba(0,0,0,0.2)'
-                        }
-                      }}
-                      onClick={handleCancelFileSelection}
-                    >
+                    <IconButton onClick={handleCancelFileSelection} size="small">
                       <CancelIcon fontSize="small" />
                     </IconButton>
                   </Box>
                 )}
                 
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <IconButton onClick={handleEmojiOpen} aria-label="Emoji">
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <FileUploadGroup onFileSelect={handleFileSelectFromGroup} />
+                  
+                  <IconButton onClick={handleEmojiOpen}>
                     <MoodIcon />
                   </IconButton>
                   
-                  <IconButton 
-                    onClick={handleTabChange}
-                    aria-label="GIF" 
-                    sx={{ color: activeTab === 'gif' ? 'primary.main' : 'inherit' }}
-                  >
+                  <IconButton onClick={(e) => handleTabChange(e)}>
                     <GifIcon />
                   </IconButton>
                   
-                  {/* File input */}
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                    onChange={handleFileSelect}
-                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
-                  />
-                  <IconButton 
-                    onClick={(event) => {
-                      setAttachMenuAnchorEl(event.currentTarget);
-                      setAttachMenuOpen(true);
-                    }}
-                    aria-controls={attachMenuOpen ? 'attach-menu' : undefined}
-                    aria-haspopup="true"
-                    aria-expanded={attachMenuOpen ? 'true' : undefined}
-                  >
-                    <AttachFileIcon />
-                  </IconButton>
-                  
-                  {/* Menu cho loại file đính kèm */}
-                  <Menu
-                    id="attach-menu"
-                    anchorEl={attachMenuAnchorEl}
-                    open={Boolean(attachMenuAnchorEl)}
-                    onClose={() => setAttachMenuAnchorEl(null)}
-                    anchorOrigin={{
-                      vertical: 'top',
-                      horizontal: 'center',
-                    }}
-                    transformOrigin={{
-                      vertical: 'bottom',
-                      horizontal: 'center',
-                    }}
-                  >
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "image/*";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <PhotoIcon fontSize="small" sx={{ color: '#4caf50' }} />
-                      </ListItemIcon>
-                      <Typography>Hình ảnh</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "video/*";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <VideocamIcon fontSize="small" sx={{ color: '#f44336' }} />
-                      </ListItemIcon>
-                      <Typography>Video</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "application/pdf";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <PictureAsPdfIcon fontSize="small" sx={{ color: '#f44336' }} />
-                      </ListItemIcon>
-                      <Typography>PDF</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <DescriptionIcon fontSize="small" sx={{ color: '#2196f3' }} />
-                      </ListItemIcon>
-                      <Typography>Word</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <TableChartIcon fontSize="small" sx={{ color: '#4caf50' }} />
-                      </ListItemIcon>
-                      <Typography>Excel</Typography>
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                      fileInputRef.current.accept = "*";
-                      fileInputRef.current.click();
-                      setAttachMenuAnchorEl(null);
-                    }}>
-                      <ListItemIcon>
-                        <AttachFileIcon fontSize="small" sx={{ color: '#607d8b' }} />
-                      </ListItemIcon>
-                      <Typography>Tệp khác</Typography>
-                    </MenuItem>
-                  </Menu>
-                  
                   <TextField
                     fullWidth
-                    variant="outlined"
-                    placeholder={selectedFile ? 
-                      (selectedFile.type.startsWith('image/') ? "Thêm chú thích cho ảnh (không bắt buộc)..." : "Thêm mô tả cho file...") : 
-                      "Nhập tin nhắn..."}
-                    multiline
-                    maxRows={4}
+                    placeholder="Type a message..."
                     value={newMessage}
                     onChange={handleMessageTyping}
                     onKeyPress={handleKeyPress}
                     inputRef={inputRef}
-                    sx={{
-                      flex: "1 1 auto",
-                      minWidth: 0,
-                      mx: 1,
-                      "& .MuiOutlinedInput-root": {
-                        borderRadius: "24px",
-                        bgcolor: "background.default",
-                        width: "100%"
-                      },
-                      "& .MuiInputBase-input": {
-                        width: "100%"
-                      }
-                    }}
+                    variant="outlined"
+                    size="small"
+                    sx={{ mx: 1 }}
                   />
+                  
                   <IconButton
                     color="primary"
                     onClick={handleSendMessage}
-                    disabled={!selectedFile && !newMessage.trim()}
-                    sx={{
-                      bgcolor: "primary.main",
-                      color: "white",
-                      "&:hover": { bgcolor: "primary.dark" },
-                      "&:disabled": { bgcolor: "action.disabledBackground" },
-                    }}
+                    disabled={!newMessage.trim() && !selectedFile}
                   >
                     <SendIcon />
                   </IconButton>
                 </Box>
-              </Container>
             </Box>
-
-            {/* Emoji Picker */}
-            <Popover
-              open={showEmojiPicker || showGifGallery}
-              anchorEl={emojiAnchorEl}
-              onClose={handleEmojiClose}
-              anchorOrigin={{
-                vertical: 'top',
-                horizontal: 'left',
-              }}
-              transformOrigin={{
-                vertical: 'bottom',
-                horizontal: 'left',
-              }}
-              keepMounted={false}
-              disablePortal
-              aria-labelledby="emoji-picker-title"
-              PaperProps={{
-                sx: {
-                  overflow: 'hidden',
-                  borderRadius: 1,
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.2)'
-                }
-              }}
-            >
-              {/* Content based on active tab */}
-              {activeTab === 'emoji' && (
-                <Box sx={{ p: 2, width: 280, height: 200, overflow: 'auto', bgcolor: 'background.paper' }}>
-                  <Typography id="emoji-picker-title" variant="subtitle2" sx={{ mb: 1 }}>
-                    Chọn emoji
-                  </Typography>
-                  <Grid container spacing={1}>
-                    {emojis.map((emoji, index) => (
-                      <Grid item key={index}>
-                        <IconButton 
-                          onClick={() => {
-                            insertEmoji(emoji);
-                            handleEmojiClose();
-                          }}
-                          size="small"
-                          sx={{ fontSize: '1.5rem' }}
-                          aria-label={`Emoji ${emoji}`}
-                        >
-                          {emoji}
-                        </IconButton>
-                      </Grid>
-                    ))}
-                  </Grid>
-                </Box>
-              )}
-              
-              {activeTab === 'gif' && (
-                <GifGallery
-                  onSelectGif={handleSendGif}
-                  onClose={handleEmojiClose}
-                />
-              )}
-            </Popover>
           </>
         ) : (
           <Box
@@ -3752,13 +5046,47 @@ const ChatUI = () => {
               display: "flex",
               justifyContent: "center",
               alignItems: "center",
+              flexDirection: "column",
+              p: 4,
+              bgcolor: "background.default",
             }}
           >
-            <Typography variant="h6" color="text.secondary">
-              Select a conversation to start chatting
-            </Typography>
+              <img 
+                src="/static/images/chat-placeholder.svg" 
+                alt="Select a conversation" 
+                style={{ 
+                  width: '200px', 
+                  height: '200px', 
+                  marginBottom: '32px',
+                  opacity: 0.8
+                }}
+              />
+              <Typography variant="h5" color="text.primary" gutterBottom>
+                Chào mừng đến với Zalo Chat
+              </Typography>
+              <Typography variant="body1" color="text.secondary" align="center" sx={{ mb: 3, maxWidth: '500px' }}>
+                Chọn một cuộc trò chuyện từ danh sách bên trái để bắt đầu nhắn tin, 
+                hoặc tạo cuộc trò chuyện mới với bạn bè.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Button
+                  variant="contained"
+                  startIcon={<PersonAddIcon />}
+                  onClick={() => navigation.navigate('Contacts')}
+                >
+                  Tìm bạn bè
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<GroupAddIcon />}
+                  onClick={handleCreateGroup}
+                >
+                  Tạo nhóm chat
+                </Button>
+              </Box>
           </Box>
         )}
+        </Box>
       </Box>
 
       {/* Menu ngữ cảnh cho tin nhắn */}
@@ -3766,31 +5094,39 @@ const ChatUI = () => {
         anchorEl={messageContextMenu}
         open={Boolean(messageContextMenu)}
         onClose={handleMessageContextMenuClose}
-        keepMounted={false}
-        disablePortal
-        MenuListProps={{
-          'aria-labelledby': selectedMessage ? `message-${selectedMessage._id || 'temp'}` : undefined,
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'left',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'left',
         }}
       >
-        {/* Chỉ hiển thị tùy chọn thu hồi và xóa cho tin nhắn của chính mình */}
-        {(selectedMessage?.sender?.toString() === userId?.toString() || 
-         selectedMessage?.idUser?.toString() === userId?.toString()) && (
-          <>
-            <MenuItem onClick={handleRevokeMessage}>
-              <UndoIcon fontSize="small" sx={{ mr: 1 }} />
-              Thu hồi tin nhắn
-            </MenuItem>
-            <MenuItem onClick={handleDeleteMessage}>
-              <DeleteOutlineIcon fontSize="small" sx={{ mr: 1 }} />
-              Xoá tin nhắn (chỉ ở phía bạn)
-            </MenuItem>
-          </>
-        )}
-        
-        {/* Luôn hiển thị tùy chọn chuyển tiếp cho mọi tin nhắn */}
+        {/* Chuyển tiếp tin nhắn */}
         <MenuItem onClick={handleForwardMessage}>
-          <ShareIcon fontSize="small" sx={{ mr: 1 }} />
-          Chuyển tiếp tin nhắn
+          <ListItemIcon>
+            <ForwardIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Chuyển tiếp</ListItemText>
+        </MenuItem>
+
+        {/* Thu hồi tin nhắn - chỉ hiển thị với tin nhắn của mình */}
+        {selectedMessage && isSentByCurrentUser(selectedMessage) && (
+          <MenuItem onClick={handleRevokeMessage}>
+            <ListItemIcon>
+              <UndoIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Thu hồi</ListItemText>
+          </MenuItem>
+        )}
+
+        {/* Xóa tin nhắn */}
+        <MenuItem onClick={handleDeleteMessage}>
+          <ListItemIcon>
+            <DeleteOutlineIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Xóa</ListItemText>
         </MenuItem>
       </Menu>
       
@@ -3798,150 +5134,57 @@ const ChatUI = () => {
       <Dialog
         open={forwardDialogOpen}
         onClose={handleCloseForwardDialog}
-        aria-labelledby="forward-dialog-title"
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle id="forward-dialog-title">Chuyển tiếp tin nhắn</DialogTitle>
+        <DialogTitle>Chọn cuộc trò chuyện</DialogTitle>
         <DialogContent>
-          {/* Hiển thị thông tin tin nhắn được chuyển tiếp */}
-          {selectedMessage && (
-            <Box sx={{ mb: 3, p: 2, bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
-                Tin nhắn được chuyển tiếp:
-              </Typography>
-              
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Avatar 
-                  src={selectedMessage.sender?.toString() === userId?.toString() ? 
-                    user.avatar : 
-                    getOtherParticipant(activeConversation)?.idUser?.avatar || ''}
-                  sx={{ width: 24, height: 24, mr: 1 }}
-                />
-                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                  {selectedMessage.sender?.toString() === userId?.toString() ? 
-                    user.name : 
-                    getOtherParticipant(activeConversation)?.idUser?.name || 'Unknown User'}
-                </Typography>
-              </Box>
-              
-              <Box sx={{ pl: 4 }}>
-                {(selectedMessage.type === 'text' || !selectedMessage.type) && (
-                  <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
-                    {selectedMessage?.content || selectedMessage?.text}
-                  </Typography>
-                )}
-                
-                {(selectedMessage.type === 'image' || selectedMessage.type === 'file' || selectedMessage.type === 'video' || 
-                 selectedMessage.type === 'audio' || selectedMessage.type === 'pdf' || selectedMessage.type === 'doc' || 
-                 selectedMessage.type === 'excel' || selectedMessage.type === 'presentation' || selectedMessage.type === 'gif' || selectedMessage.hasFile) && (
-                  <Typography variant="body2" sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
-                    <AttachFileIcon fontSize="small" sx={{ mr: 0.5 }} />
-                    {selectedMessage.type === 'image' ? 'Hình ảnh' : 
-                     selectedMessage.type === 'video' ? 'Video' : 
-                     selectedMessage.type === 'audio' ? 'Âm thanh' : 
-                     selectedMessage.type === 'pdf' ? 'Tài liệu PDF' : 
-                     selectedMessage.type === 'doc' ? 'Tài liệu Word' : 
-                     selectedMessage.type === 'excel' ? 'Bảng tính Excel' : 
-                     selectedMessage.type === 'presentation' ? 'Bài thuyết trình' : 
-                     selectedMessage.type === 'gif' ? 'GIF' : 
-                     'Tệp đính kèm'}
-                  </Typography>
-                )}
-              </Box>
-            </Box>
-          )}
-        
-        <DialogContentText>
-          Chọn cuộc trò chuyện để chuyển tiếp tin nhắn này
-        </DialogContentText>
-        
-        <Box sx={{ mt: 2, maxHeight: 300, overflow: 'auto' }}>
           <List>
             {conversations.map((conversation) => {
-              const lastMessage =
-                conversation?.lastMessage?.content || "No messages yet";
+              const otherUser = conversation.type === 'group' 
+                ? null 
+                : getOtherParticipant(conversation)?.idUser;
+
               return (
                 <ListItem
                   key={conversation._id}
                   button
+                  selected={targetConversation?._id === conversation._id}
                   onClick={() => handleSelectForwardConversation(conversation)}
-                  selected={targetConversation && targetConversation._id === conversation._id}
-                  sx={{
-                    borderRadius: 2,
-                    mb: 0.5,
-                    bgcolor:
-                      targetConversation && targetConversation._id === conversation._id
-                        ? "action.selected"
-                        : "transparent",
-                  }}
                 >
-                  {conversation.type === 'group' ? (
-                    <ListItemAvatar>
-                      <Badge
-                        overlap="circular"
-                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                        badgeContent={
-                          <Avatar sx={{ width: 16, height: 16, bgcolor: 'primary.main' }}>
-                            <GroupIcon sx={{ fontSize: 12 }} />
-                          </Avatar>
-                        }
-                      >
-                        <Avatar
-                          src={conversation.avatar || ""}
-                          alt={conversation.name || "Group"}
-                        >
-                          {!conversation.avatar && (conversation.name?.[0] || 'G')}
-                        </Avatar>
-                      </Badge>
-                    </ListItemAvatar>
-                  ) : (
-                    <ListItemAvatar>
-                      <Avatar
-                        src={getOtherParticipant(conversation)?.idUser?.avatar || ""}
-                        alt={getOtherParticipant(conversation)?.idUser?.name || "User"}
-                      />
-                    </ListItemAvatar>
-                  )}
-                  <ListItemText
-                    primary={
-                      conversation.type === 'group' 
-                        ? conversation.name || "Group Chat"
-                        : getOtherParticipant(conversation)?.idUser?.name || "Unknown User"
+                  <ListItemAvatar>
+                    {conversation.type === 'group' ? (
+                      <Avatar>
+                        <GroupIcon />
+                      </Avatar>
+                    ) : (
+                      <Avatar src={otherUser?.avatar || ""}>
+                        {!otherUser?.avatar && otherUser?.name?.[0]}
+                      </Avatar>
+                    )}
+                  </ListItemAvatar>
+                  <ListItemText 
+                    primary={conversation.type === 'group' 
+                      ? conversation.name 
+                      : otherUser?.name || 'Người dùng'
                     }
-                    secondary={
-                      <>
-                        {conversation.type === 'group' && (
-                          <Typography variant="caption" color="text.secondary" component="span" sx={{ display: 'block', mb: 0.5 }}>
-                            {conversation.members?.length || 0} members
-                          </Typography>
-                        )}
-                        <Typography variant="caption" color="text.secondary" component="span">
-                          {lastMessage.length > 30
-                            ? `${lastMessage.substring(0, 30)}...`
-                            : lastMessage}
-                        </Typography>
-                      </>
-                    }
-                  />       
+                  />
                 </ListItem>
               );
             })}
           </List>
-        </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCloseForwardDialog}>Hủy</Button>
-        <Button
-          onClick={handleConfirmForward}
-          color="primary"
-          disabled={!targetConversation}
-          variant="contained"
-        >
-          Chuyển tiếp
-        </Button>
-      </DialogActions>
-    </Dialog>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseForwardDialog}>Hủy</Button>
+          <Button 
+            onClick={handleConfirmForward}
+            disabled={!targetConversation}
+            variant="contained"
+          >
+            Chuyển tiếp
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Group Chat Dialogs */}
       <CreateGroupDialog

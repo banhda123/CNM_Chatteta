@@ -19,8 +19,15 @@ import {
   unFriend,
   deleteRequestFriend,
   updateUserInfo,
-  changeUserPassword
-} from "../controllers/userController.js";
+  changeUserPassword,
+  checkFriendshipStatus,
+  getAllSentRequestsByUser,
+  deferFriendRequest,
+  getDeferredRequests,
+  cancelFriendRequest,
+  findUsersByContacts,
+  removeFriend
+} from "../controllers/UserController.js";
 import { isAuth } from "../utils/index.js";
 import { upload } from "../utils/uploadImage.js";
 
@@ -43,11 +50,19 @@ UserRouter.post("/avatar", isAuth, upload.single("image"), changeAvatar);
 UserRouter.post("/addFriend", isAuth, addFriend);
 UserRouter.post("/acceptFriend", isAuth, acceptFriend);
 UserRouter.post("/dontAcceptFriend", isAuth, DontAcceptFriend);
-UserRouter.post("/unFriend", isAuth, unFriend);
+UserRouter.post("/unFriend", isAuth, removeFriend);
 UserRouter.post("/deleteRequestFriend", isAuth, deleteRequestFriend);
 
 UserRouter.get("/getAllFriendByUser/:id", getAllFriendByUser);
 UserRouter.get("/getAllPeopleRequestByUser/:id", getAllPeopleRequestByUser);
+
+// API mới cho tính năng kết bạn nâng cao
+UserRouter.get("/getAllSentRequestsByUser/:id", getAllSentRequestsByUser);
+UserRouter.get("/checkFriendshipStatus/:userFromId/:userToId", isAuth, checkFriendshipStatus);
+UserRouter.post("/deferFriendRequest", isAuth, deferFriendRequest);
+UserRouter.get("/getDeferredRequests/:id", isAuth, getDeferredRequests);
+UserRouter.post("/cancelFriendRequest", isAuth, cancelFriendRequest);
+UserRouter.post("/findByContacts", isAuth, findUsersByContacts);
 
 UserRouter.get("/demo", Demo);
 

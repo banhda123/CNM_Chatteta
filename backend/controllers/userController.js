@@ -495,3 +495,283 @@ export const changeUserPassword = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
+export const checkFriendshipStatus = async (req, res) => {
+  try {
+    const { userFromId, userToId } = req.params;
+    
+    if (!userFromId || !userToId) {
+      return res.status(400).json({ message: "Thiếu thông tin người dùng" });
+    }
+    
+    if (userFromId === userToId) {
+      return res.status(400).json({ message: "Không thể kiểm tra trạng thái kết bạn với chính mình" });
+    }
+    
+    // Lấy thông tin người dùng
+    const userFrom = await UsersModel.findById(userFromId);
+    const userTo = await UsersModel.findById(userToId);
+    
+    if (!userFrom || !userTo) {
+      return res.status(404).json({ message: "Không tìm thấy người dùng" });
+    }
+    
+    // Kiểm tra đã là bạn bè chưa
+    const areFriends = userFrom.friends.some(friend => friend.idUser.toString() === userToId);
+    if (areFriends) {
+      return res.status(200).json({ status: "friend" });
+    }
+    
+    // Kiểm tra đã gửi lời mời chưa
+    const hasSentRequest = userFrom.myRequest.some(request => request.idUser.toString() === userToId);
+    if (hasSentRequest) {
+      return res.status(200).json({ status: "pending_sent" });
+    }
+    
+    // Kiểm tra đã nhận lời mời chưa
+    const hasReceivedRequest = userFrom.peopleRequest.some(request => request.idUser.toString() === userToId);
+    if (hasReceivedRequest) {
+      return res.status(200).json({ status: "pending_received" });
+    }
+    
+    // Kiểm tra lời mời đã tạm hoãn
+    const hasDeferredRequest = userFrom.deferredRequest && userFrom.deferredRequest.some(
+      request => request.idUser.toString() === userToId
+    );
+    if (hasDeferredRequest) {
+      return res.status(200).json({ status: "deferred" });
+    }
+    
+    // Không có mối quan hệ bạn bè
+    return res.status(200).json({ status: "none" });
+  } catch (error) {
+    console.error("Error checking friendship status:", error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+export const getAllSentRequestsByUser = async (req, res) => {
+  try {
+    // Basic validation
+    if (!req.params?.id) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    // Get user with populated friend requests
+    const user = await UsersModel.findById(req.params.id)
+      .populate({
+        path: "myRequest.idUser",
+        select: "_id name avatar",
+      })
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Return myRequest array
+    res.json(user.myRequest || []);
+  } catch (error) {
+    console.error("Error fetching sent friend requests:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const deferFriendRequest = async (req, res) => {
+  try {
+    const { userFrom, userTo } = req.body;
+
+    if (!userFrom || !userTo) {
+      return res.status(400).json({ message: "Vui lòng cung cấp đầy đủ thông tin" });
+    }
+
+    const userFromAccount = await UsersModel.findById(userFrom);
+    const userToAccount = await UsersModel.findById(userTo);
+
+    if (!userFromAccount || !userToAccount) {
+      return res.status(404).json({ message: "Không tìm thấy người dùng" });
+    }
+
+    // Kiểm tra lời mời có tồn tại không
+    const requestIndex = userFromAccount.peopleRequest.findIndex(
+      req => req.idUser.toString() === userTo
+    );
+    
+    if (requestIndex === -1) {
+      return res.status(400).json({ message: "Không tìm thấy lời mời kết bạn" });
+    }
+
+    // Lấy thông tin lời mời
+    const requestInfo = userFromAccount.peopleRequest[requestIndex];
+
+    // Tạo mảng deferredRequest nếu chưa có
+    if (!userFromAccount.deferredRequest) {
+      userFromAccount.deferredRequest = [];
+    }
+
+    // Thêm vào danh sách tạm hoãn
+    userFromAccount.deferredRequest.push(requestInfo);
+
+    // Xóa khỏi danh sách lời mời
+    userFromAccount.peopleRequest.splice(requestIndex, 1);
+    
+    // Lưu thay đổi
+    await userFromAccount.save();
+
+    return res.status(200).json({ 
+      success: true, 
+      message: "Đã tạm hoãn lời mời kết bạn" 
+    });
+  } catch (error) {
+    console.error("Error deferring friend request:", error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+export const getDeferredRequests = async (req, res) => {
+  try {
+    // Basic validation
+    if (!req.params?.id) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    // Get user with populated deferred requests
+    const user = await UsersModel.findById(req.params.id)
+      .populate({
+        path: "deferredRequest.idUser",
+        select: "_id name avatar",
+      })
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Return deferredRequest array
+    res.json(user.deferredRequest || []);
+  } catch (error) {
+    console.error("Error fetching deferred friend requests:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const cancelFriendRequest = async (req, res) => {
+  try {
+    const { userFrom, userTo } = req.body;
+
+    if (!userFrom || !userTo) {
+      return res.status(400).json({ message: "Vui lòng cung cấp đầy đủ thông tin" });
+    }
+
+    const userFromAccount = await UsersModel.findById(userFrom);
+    const userToAccount = await UsersModel.findById(userTo);
+
+    if (!userFromAccount || !userToAccount) {
+      return res.status(404).json({ message: "Không tìm thấy người dùng" });
+    }
+
+    // Xóa lời mời từ người dùng hiện tại
+    userFromAccount.myRequest = userFromAccount.myRequest.filter(
+      req => req.idUser.toString() !== userTo
+    );
+
+    // Xóa lời mời từ người nhận
+    userToAccount.peopleRequest = userToAccount.peopleRequest.filter(
+      req => req.idUser.toString() !== userFrom
+    );
+
+    await userFromAccount.save();
+    await userToAccount.save();
+
+    return res.status(200).json({ 
+      success: true, 
+      message: "Đã hủy lời mời kết bạn" 
+    });
+  } catch (error) {
+    console.error("Error canceling friend request:", error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+export const findUsersByContacts = async (req, res) => {
+  try {
+    const { contacts } = req.body;
+    
+    if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
+      return res.status(400).json({ message: "Danh sách liên hệ không hợp lệ" });
+    }
+    
+    // Lấy danh sách số điện thoại
+    const phoneNumbers = contacts.map(contact => contact.phoneNumber);
+    
+    // Tìm người dùng theo số điện thoại
+    const users = await UsersModel.find({
+      phone: { $in: phoneNumbers }
+    }).select('_id name avatar phone'); // Chỉ lấy các thông tin cần thiết
+    
+    res.status(200).json(users);
+  } catch (error) {
+    console.error("Error finding users by contacts:", error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+// Xử lý API từ client để huỷ kết bạn
+export const removeFriend = async (req, res) => {
+  try {
+    const { userFrom, userTo } = req.body;
+    
+    if (!userFrom || !userTo) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Thiếu thông tin người dùng" 
+      });
+    }
+    
+    // Tìm người dùng
+    const userFromData = await UsersModel.findById(userFrom);
+    const userToData = await UsersModel.findById(userTo);
+    
+    if (!userFromData || !userToData) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Không tìm thấy người dùng" 
+      });
+    }
+    
+    // Tìm conversation
+    const friendInfo = userFromData.friends.find(
+      (friend) => friend.idUser.toString() === userTo
+    );
+    
+    if (!friendInfo) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Không tìm thấy mối quan hệ bạn bè" 
+      });
+    }
+    
+    const idConversation = friendInfo.idConversation;
+    
+    // Gọi hàm unFriend để thực hiện
+    await unFriend(userFrom, userTo, idConversation);
+    
+    return res.status(200).json({
+      success: true,
+      message: "Đã huỷ kết bạn thành công",
+      user: {
+        _id: userFromData._id,
+        name: userFromData.name,
+        phone: userFromData.phone,
+        avatar: userFromData.avatar
+      }
+    });
+  } catch (error) {
+    console.error("Error in removeFriend:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Lỗi server khi huỷ kết bạn",
+      error: error.message 
+    });
+  }
+};
