@@ -2239,3 +2239,164 @@ export default {
   unpinMessage,
   getPinnedMessages
 };
+
+// Get images and videos shared in a conversation
+export const getConversationMedia = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user._id;
+
+    // Check if the user is a member of the conversation
+    const conversation = await ConversationModel.findOne({
+      _id: conversationId,
+      "members.idUser": userId
+    });
+
+    if (!conversation) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not a member of this conversation"
+      });
+    }
+
+    // Get all image and video messages from the conversation
+    const mediaMessages = await MessageModel.find({
+      idConversation: conversationId,
+      type: { $in: ['image', 'video'] },
+      deletedBy: { $ne: userId }, // Do not include messages deleted by the current user
+      isRevoked: { $ne: true }    // Do not include revoked messages
+    })
+    .populate("sender", "name avatar")
+    .sort({ createdAt: -1 }) // Most recent first
+    .lean();
+
+    return res.status(200).json({
+      success: true,
+      media: mediaMessages
+    });
+  } catch (error) {
+    console.error("Error fetching conversation media:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch media",
+      error: error.message
+    });
+  }
+};
+
+// Get files (documents, etc.) shared in a conversation
+export const getConversationFiles = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user._id;
+
+    // Check if the user is a member of the conversation
+    const conversation = await ConversationModel.findOne({
+      _id: conversationId,
+      "members.idUser": userId
+    });
+
+    if (!conversation) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not a member of this conversation"
+      });
+    }
+
+    // Get all file messages from the conversation (excluding images and videos)
+    const fileMessages = await MessageModel.find({
+      idConversation: conversationId,
+      type: { $in: ['file', 'doc', 'pdf', 'excel', 'presentation', 'audio'] },
+      deletedBy: { $ne: userId }, // Do not include messages deleted by the current user
+      isRevoked: { $ne: true }    // Do not include revoked messages
+    })
+    .populate("sender", "name avatar")
+    .sort({ createdAt: -1 }) // Most recent first
+    .lean();
+
+    return res.status(200).json({
+      success: true,
+      files: fileMessages
+    });
+  } catch (error) {
+    console.error("Error fetching conversation files:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch files",
+      error: error.message
+    });
+  }
+};
+
+// Get links shared in a conversation
+export const getConversationLinks = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user._id;
+
+    // Check if the user is a member of the conversation
+    const conversation = await ConversationModel.findOne({
+      _id: conversationId,
+      "members.idUser": userId
+    });
+
+    if (!conversation) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not a member of this conversation"
+      });
+    }
+
+    // Find messages that contain links
+    // This can be done in two ways:
+    // 1. Look for 'link' type messages
+    // 2. Use a regex to find URLs in regular text messages
+    
+    const linkTypeMessages = await MessageModel.find({
+      idConversation: conversationId,
+      type: 'link',
+      deletedBy: { $ne: userId }, // Do not include messages deleted by the current user
+      isRevoked: { $ne: true }    // Do not include revoked messages
+    }).populate("sender", "name avatar").lean();
+    
+    // Find text messages that contain URLs using regex
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const textMessages = await MessageModel.find({
+      idConversation: conversationId,
+      type: 'text',
+      content: { $regex: urlRegex },
+      deletedBy: { $ne: userId },
+      isRevoked: { $ne: true }
+    }).populate("sender", "name avatar").lean();
+    
+    // Process text messages to extract links and add linkUrl property
+    const textMessagesWithLinks = textMessages.map(message => {
+      const matches = message.content.match(urlRegex);
+      if (matches && matches.length > 0) {
+        // Use the first URL found as the linkUrl
+        return {
+          ...message,
+          linkUrl: matches[0],
+          linkTitle: message.content
+        };
+      }
+      return message;
+    });
+    
+    // Combine both types of messages and sort by createdAt
+    const allLinks = [...linkTypeMessages, ...textMessagesWithLinks]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return res.status(200).json({
+      success: true,
+      links: allLinks
+    });
+  } catch (error) {
+    console.error("Error fetching conversation links:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch links",
+      error: error.message
+    });
+  }
+};

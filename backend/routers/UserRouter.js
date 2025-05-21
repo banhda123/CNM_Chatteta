@@ -25,9 +25,8 @@ import {
   deferFriendRequest,
   getDeferredRequests,
   cancelFriendRequest,
-  findUsersByContacts,
   removeFriend
-} from "../controllers/UserController.js";
+} from "../controllers/userController.js";
 import { isAuth } from "../utils/index.js";
 import { upload } from "../utils/uploadImage.js";
 
@@ -62,7 +61,6 @@ UserRouter.get("/checkFriendshipStatus/:userFromId/:userToId", isAuth, checkFrie
 UserRouter.post("/deferFriendRequest", isAuth, deferFriendRequest);
 UserRouter.get("/getDeferredRequests/:id", isAuth, getDeferredRequests);
 UserRouter.post("/cancelFriendRequest", isAuth, cancelFriendRequest);
-UserRouter.post("/findByContacts", isAuth, findUsersByContacts);
 
 UserRouter.get("/demo", Demo);
 

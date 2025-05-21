@@ -81,6 +81,31 @@ import SocketService from "./SocketService";
 const API_URL = "http://localhost:4000/chat"; // Update with your backend URL
 
 class ChatService {
+  // Get conversation by ID
+  static async getConversationById(conversationId) {
+    try {
+      Logger.info('Fetching conversation by ID', { conversationId });
+      
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.get(`${API_URL}/conversation/${conversationId}`, config);
+      return response.data;
+    } catch (error) {
+      Logger.error("Error fetching conversation by ID", error);
+      throw error;
+    }
+  }
+
   // Create a new group conversation
   static async createGroupConversation(groupData, token) {
     try {
@@ -204,6 +229,33 @@ class ChatService {
         isAdmin2 
       });
       
+      // Trước khi xóa, lấy thông tin về thành viên bị xóa để gửi qua socket
+      let memberName = '';
+      try {
+        // Lấy thông tin cuộc trò chuyện để tìm tên thành viên
+        const conversationResponse = await axios.get(
+          `${API_URL}/conversation/${conversationId}`,
+          config
+        );
+        
+        if (conversationResponse.data && conversationResponse.data.members) {
+          const memberToRemove = conversationResponse.data.members.find(
+            member => member.idUser && (
+              (member.idUser._id && member.idUser._id.toString() === memberId.toString()) ||
+              (typeof member.idUser === 'string' && member.idUser.toString() === memberId.toString())
+            )
+          );
+          
+          if (memberToRemove && memberToRemove.idUser) {
+            memberName = typeof memberToRemove.idUser === 'object' 
+              ? memberToRemove.idUser.name || 'Thành viên'
+              : 'Thành viên';
+          }
+        }
+      } catch (error) {
+        console.warn('Could not fetch member name before removal:', error);
+      }
+      
       let response;
       
       // Use different endpoints based on user role
@@ -225,6 +277,16 @@ class ChatService {
       }
       
       console.log('Response data:', response.data); // Debug log
+      
+      // Gửi thông tin chi tiết qua socket để cập nhật real-time
+      SocketService.emitMemberRemovedFromGroup({
+        conversationId,
+        memberId,
+        removedBy: userData._id,
+        removedByName: userData.name,
+        memberName: memberName,
+        timestamp: new Date().toISOString()
+      });
       
       return response.data;
     } catch (error) {
@@ -968,6 +1030,114 @@ class ChatService {
         console.error("Failed to send GIF via socket after HTTP error:", socketError);
       }
       throw error;
+    }
+  }
+
+  // Get images and videos shared in a conversation
+  static async getConversationMedia(conversationId) {
+    try {
+      Logger.info('Fetching media for conversation', { conversationId });
+      
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.get(`${API_URL}/conversation/${conversationId}/media`, config);
+      console.log('Raw media API response:', response.data);
+      
+      // Handle different possible response formats
+      if (response.data && response.data.media) {
+        return response.data.media;
+      } else if (response.data && response.data.success && response.data.media) {
+        return response.data.media;
+      } else if (Array.isArray(response.data)) {
+        return response.data;
+      }
+      
+      return [];
+    } catch (error) {
+      Logger.error("Error fetching conversation media", error);
+      return [];
+    }
+  }
+
+  // Get documents/files shared in a conversation
+  static async getConversationFiles(conversationId) {
+    try {
+      Logger.info('Fetching files for conversation', { conversationId });
+      
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.get(`${API_URL}/conversation/${conversationId}/files`, config);
+      console.log('Raw files API response:', response.data);
+      
+      // Handle different possible response formats
+      if (response.data && response.data.files) {
+        return response.data.files;
+      } else if (response.data && response.data.success && response.data.files) {
+        return response.data.files;
+      } else if (Array.isArray(response.data)) {
+        return response.data;
+      }
+      
+      return [];
+    } catch (error) {
+      Logger.error("Error fetching conversation files", error);
+      return [];
+    }
+  }
+
+  // Get links shared in a conversation
+  static async getConversationLinks(conversationId) {
+    try {
+      Logger.info('Fetching links for conversation', { conversationId });
+      
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const response = await axios.get(`${API_URL}/conversation/${conversationId}/links`, config);
+      console.log('Raw links API response:', response.data);
+      
+      // Handle different possible response formats
+      if (response.data && response.data.links) {
+        return response.data.links;
+      } else if (response.data && response.data.success && response.data.links) {
+        return response.data.links;
+      } else if (Array.isArray(response.data)) {
+        return response.data;
+      }
+      
+      return [];
+    } catch (error) {
+      Logger.error("Error fetching conversation links", error);
+      return [];
     }
   }
 }

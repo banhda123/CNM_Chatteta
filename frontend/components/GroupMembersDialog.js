@@ -30,6 +30,8 @@ import {
   Delete as DeleteIcon,
   Edit as EditIcon
 } from '@mui/icons-material';
+import KeyIcon from '@mui/icons-material/Key';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import ChatService from '../services/ChatService';
 import AuthService from '../services/AuthService';
 import SocketService from '../services/SocketService';
@@ -686,7 +688,49 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
               {members.map((member) => (
                 <ListItem key={member.idUser._id}>
                   <ListItemAvatar>
-                    <Avatar src={member.idUser.avatar} />
+                    <Box sx={{ position: 'relative' }}>
+                      <Avatar src={member.idUser.avatar}>
+                        {!member.idUser.avatar && member.idUser.name?.[0]}
+                      </Avatar>
+                      
+                      {/* Biểu tượng chìa khóa vàng cho admin */}
+                      {member.idUser._id === (conversation.admin?._id || conversation.admin) && (
+                        <Box 
+                          sx={{ 
+                            position: 'absolute', 
+                            top: -5, 
+                            left: -5, 
+                            bgcolor: 'background.paper',
+                            borderRadius: '50%',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <KeyIcon sx={{ fontSize: 14, color: '#FFD700' }} /> {/* Màu vàng */}
+                        </Box>
+                      )}
+                      
+                      {/* Biểu tượng chìa khóa bạc cho admin2 */}
+                      {member.idUser._id === (conversation.admin2?._id || conversation.admin2) && (
+                        <Box 
+                          sx={{ 
+                            position: 'absolute', 
+                            top: -5, 
+                            left: -5, 
+                            bgcolor: 'background.paper',
+                            borderRadius: '50%',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <VpnKeyIcon sx={{ fontSize: 14, color: '#C0C0C0' }} /> {/* Màu bạc */}
+                        </Box>
+                      )}
+                    </Box>
                   </ListItemAvatar>
                   <ListItemText
                     primary={member.idUser.name}

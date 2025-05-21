@@ -12,7 +12,7 @@ import {
   deleteRequestFriend,
   DontAcceptFriend,
   unFriend,
-} from "../controllers/UserController.js";
+} from "../controllers/userController.js";
 import { MessageModel } from "../models/MessageModel.js";
 import { ConversationModel } from "../models/ConversationModel.js";
 
@@ -234,7 +234,28 @@ export const ConnectSocket = (server) => {
       const { userFrom, userTo } = data;
       await deleteRequestFriend(userFrom, userTo);
       io.emit("delete_request_friend_success");
-      io.to(userTo).emit("person_delete_request_friend", userTo);
+    });
+
+    // Handle avatar updates
+    socket.on("avatar_updated", (data) => {
+      try {
+        const { userId, avatarUrl } = data;
+        if (!userId || !avatarUrl) {
+          console.log("Invalid avatar update data:", data);
+          return;
+        }
+        
+        console.log(`🖼️ Broadcasting avatar update for user ${userId}`);
+        
+        // Broadcast to all connected clients except the sender
+        socket.broadcast.emit("avatar_updated", {
+          userId,
+          avatarUrl,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error("Error handling avatar update:", error);
+      }
     });
 
     socket.on("accept_request_friend", async (data) => {

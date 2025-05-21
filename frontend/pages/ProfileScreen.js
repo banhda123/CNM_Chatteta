@@ -21,6 +21,7 @@ import {
 } from "@mui/material";
 import UserService from "../services/UserService";
 import AuthService from "../services/AuthService";
+import SocketService from "../services/SocketService";
 import { Edit as EditIcon, Save as SaveIcon, PhotoCamera as PhotoCameraIcon } from "@mui/icons-material";
 
 const ProfileScreen = () => {
@@ -210,11 +211,26 @@ const ProfileScreen = () => {
 
       const response = await UserService.changeAvatar(userId, avatarFile, token);
       
-      // Update user avatar
+      // Update user avatar in state
       setUser({
         ...user,
         avatar: response.avatar
       });
+      
+      // Update user avatar in localStorage
+      const userData = AuthService.getUserData();
+      if (userData) {
+        userData.avatar = response.avatar;
+        AuthService.setUserData(userData);
+        
+        // Dispatch a custom event to notify other components about the avatar update
+        window.dispatchEvent(new CustomEvent('user-avatar-updated', { 
+          detail: { avatar: response.avatar }
+        }));
+        
+        // Broadcast avatar update to all connected users via socket
+        SocketService.emitAvatarUpdated(userId, response.avatar);
+      }
       
       // Close dialog and reset
       setShowAvatarDialog(false);

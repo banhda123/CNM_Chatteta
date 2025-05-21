@@ -41,7 +41,6 @@ const AppContent = () => {
       },
     },
   });
-
   useEffect(() => {
     // Không khởi tạo kết nối socket sớm nữa
     // if (!SocketService.socket) {
@@ -118,7 +117,6 @@ const AppContent = () => {
       </Box>
     );
   }
-
   return (
     <MuiThemeProvider theme={theme}>
       <CssBaseline />
@@ -198,3 +196,5 @@ export default function App() {
     </ThemeProvider>
   );
 }
+
+

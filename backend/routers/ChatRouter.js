@@ -21,7 +21,10 @@ import {
   uploadFile,
   pinMessage,
   unpinMessage,
-  getPinnedMessages
+  getPinnedMessages,
+  getConversationMedia,
+  getConversationFiles,
+  getConversationLinks
 } from "../controllers/chatController.js";
 import { isAuth } from "../utils/index.js";
 import multer from "multer";
@@ -171,5 +174,10 @@ ChatRouter.post("/message/reaction/remove", isAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to remove reaction" });
   }
 });
+
+// Routes for fetching media, files, and links
+ChatRouter.get("/conversation/:conversationId/media", isAuth, getConversationMedia);
+ChatRouter.get("/conversation/:conversationId/files", isAuth, getConversationFiles);
+ChatRouter.get("/conversation/:conversationId/links", isAuth, getConversationLinks);
 
 export default ChatRouter;

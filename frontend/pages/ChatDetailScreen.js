@@ -33,33 +33,45 @@ import {
   AvatarGroup,
   Switch,
   FormControlLabel,
+  Drawer,
+  Tab,
+  Tabs,
+  Divider,
+  Slide,
+  useTheme as useMuiTheme,
+  ButtonGroup
 } from "@mui/material";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
 import {
   Send as SendIcon,
-  MoreVert as MoreVert,
-  AttachFile as AttachFileIcon,
-  Mood as MoodIcon,
+  Info as InfoIcon,
+  Phone as PhoneIcon,
+  Videocam as VideocamIcon,
   Search as SearchIcon,
-  Notifications as NotificationsIcon,
-  Photo as PhotoIcon,
-  Slideshow as SlideshowIcon,
-  Share as ShareIcon,
+  Clear as ClearIcon,
+  Menu as MenuIcon,
+  Settings as SettingsIcon,
+  ArrowBack as ArrowBackIcon,
+  MoreVert,
+  InsertEmoticon as InsertEmoticonIcon,
+  AttachFile as AttachFileIcon,
+  Image as ImageIcon,
+  Chat as ChatIcon,
+  Person as PersonIcon,
+  Contacts as ContactsIcon,
+  SmartToy as SmartToyIcon,
+  GroupAdd as GroupAddIcon,
+  Check as CheckIcon,
+  People as PeopleIcon,
   Group as GroupIcon,
   Edit as EditIcon,
-  PersonAdd as PersonAddIcon,
-  GroupAdd as GroupAddIcon,
-  People as PeopleIcon,
-  ExitToApp as ExitToAppIcon,
-  DarkMode as DarkModeIcon,
-  LightMode as LightModeIcon,
-  Contacts as ContactsIcon,
-  ArrowBack as ArrowBackIcon,
-  Check as CheckIcon,
-  Close as CloseIcon,
-  DeleteOutline as DeleteOutlineIcon,
   Forward as ForwardIcon,
   Undo as UndoIcon,
+  PushPin as PushPinIcon,
+  Delete as DeleteIcon,
+  ExitToApp as ExitToAppIcon,
+  Close as CloseIcon,
+  PersonAdd as PersonAddIcon
 } from "@mui/icons-material";
 import Button from "@mui/material/Button";
 import AddIcon from "@mui/icons-material/Add";
@@ -69,7 +81,6 @@ import UserService from "../services/UserService";
 import AuthService from "../services/AuthService";
 import SocketService from "../services/SocketService";
 import CancelIcon from '@mui/icons-material/Cancel';
-import VideocamIcon from '@mui/icons-material/Videocam';
 import AudiotrackIcon from '@mui/icons-material/Audiotrack';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import DescriptionIcon from '@mui/icons-material/Description';
@@ -89,6 +100,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import ProfileDialog from '../components/ProfileDialog';
 import FileUploadGroup from '../components/FileUploadGroup';
 import LoadingAnimation from '../components/LoadingAnimation';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import KeyIcon from '@mui/icons-material/Key';
+import GroupControlDrawer from '../components/GroupControlDrawer';
 
 
 // Thêm một lớp ghi log đơn giản vào đầu file
@@ -186,6 +200,8 @@ const ChatUI = () => {
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [activeConversation, setActiveConversation] = useState(null);
   const [conversations, setConversations] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filteredConversations, setFilteredConversations] = useState([]);
   const [messages, setMessages] = useState([]);
   const [phone, setPhone] = useState("");
   const [foundUser, setFoundUser] = useState(null);
@@ -1461,7 +1477,7 @@ const ChatUI = () => {
     // Member removed from group event (real-time update)
     SocketService.onMemberRemovedFromGroup((data) => {
       console.log('🔔 Thành viên bị xóa khỏi nhóm (socket event):', data);
-      const { conversationId, memberId } = data;
+      const { conversationId, memberId, removedBy } = data;
       
       // Get current user data
       const userData = AuthService.getUserData();
@@ -1482,35 +1498,58 @@ const ChatUI = () => {
           }
         }
       } else {
-        // For other members, fetch the updated conversation to refresh the member list
-        ChatService.getConversationById(conversationId)
-          .then(updatedConversation => {
-            if (updatedConversation) {
-              // Update the conversation in the list
-              setConversations(prev => 
-                prev.map(conv => 
-                  conv._id === conversationId ? updatedConversation : conv
-                )
-              );
-              
-              // Update active conversation if it's the one that was updated
-              if (activeConversation && activeConversation._id === conversationId) {
-                setActiveConversation(updatedConversation);
-                
-                // Add a system message about the member being removed
-                const systemMessage = {
-                  _id: Date.now().toString(),
-                  type: 'system',
-                  content: `Một thành viên đã bị xóa khỏi nhóm`,
-                  createdAt: new Date(),
-                  temporary: true
+        // Cập nhật ngay lập tức danh sách thành viên trong cuộc trò chuyện hiện tại
+        if (activeConversation && activeConversation._id === conversationId) {
+          // Tạo bản sao của activeConversation và xóa thành viên bị loại bỏ
+          const updatedConversation = {
+            ...activeConversation,
+            members: activeConversation.members.filter(
+              member => member.idUser && 
+              ((member.idUser._id && member.idUser._id.toString() !== memberId.toString()) ||
+               (typeof member.idUser === 'string' && member.idUser.toString() !== memberId.toString()))
+            )
+          };
+          
+          // Cập nhật state với danh sách thành viên mới
+          setActiveConversation(updatedConversation);
+          
+          // Cập nhật danh sách cuộc trò chuyện
+          setConversations(prev => 
+            prev.map(conv => 
+              conv._id === conversationId ? updatedConversation : conv
+            )
+          );
+          
+          // Thêm thông báo hệ thống về việc thành viên bị xóa
+          const systemMessage = {
+            _id: Date.now().toString(),
+            type: 'system',
+            content: data.memberName 
+              ? `${data.memberName} đã bị xóa khỏi nhóm bởi ${data.removedByName || 'quản trị viên'}`
+              : `Một thành viên đã bị xóa khỏi nhóm`,
+            createdAt: new Date(),
+            temporary: true
+          };
+          
+          setMessages(prev => [...prev, systemMessage]);
+        } else {
+          // Nếu không phải cuộc trò chuyện hiện tại, vẫn cập nhật trong danh sách
+          setConversations(prev => 
+            prev.map(conv => {
+              if (conv._id === conversationId) {
+                return {
+                  ...conv,
+                  members: conv.members ? conv.members.filter(
+                    member => member.idUser && 
+                    ((member.idUser._id && member.idUser._id.toString() !== memberId.toString()) ||
+                     (typeof member.idUser === 'string' && member.idUser.toString() !== memberId.toString()))
+                  ) : []
                 };
-                
-                setMessages(prev => [...prev, systemMessage]);
               }
-            }
-          })
-          .catch(error => console.error('Error updating conversation after member removal:', error));
+              return conv;
+            })
+          );
+        }
       }
     });
     
@@ -2502,9 +2541,176 @@ const ChatUI = () => {
     // Đăng ký event listener
     SocketService.onUpdateConversationList(handleUpdateConversationList);
     
+    // Listen for avatar updates
+    const handleAvatarUpdated = (event) => {
+      setUser(prevUser => ({
+        ...prevUser,
+        avatar: event.detail.avatar
+      }));
+    };
+    
+    // Listen for socket avatar updates from other users
+    const handleSocketAvatarUpdated = (data) => {
+      console.log('👤 Nhận được cập nhật avatar từ user khác:', data.userId);
+      
+      // Skip if it's our own update (already handled by custom event)
+      if (data.userId === userId) return;
+      
+      // Update avatar in conversations list for this user
+      setConversations(prev => 
+        prev.map(conv => {
+          // Process both private conversations and group conversations
+          // For private chats: Update if the other participant is the user who changed their avatar
+          if (conv.type === 'private') {
+            const updatedMembers = conv.members?.map(member => {
+              if (member.idUser && 
+                  ((typeof member.idUser === 'object' && member.idUser._id === data.userId) || 
+                   member.idUser === data.userId)) {
+                // Update this member's avatar
+                return {
+                  ...member,
+                  idUser: typeof member.idUser === 'object' 
+                    ? { ...member.idUser, avatar: data.avatarUrl }
+                    : member.idUser
+                };
+              }
+              return member;
+            });
+            
+            if (updatedMembers) {
+              return { ...conv, members: updatedMembers };
+            }
+          }
+          // For group chats: Update the avatar of any member who matches the updated user
+          else if (conv.type === 'group' && conv.members) {
+            const updatedMembers = conv.members.map(member => {
+              if (member.idUser && 
+                  ((typeof member.idUser === 'object' && member.idUser._id === data.userId) || 
+                   member.idUser === data.userId)) {
+                // Update this member's avatar
+                return {
+                  ...member,
+                  idUser: typeof member.idUser === 'object' 
+                    ? { ...member.idUser, avatar: data.avatarUrl }
+                    : member.idUser
+                };
+              }
+              return member;
+            });
+            
+            // Also update admin/admin2 avatar if they match the updated user
+            let updatedConv = { ...conv, members: updatedMembers };
+            
+            // Update admin avatar if needed
+            if (updatedConv.admin && 
+                ((typeof updatedConv.admin === 'object' && updatedConv.admin._id === data.userId) ||
+                 updatedConv.admin === data.userId)) {
+              updatedConv.admin = typeof updatedConv.admin === 'object'
+                ? { ...updatedConv.admin, avatar: data.avatarUrl }
+                : updatedConv.admin;
+            }
+            
+            // Update admin2 avatar if needed
+            if (updatedConv.admin2 && 
+                ((typeof updatedConv.admin2 === 'object' && updatedConv.admin2._id === data.userId) ||
+                 updatedConv.admin2 === data.userId)) {
+              updatedConv.admin2 = typeof updatedConv.admin2 === 'object'
+                ? { ...updatedConv.admin2, avatar: data.avatarUrl }
+                : updatedConv.admin2;
+            }
+            
+            return updatedConv;
+          }
+          
+          return conv;
+        })
+      );
+      
+      // Also update the active conversation if it contains the updated user
+      if (activeConversation) {
+        setActiveConversation(prev => {
+          // Skip if not valid conversation
+          if (!prev || !prev.members) return prev;
+          
+          // Create a copy of the conversation
+          let updatedConversation = { ...prev };
+          
+          // Update members avatars
+          if (updatedConversation.members) {
+            updatedConversation.members = updatedConversation.members.map(member => {
+              if (member.idUser && 
+                  ((typeof member.idUser === 'object' && member.idUser._id === data.userId) || 
+                   member.idUser === data.userId)) {
+                // Update this member's avatar
+                return {
+                  ...member,
+                  idUser: typeof member.idUser === 'object' 
+                    ? { ...member.idUser, avatar: data.avatarUrl }
+                    : member.idUser
+                };
+              }
+              return member;
+            });
+          }
+          
+          // For group conversations, also update admin/admin2 if needed
+          if (updatedConversation.type === 'group') {
+            // Update admin avatar if needed
+            if (updatedConversation.admin && 
+                ((typeof updatedConversation.admin === 'object' && updatedConversation.admin._id === data.userId) ||
+                 updatedConversation.admin === data.userId)) {
+              updatedConversation.admin = typeof updatedConversation.admin === 'object'
+                ? { ...updatedConversation.admin, avatar: data.avatarUrl }
+                : updatedConversation.admin;
+            }
+            
+            // Update admin2 avatar if needed
+            if (updatedConversation.admin2 && 
+                ((typeof updatedConversation.admin2 === 'object' && updatedConversation.admin2._id === data.userId) ||
+                 updatedConversation.admin2 === data.userId)) {
+              updatedConversation.admin2 = typeof updatedConversation.admin2 === 'object'
+                ? { ...updatedConversation.admin2, avatar: data.avatarUrl }
+                : updatedConversation.admin2;
+            }
+          }
+          
+          return updatedConversation;
+        });
+      }
+      
+      // Also update other UI elements displaying user avatars if needed
+      // For example, avatars in message bubbles
+      setMessages(prev => {
+        return prev.map(message => {
+          // Check if this message is from the user who updated their avatar
+          if (message.originalSender && 
+              ((typeof message.sender === 'object' && message.sender._id === data.userId) ||
+               message.sender === data.userId)) {
+            
+            return {
+              ...message,
+              originalSender: {
+                ...message.originalSender,
+                avatar: data.avatarUrl
+              }
+            };
+          }
+          return message;
+        });
+      });
+    };
+    
+    // Add event listener for avatar updates
+    window.addEventListener('user-avatar-updated', handleAvatarUpdated);
+    
+    // Register socket listener for avatar updates from other users
+    SocketService.onAvatarUpdated(handleSocketAvatarUpdated);
+    
     // Cleanup
     return () => {
       SocketService.removeListener('update_conversation_list');
+      window.removeEventListener('user-avatar-updated', handleAvatarUpdated);
+      SocketService.removeListener('avatar_updated');
     };
   }, [activeConversation]);
 
@@ -2626,7 +2832,7 @@ const ChatUI = () => {
               console.log('🔄 Đánh dấu tin nhắn đã thu hồi:', 
                 { id: messageId, type: type || msg.type || 'text' });
               
-              return { 
+                  return {
                 ...msg, 
                 isRevoked: true,
                 // Giữ lại loại tin nhắn để hiển thị thông báo thu hồi phù hợp
@@ -3380,7 +3586,7 @@ const ChatUI = () => {
               delete updatedReactions[emoji];
             }
             
-            return {
+                  return {
               ...msg,
               reactions: updatedReactions
             };
@@ -4171,6 +4377,52 @@ const ChatUI = () => {
     };
   }, [userId]);
 
+  // Hàm xử lý tìm kiếm cuộc trò chuyện
+  const handleSearchConversation = (e) => {
+    const query = e.target.value.toLowerCase();
+    setSearchQuery(query);
+    
+    if (!query) {
+      setFilteredConversations(conversations);
+      return;
+    }
+    
+    const filtered = conversations.filter(conversation => {
+      // Tìm kiếm theo tên nhóm nếu là nhóm
+      if (conversation.type === 'group') {
+        return conversation.name.toLowerCase().includes(query);
+      }
+      
+      // Tìm kiếm theo tên người dùng nếu là chat 1-1
+      const otherUser = getOtherParticipant(conversation)?.idUser;
+      if (otherUser) {
+        return otherUser.name.toLowerCase().includes(query);
+      }
+      
+      return false;
+    });
+    
+    setFilteredConversations(filtered);
+  };
+
+  // Cập nhật filteredConversations khi conversations thay đổi
+  useEffect(() => {
+    setFilteredConversations(conversations);
+  }, [conversations]);
+
+  // Thêm state cho drawer
+  const [groupControlDrawerOpen, setGroupControlDrawerOpen] = useState(false);
+
+  // Hàm để mở drawer điều khiển nhóm
+  const handleGroupControlOpen = () => {
+    setGroupControlDrawerOpen(true);
+  };
+
+  // Hàm để đóng drawer điều khiển nhóm
+  const handleGroupControlClose = () => {
+    setGroupControlDrawerOpen(false);
+  };
+
   if (showProfile) {
     return <ProfileScreen onBack={() => setShowProfile(false)} />;
   }
@@ -4233,28 +4485,54 @@ const ChatUI = () => {
           }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
               <Typography variant="h6">Cuộc trò chuyện</Typography>
-              <Box>
-                <IconButton 
-                  aria-label="more" 
-                  onClick={handleSidebarMenuOpen}
-                >
-            <MoreVert />
-          </IconButton>
-        </Box>
-        </Box>
+              <Box sx={{ display: 'flex' }}>
+                <Tooltip title="Tạo nhóm mới">
+                  <IconButton 
+                    size="small"
+                    onClick={handleCreateGroup}
+                    sx={{ mr: 1 }}
+                  >
+                    <GroupAddIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Thêm bạn mới">
+                  <IconButton 
+                    size="small"
+                    onClick={() => navigation.navigate('Contacts')}
+                  >
+                    <PersonAddIcon />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            </Box>
 
           <TextField
               variant="outlined"
               placeholder="Tìm kiếm..."
-            fullWidth
+              fullWidth
               size="small"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
+              value={searchQuery}
+              onChange={handleSearchConversation}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+                endAdornment: searchQuery ? (
+                  <InputAdornment position="end">
+                    <IconButton 
+                      size="small" 
+                      onClick={() => {
+                        setSearchQuery("");
+                        setFilteredConversations(conversations);
+                      }}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null
+              }}
           />
           </Box>
           
@@ -4280,8 +4558,12 @@ const ChatUI = () => {
                     Tìm bạn bè
                 </Button>
               </Box>
+              ) : filteredConversations.length === 0 && searchQuery ? (
+                <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Typography color="text.secondary">Không tìm thấy kết quả phù hợp</Typography>
+                </Box>
               ) : (
-                conversations.map((conversation) => {
+                filteredConversations.map((conversation) => {
                   const otherUser = conversation.type === 'group' 
                     ? null 
                     : getOtherParticipant(conversation)?.idUser;
@@ -4319,7 +4601,7 @@ const ChatUI = () => {
                         </Avatar>
                       }
                     >
-                            <Avatar src={conversation.avatar || ""}>
+                      <Avatar src={conversation.avatar || ""}>
                         {!conversation.avatar && (conversation.name?.[0] || 'G')}
                       </Avatar>
                     </Badge>
@@ -4498,33 +4780,73 @@ const ChatUI = () => {
                 <Box>
                 {activeConversation.type === 'group' && (
                     <>
-                    <IconButton onClick={handleOpenGroupMembers}>
-                      <PeopleIcon />
-                    </IconButton>
-                      {isGroupAdmin(activeConversation) && (
-                        <IconButton onClick={handleEditGroup}>
-                          <EditIcon />
-                        </IconButton>
-                      )}
+                    <Tooltip title="Thành viên nhóm">
+                      <IconButton onClick={handleOpenGroupMembers}>
+                        <PeopleIcon />
+                      </IconButton>
+                    </Tooltip>
+                    
+                    <Tooltip title="Điều khiển nhóm">
+                      <IconButton
+                        onClick={handleGroupControlOpen}
+                        aria-label="Điều khiển nhóm"
+                        color="primary"
+                        sx={{ ml: 1 }}
+                      >
+                        <MoreVert />
+                      </IconButton>
+                    </Tooltip>
                     </>
                   )}
-                  <IconButton
-                    onClick={handleMenuOpen}
-                    aria-label="more"
-                    aria-controls="long-menu"
-                    aria-haspopup="true"
-                  >
-                  <MoreVert />
-                </IconButton>
-            <Menu
+                  {!activeConversation.type === 'group' && (
+                    <IconButton
+                      onClick={handleMenuOpen}
+                      aria-label="more"
+                      aria-controls="long-menu"
+                      aria-haspopup="true"
+                    >
+                      <MoreVert />
+                    </IconButton>
+                  )}
+
+                {/* Sử dụng component GroupControlDrawer */}
+                <GroupControlDrawer
+                  open={groupControlDrawerOpen}
+                  onClose={handleGroupControlClose}
+                  conversation={activeConversation}
+                  isAdmin={isGroupAdmin(activeConversation)}
+                  isAdmin2={isGroupAdmin2(activeConversation)}
+                  onViewPinnedMessages={() => setPinnedMessagesDialogOpen(true)}
+                  onOpenGroupMembers={handleOpenGroupMembers}
+                  onEditGroup={handleEditGroup}
+                  onLeaveGroup={() => handleLeaveGroup(activeConversation._id)}
+                  onDeleteGroup={() => handleDeleteGroup(activeConversation._id)}
+                />
+
+                <Menu
                     id="long-menu"
-              anchorEl={anchorEl}
-              keepMounted={false}
-              disablePortal
+                    anchorEl={anchorEl}
+                    keepMounted={false}
+                    disablePortal
                     open={Boolean(anchorEl)}
                     onClose={handleMenuClose}
                     MenuListProps={{
                       'aria-labelledby': 'more-button',
+                    }}
+                    transformOrigin={{ 
+                      vertical: 'top', 
+                      horizontal: 'right' 
+                    }}
+                    anchorOrigin={{ 
+                      vertical: 'top', 
+                      horizontal: 'right' 
+                    }}
+                    PaperProps={{
+                      sx: {
+                        width: 220,
+                        maxHeight: 300,
+                        boxShadow: '0px 5px 15px rgba(0,0,0,0.2)'
+                      }
                     }}
             >
                     {/* Chỉ hiển thị menu xem tin nhắn đã ghim khi đang ở trong nhóm */}
@@ -5010,7 +5332,7 @@ const ChatUI = () => {
                   <FileUploadGroup onFileSelect={handleFileSelectFromGroup} />
                   
                   <IconButton onClick={handleEmojiOpen}>
-                    <MoodIcon />
+                    <InsertEmoticonIcon />
                   </IconButton>
                   
                   <IconButton onClick={(e) => handleTabChange(e)}>
@@ -5052,17 +5374,18 @@ const ChatUI = () => {
             }}
           >
               <img 
-                src="/static/images/chat-placeholder.svg" 
+                src="http://localhost:4000/uploads/logo.webp" 
                 alt="Select a conversation" 
                 style={{ 
                   width: '200px', 
                   height: '200px', 
                   marginBottom: '32px',
-                  opacity: 0.8
+                  opacity: 0.8,
+                  objectFit: 'contain'
                 }}
               />
               <Typography variant="h5" color="text.primary" gutterBottom>
-                Chào mừng đến với Zalo Chat
+                Chào mừng đến với Chattera
               </Typography>
               <Typography variant="body1" color="text.secondary" align="center" sx={{ mb: 3, maxWidth: '500px' }}>
                 Chọn một cuộc trò chuyện từ danh sách bên trái để bắt đầu nhắn tin, 
@@ -5124,7 +5447,7 @@ const ChatUI = () => {
         {/* Xóa tin nhắn */}
         <MenuItem onClick={handleDeleteMessage}>
           <ListItemIcon>
-            <DeleteOutlineIcon fontSize="small" />
+            <DeleteIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Xóa</ListItemText>
         </MenuItem>

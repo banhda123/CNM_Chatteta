@@ -56,6 +56,46 @@ const Layout = ({ children }) => {
     
     setCurrentRoute(route.name);
   }, [route]);
+  
+  // Always refresh user data when component renders
+  useEffect(() => {
+    const userData = AuthService.getUserData();
+    if (userData) {
+      setUser(userData);
+    }
+    
+    // Listen for avatar updates (from within the same browser)
+    const handleAvatarUpdated = (event) => {
+      setUser(prevUser => ({
+        ...prevUser,
+        avatar: event.detail.avatar
+      }));
+    };
+    
+    // Listen for socket avatar updates (from other users)
+    const handleSocketAvatarUpdated = (data) => {
+      // Only update if this is about another user (not our own update)
+      const currentUserId = userData?._id;
+      if (currentUserId && data.userId === currentUserId) {
+        return; // Skip if it's our own update (already handled by custom event)
+      }
+      
+      // If it's not about the current user, we don't need to update our avatar
+      // This would only be used in cases where we're displaying other users' avatars in this component
+    };
+    
+    // Add event listener for avatar updates
+    window.addEventListener('user-avatar-updated', handleAvatarUpdated);
+    
+    // Register socket listener for avatar updates from other users
+    SocketService.onAvatarUpdated(handleSocketAvatarUpdated);
+    
+    // Clean up
+    return () => {
+      window.removeEventListener('user-avatar-updated', handleAvatarUpdated);
+      SocketService.removeListener('avatar_updated');
+    };
+  }, []);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);

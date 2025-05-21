@@ -693,29 +693,6 @@ export const cancelFriendRequest = async (req, res) => {
   }
 };
 
-export const findUsersByContacts = async (req, res) => {
-  try {
-    const { contacts } = req.body;
-    
-    if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
-      return res.status(400).json({ message: "Danh sách liên hệ không hợp lệ" });
-    }
-    
-    // Lấy danh sách số điện thoại
-    const phoneNumbers = contacts.map(contact => contact.phoneNumber);
-    
-    // Tìm người dùng theo số điện thoại
-    const users = await UsersModel.find({
-      phone: { $in: phoneNumbers }
-    }).select('_id name avatar phone'); // Chỉ lấy các thông tin cần thiết
-    
-    res.status(200).json(users);
-  } catch (error) {
-    console.error("Error finding users by contacts:", error);
-    res.status(500).json({ message: "Lỗi server" });
-  }
-};
-
 // Xử lý API từ client để huỷ kết bạn
 export const removeFriend = async (req, res) => {
   try {

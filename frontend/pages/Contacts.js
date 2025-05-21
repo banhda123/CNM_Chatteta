@@ -45,7 +45,6 @@ import UserService from '../services/UserService';
 import AuthService from '../services/AuthService';
 import SocketService from '../services/SocketService';
 import defaultAvatar from '../assets/default-avatar.png';
-import ContactSync from '../components/ContactSync';
 import FriendRequestNotification from '../components/FriendRequestNotification';
 
 // Create custom Alert component using MUI
@@ -754,7 +753,7 @@ const Contacts = () => {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        overflow: 'hidden' // Ngăn không cho toàn bộ paper cuộn
+        overflow: 'hidden'
       }}>
         {/* Header cố định */}
         <Box sx={{ 
@@ -762,12 +761,11 @@ const Contacts = () => {
           justifyContent: 'space-between', 
           alignItems: 'center', 
           mb: 3,
-          flexShrink: 0 // Ngăn header co lại
+          flexShrink: 0
         }}>
           <Typography variant="h5" component="h1" gutterBottom>
             Contacts
           </Typography>
-          <ContactSync onContactsImported={loadFriends} />
         </Box>
 
         {/* Tabs cố định */}
@@ -781,7 +779,7 @@ const Contacts = () => {
             borderBottom: 1, 
             borderColor: 'divider', 
             mb: 2,
-            flexShrink: 0 // Ngăn tabs co lại
+            flexShrink: 0
           }}
         >
           <Tab 

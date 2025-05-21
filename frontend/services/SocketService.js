@@ -190,10 +190,24 @@ class SocketService {
   // Thêm phương thức mới để emit sự kiện khi xóa thành viên khỏi nhóm
   static emitMemberRemovedFromGroup(data) {
     if (this.socket) {
-      Logger.info('Emitting member removed from group event', { 
-        conversationId: data.conversationId,
-        memberId: data.memberId 
+      Logger.info('Emitting member removed from group', { 
+        conversation: data.conversationId,
+        member: data.memberId,
+        removedBy: data.removedBy,
+        memberName: data.memberName,
+        removedByName: data.removedByName
       });
+      
+      // Log chi tiết để debug
+      console.log('🔔 Gửi sự kiện member_removed_from_group:', {
+        conversationId: data.conversationId,
+        memberId: data.memberId,
+        removedBy: data.removedBy,
+        memberName: data.memberName,
+        removedByName: data.removedByName,
+        timestamp: data.timestamp
+      });
+      
       this.socket.emit('member_removed_from_group', data);
     }
   }
@@ -490,7 +504,9 @@ class SocketService {
         conversation: data.conversationId,
         member: data.memberId,
         removedBy: data.removedBy,
-        timestamp: data.timestamp
+        timestamp: data.timestamp,
+        memberName: data.memberName,
+        removedByName: data.removedByName
       });
       
       // Log chi tiết để debug
@@ -499,7 +515,9 @@ class SocketService {
         memberId: data.memberId,
         removedBy: data.removedBy,
         groupName: data.groupName,
-        timestamp: data.timestamp
+        timestamp: data.timestamp,
+        memberName: data.memberName,
+        removedByName: data.removedByName
       });
       
       // Thực hiện callback với đầy đủ dữ liệu
@@ -972,9 +990,24 @@ class SocketService {
 
   // Queue notifications for multiple friend requests
   static onNotificationQueueUpdated(callback) {
-    return this.registerEventListener('notification_queue_updated', (queueData) => {
-      console.log('Notification queue updated', queueData);
-      callback(queueData);
+    return this.registerEventListener('notification_queue_updated', (data) => {
+      Logger.info('Notification queue updated', { count: data.count });
+      callback(data);
+    });
+  }
+
+  // Avatar update methods
+  static emitAvatarUpdated(userId, avatarUrl) {
+    if (this.socket) {
+      Logger.info('Broadcasting avatar update', { userId, avatarUrl });
+      this.socket.emit('avatar_updated', { userId, avatarUrl });
+    }
+  }
+
+  static onAvatarUpdated(callback) {
+    return this.registerEventListener('avatar_updated', (data) => {
+      Logger.info('Received avatar update', { userId: data.userId });
+      callback(data);
     });
   }
 }
