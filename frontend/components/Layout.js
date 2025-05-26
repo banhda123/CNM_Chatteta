@@ -31,22 +31,28 @@ import {
   Notifications as NotificationsIcon,
   Check as CheckIcon,
   Close as CloseIcon,
-  Schedule as ScheduleIcon
+  Schedule as ScheduleIcon,
+  Settings as SettingsIcon,
+  Language as LanguageIcon
 } from '@mui/icons-material';
 import { useTheme } from '../contexts/ThemeContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import AuthService from '../services/AuthService';
 import UserService from '../services/UserService';
 import SocketService from '../services/SocketService';
 import FriendRequestNotification from './FriendRequestNotification';
+import SettingsDialog from './SettingsDialog';
 
 const Layout = ({ children }) => {
   const navigation = useNavigation();
   const route = useRoute();
   const muiTheme = useMuiTheme();
   const { isDarkMode, toggleTheme } = useTheme();
+  const { t } = useLanguage();
   const [user, setUser] = useState({});
   const [mobileOpen, setMobileOpen] = useState(false);
   const [currentRoute, setCurrentRoute] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const userData = AuthService.getUserData();
@@ -119,22 +125,22 @@ const Layout = ({ children }) => {
 
   const menuItems = [
     { 
-      name: 'Trò chuyện', 
+      name: t('chat'), 
       icon: <ChatIcon color={currentRoute === 'Chat' ? 'primary' : 'inherit'} />, 
       route: 'Chat' 
     },
     { 
-      name: 'Hồ sơ', 
+      name: t('profile'), 
       icon: <PersonIcon color={currentRoute === 'Profile' ? 'primary' : 'inherit'} />, 
       route: 'Profile' 
     },
     { 
-      name: 'Danh bạ', 
+      name: t('contacts'), 
       icon: <ContactsIcon color={currentRoute === 'Contacts' ? 'primary' : 'inherit'} />, 
       route: 'Contacts' 
     },
     { 
-      name: 'Trò chuyện Gemini', 
+      name: t('geminiChat'), 
       icon: <SmartToyIcon color={currentRoute === 'GeminiChat' ? 'primary' : 'inherit'} />, 
       route: 'GeminiChat' 
     },
@@ -264,7 +270,28 @@ const Layout = ({ children }) => {
             </ListItemIcon>
           </ListItem>
         </Tooltip>
-        <Tooltip title="Đăng xuất" placement="right">
+        <Tooltip title={t('settings')} placement="right">
+          <ListItem 
+            button 
+            onClick={() => setSettingsOpen(true)}
+            sx={{
+              p: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              mx: 'auto', // Center horizontally
+              my: 0.5, // Consistent vertical spacing
+              width: '80%', // Consistent width
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 'auto', justifyContent: 'center' }}>
+              <SettingsIcon />
+            </ListItemIcon>
+          </ListItem>
+        </Tooltip>
+        
+        <Tooltip title={t('logout')} placement="right">
           <ListItem 
             button 
             onClick={handleLogout}
@@ -372,6 +399,12 @@ const Layout = ({ children }) => {
       >
         {children}
       </Box>
+      
+      {/* Settings Dialog */}
+      <SettingsDialog 
+        visible={settingsOpen} 
+        onClose={() => setSettingsOpen(false)} 
+      />
     </Box>
   );
 };

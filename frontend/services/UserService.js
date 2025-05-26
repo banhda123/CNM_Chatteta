@@ -1,12 +1,52 @@
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
-const API_URL = "http://localhost:4000/user"; // Replace with your actual API base URL
+import { API_URL as BASE_API_URL, getApiUrl } from "../config/constants";
+
+// Khởi tạo với giá trị mặc định
+let API_URL = `${BASE_API_URL}/user`;
+
+// Hàm helper để lấy API URL hiện tại
+const getBaseUrl = async () => {
+  try {
+    const baseUrl = await getApiUrl();
+    return baseUrl;
+  } catch (error) {
+    console.error('Error getting API URL, using default', error);
+    return BASE_API_URL;
+  }
+};
+
+// Hàm helper để tạo URL API đầy đủ
+const getApiEndpoint = async (endpoint) => {
+  const baseUrl = await getBaseUrl();
+  return `${baseUrl}/user${endpoint}`;
+};
+
+// Cập nhật API URL khi có thay đổi
+const updateServiceApiUrl = async () => {
+  try {
+    const baseUrl = await getBaseUrl();
+    API_URL = `${baseUrl}/user`;
+    console.log('User API URL updated:', API_URL);
+  } catch (error) {
+    console.error('Failed to update User API URL', error);
+  }
+};
+
+// Gọi hàm này khi khởi động ứng dụng
+updateServiceApiUrl();
 
 const UserService = {
   // Basic User Operations
   getAllUsers: async () => {
     try {
-      const response = await axios.get(`${API_URL}/`);
+      // Đảm bảo lấy URL mới nhất trước khi gọi API
+      await updateServiceApiUrl();
+      
+      const apiUrl = `${API_URL}/`;
+      console.log('Get All Users URL:', apiUrl);
+      
+      const response = await axios.get(apiUrl);
       return response.data;
     } catch (error) {
       console.error("Error fetching all users:", error);
@@ -39,7 +79,13 @@ const UserService = {
   // Authentication
   login: async (phone, password) => {
     try {
-      const response = await axios.post(`${API_URL}/login`, {
+      // Đảm bảo lấy URL mới nhất trước khi gọi API
+      await updateServiceApiUrl();
+      
+      const apiUrl = `${API_URL}/login`;
+      console.log('Login URL (UserService):', apiUrl);
+      
+      const response = await axios.post(apiUrl, {
         phone,
         password,
       });

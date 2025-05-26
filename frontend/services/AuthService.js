@@ -1,6 +1,39 @@
 import axios from "axios";
+import { API_URL as BASE_API_URL, getApiUrl } from "../config/constants";
 
-const API_URL = "http://localhost:4000/user";
+// Khởi tạo với giá trị mặc định
+let API_URL = `${BASE_API_URL}/user`;
+
+// Hàm helper để lấy API URL hiện tại
+const getBaseUrl = async () => {
+  try {
+    const baseUrl = await getApiUrl();
+    return baseUrl;
+  } catch (error) {
+    console.error('Error getting API URL, using default', error);
+    return BASE_API_URL;
+  }
+};
+
+// Hàm helper để tạo URL API đầy đủ
+const getApiEndpoint = async (endpoint) => {
+  const baseUrl = await getBaseUrl();
+  return `${baseUrl}/user${endpoint}`;
+};
+
+// Cập nhật API URL khi có thay đổi
+const updateServiceApiUrl = async () => {
+  try {
+    const baseUrl = await getBaseUrl();
+    API_URL = `${baseUrl}/user`;
+    console.log('Auth API URL updated:', API_URL);
+  } catch (error) {
+    console.error('Failed to update Auth API URL', error);
+  }
+};
+
+// Gọi hàm này khi khởi động ứng dụng
+updateServiceApiUrl();
 
 // Thêm Logger để theo dõi quá trình xác thực
 const Logger = {
@@ -103,7 +136,17 @@ const AuthService = {
     try {
       Logger.info('Attempting login', { phone });
       
-      const response = await axios.post(`${API_URL}/login`, {
+      // Đảm bảo lấy URL mới nhất trước khi gọi API
+      await updateServiceApiUrl();
+      
+      // Sử dụng API URL hiện tại
+      const currentApiUrl = `${API_URL}/login`;
+      Logger.info('Using API URL', { url: currentApiUrl });
+      
+      // In ra URL để debug
+      console.log('Login URL:', currentApiUrl);
+      
+      const response = await axios.post(currentApiUrl, {
         phone,
         password,
       });
@@ -143,7 +186,17 @@ const AuthService = {
     try {
       Logger.info('Attempting registration', { phone });
       
-      const response = await axios.post(`${API_URL}/register`, {
+      // Đảm bảo lấy URL mới nhất trước khi gọi API
+      await updateServiceApiUrl();
+      
+      // Sử dụng API URL hiện tại
+      const currentApiUrl = `${API_URL}/register`;
+      Logger.info('Using API URL', { url: currentApiUrl });
+      
+      // In ra URL để debug
+      console.log('Register URL:', currentApiUrl);
+      
+      const response = await axios.post(currentApiUrl, {
         name,
         phone,
         password,
@@ -181,10 +234,18 @@ const AuthService = {
   // Send OTP method
   sendOTP: async (phone) => {
     try {
-      const response = await axios.post(`${API_URL}/sendmail`, {
-        email: phone, // API is using email field for OTP
-      });
-
+      // Đảm bảo lấy URL mới nhất trước khi gọi API
+      await updateServiceApiUrl();
+      
+      // Sử dụng API URL hiện tại
+      const currentApiUrl = `${API_URL}/sendOTP`;
+      Logger.info('Using API URL for OTP', { url: currentApiUrl });
+      
+      // In ra URL để debug
+      console.log('Send OTP URL:', currentApiUrl);
+      
+      const response = await axios.post(currentApiUrl, { phone });
+      
       return { success: true, data: response.data };
     } catch (error) {
       console.error("Send OTP error:", error);
@@ -198,11 +259,21 @@ const AuthService = {
   // Verify OTP method
   verifyOTP: async (phone, otp) => {
     try {
-      const response = await axios.post(`${API_URL}/checkotp`, {
-        email: phone, // API is using email field
+      // Đảm bảo lấy URL mới nhất trước khi gọi API
+      await updateServiceApiUrl();
+      
+      // Sử dụng API URL hiện tại
+      const currentApiUrl = `${API_URL}/verifyOTP`;
+      Logger.info('Using API URL for OTP verification', { url: currentApiUrl });
+      
+      // In ra URL để debug
+      console.log('Verify OTP URL:', currentApiUrl);
+      
+      const response = await axios.post(currentApiUrl, {
+        phone,
         otp,
       });
-
+      
       return { success: true, data: response.data };
     } catch (error) {
       console.error("Verify OTP error:", error);
@@ -289,24 +360,34 @@ const AuthService = {
   // Get current user with complete data
   getCurrentUser: async () => {
     try {
-      // First try to get from localStorage
       const userData = AuthService.getUserData();
-      
       if (!userData || !userData._id) {
-        Logger.warn('No user data found in localStorage');
         return null;
       }
       
-      // Get token
       const token = AuthService.getAccessToken();
       if (!token) {
-        Logger.warn('No access token available');
-        return userData; // Return basic user data if no token
+        return userData; // Trả về dữ liệu cơ bản nếu không có token
       }
       
-      // Get full user data from server if needed
-      // For now just return the stored user data
-      return userData;
+      // Đảm bảo lấy URL mới nhất trước khi gọi API
+      await updateServiceApiUrl();
+      
+      // Sử dụng API URL hiện tại
+      const currentApiUrl = `${API_URL}/me`;
+      Logger.info('Using API URL for user data', { url: currentApiUrl });
+      
+      // In ra URL để debug
+      console.log('Get User URL:', currentApiUrl);
+      
+      // Lấy thông tin đầy đủ từ API
+      const response = await axios.get(currentApiUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      return response.data;
     } catch (error) {
       Logger.error('Error getting current user', error);
       return null;
@@ -406,17 +487,31 @@ const AuthService = {
   // Lấy token mới từ refresh token
   refreshToken: async () => {
     try {
-      Logger.info('Refreshing token');
+      // Đánh dấu đang refresh token
+      isRefreshing = true;
       
-      const refreshToken = localStorage.getItem('refreshToken');
+      // Lấy refresh token từ localStorage
+      const refreshToken = localStorage.getItem("refreshToken");
       
       if (!refreshToken) {
-        Logger.warn('No refresh token available');
-        return null;
+        throw new Error("No refresh token available");
       }
       
-      const response = await axios.post(`${API_URL}/refresh-token`, {
-        refreshToken
+      Logger.info('Refreshing token');
+      
+      // Đảm bảo lấy URL mới nhất trước khi gọi API
+      await updateServiceApiUrl();
+      
+      // Sử dụng API URL hiện tại
+      const currentApiUrl = `${API_URL}/refresh-token`;
+      Logger.info('Using API URL for token refresh', { url: currentApiUrl });
+      
+      // In ra URL để debug
+      console.log('Refresh Token URL:', currentApiUrl);
+      
+      // Gọi API refresh token
+      const response = await axios.post(currentApiUrl, {
+        refreshToken,
       });
       
       if (response.data && response.data.token) {
@@ -558,8 +653,18 @@ const AuthService = {
         throw new Error('Không có thông tin người dùng');
       }
       
+      // Đảm bảo lấy URL mới nhất trước khi gọi API
+      await updateServiceApiUrl();
+      
+      // Sử dụng API URL hiện tại
+      const currentApiUrl = `${API_URL}/unFriend`;
+      Logger.info('Using API URL for unfriend', { url: currentApiUrl });
+      
+      // In ra URL để debug
+      console.log('Remove Friend URL:', currentApiUrl);
+      
       // Gọi API để huỷ kết bạn
-      const response = await axios.post(`${API_URL}/unFriend`, {
+      const response = await axios.post(currentApiUrl, {
         userFrom: userData._id,
         userTo: friendId
       }, {

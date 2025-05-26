@@ -77,8 +77,42 @@ if (process.env.NODE_ENV === 'production') {
 import axios from "axios";
 import AuthService from "./AuthService";
 import SocketService from "./SocketService";
+import GeminiService from "./GeminiService";
+import { API_URL as BASE_API_URL, getApiUrl } from "../config/constants";
 
-const API_URL = "http://localhost:4000/chat"; // Update with your backend URL
+// Tạo hàm helper để lấy API URL hiện tại
+const getBaseUrl = async () => {
+  try {
+    const baseUrl = await getApiUrl();
+    return baseUrl;
+  } catch (error) {
+    console.error('Error getting API URL, using default', error);
+    return BASE_API_URL;
+  }
+};
+
+// Khởi tạo với giá trị mặc định
+let API_URL = `${BASE_API_URL}/chat`;
+
+// Hàm helper để tạo URL API đầy đủ
+const getApiEndpoint = async (endpoint) => {
+  const baseUrl = await getBaseUrl();
+  return `${baseUrl}/chat${endpoint}`;
+};
+
+// Cập nhật API URL khi có thay đổi
+const updateServiceApiUrl = async () => {
+  try {
+    const baseUrl = await getBaseUrl();
+    API_URL = `${baseUrl}/chat`;
+    Logger.info('API URL updated', { API_URL });
+  } catch (error) {
+    Logger.error('Failed to update API URL', error);
+  }
+};
+
+// Gọi hàm này khi khởi động ứng dụng
+updateServiceApiUrl();
 
 class ChatService {
   // Get conversation by ID
@@ -980,12 +1014,15 @@ class ChatService {
     }
   }
 
-  // Send GIF message using Cloudinary URL
-  static async sendGifMessage(conversationId, senderId, gifUrl, token, caption = '') {
+  // Gửi tin nhắn GIF từ Giphy API
+  static async sendGifMessage(conversationId, senderId, gifData, token, caption = '') {
     try {
-      if (!conversationId || !senderId || !gifUrl) {
+      if (!conversationId || !senderId || !gifData) {
         throw new Error("Missing required data for sending GIF");
       }
+      
+      // Lấy URL của GIF từ dữ liệu Giphy
+      const gifUrl = gifData.original || gifData.url;
       
       // Create message data for GIF
       const messageData = {
@@ -1011,24 +1048,24 @@ class ChatService {
         config
       );
       
-      // Gửi qua socket để tất cả người dùng nhận được ngay lập tức
-      SocketService.sendMessage(messageData);
+      // Lấy tin nhắn đã được lưu vào database với ID chính xác
+      const savedMessage = response.data;
       
-      return response.data || messageData;
+      // Chỉ gửi qua socket nếu lưu vào database thành công
+      // Và gửi với ID chính xác từ database để tránh duplicate
+      if (savedMessage && savedMessage._id) {
+        SocketService.sendMessage({
+          ...messageData,
+          _id: savedMessage._id,
+          id: savedMessage._id
+        });
+      }
+      
+      return savedMessage || messageData;
     } catch (error) {
       console.error("Error sending GIF message:", error);
-      // Vẫn gửi qua socket ngay cả khi HTTP request lỗi
-      try {
-        SocketService.sendMessage({
-          idConversation: conversationId,
-          sender: senderId,
-          fileUrl: gifUrl,
-          type: 'gif',
-          content: caption
-        });
-      } catch (socketError) {
-        console.error("Failed to send GIF via socket after HTTP error:", socketError);
-      }
+      // Không gửi qua socket nếu HTTP request lỗi để tránh duplicate
+      // Nếu cần hiển thị tin nhắn tạm thời, hãy xử lý ở phía UI thay vì gửi qua socket
       throw error;
     }
   }
@@ -1138,6 +1175,127 @@ class ChatService {
     } catch (error) {
       Logger.error("Error fetching conversation links", error);
       return [];
+    }
+  }
+  
+  // Process @AIGemini commands in messages
+  static async processAIGeminiMessage(message, conversationId, senderId) {
+    try {
+      Logger.info('Processing @AIGemini message', { conversationId });
+      
+      // Extract the query from the message (remove @AIGemini prefix)
+      // Hỗ trợ cả hai cách viết @AIGemini và @AiGemini
+      const aiPrefixes = ['@AIGemini', '@AiGemini'];
+      let matchedPrefix = null;
+      
+      for (const prefix of aiPrefixes) {
+        if (message.trim().startsWith(prefix)) {
+          matchedPrefix = prefix;
+          break;
+        }
+      }
+      
+      if (!matchedPrefix) {
+        return null; // Not an AI message
+      }
+      
+      const query = message.substring(matchedPrefix.length).trim();
+      if (!query) {
+        return {
+          error: true,
+          message: 'Vui lòng nhập nội dung câu hỏi sau @AIGemini'
+        };
+      }
+      
+      // Tạo tin nhắn tạm thời của người dùng để hiển thị ngay lập tức
+      const tempUserMessage = {
+        id: `temp-user-${Date.now()}`,
+        _id: `temp-user-${Date.now()}`,
+        idConversation: conversationId,
+        sender: senderId,
+        content: message,
+        type: 'text',
+        createdAt: new Date().toISOString(),
+        status: 'sending'
+      };
+      
+      // Tạo tin nhắn tạm thời của AI để hiển thị trạng thái đang xử lý
+      const tempAIMessage = {
+        id: `temp-ai-${Date.now()}`,
+        _id: `temp-ai-${Date.now()}`,
+        idConversation: conversationId,
+        sender: 'ai-gemini', // ID của Gemini AI
+        content: 'Đang xử lý yêu cầu của bạn...',
+        type: 'text',
+        createdAt: new Date().toISOString(),
+        status: 'sending',
+        isAI: true
+      };
+      
+      // Trả về cả hai tin nhắn tạm thời để hiển thị trước
+      const tempMessages = [tempUserMessage, tempAIMessage];
+      
+      // Gọi API để gửi tin nhắn của người dùng
+      const token = AuthService.getAccessToken();
+      const userMessageData = {
+        idConversation: conversationId,
+        sender: senderId,
+        content: message,
+        type: 'text'
+      };
+      
+      // Gửi tin nhắn của người dùng
+      const userMessageResponse = await this.sendMessage(userMessageData, token);
+      
+      // Gọi API Gemini trực tiếp qua backend
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      // Gọi API endpoint /chat/gemini/message
+      const geminiResponse = await axios.post(
+        `${API_URL.replace('/chat', '')}/chat/gemini/message`,
+        {
+          content: message, // Gửi tin nhắn gốc bao gồm cả @AIGemini
+          conversationId: conversationId,
+          sender: senderId // Thêm thông tin người gửi
+        },
+        config
+      );
+      
+      Logger.info('Gemini response received', geminiResponse.data);
+      
+      // Cập nhật tin nhắn AI với nội dung thực tế
+      const aiMessageContent = geminiResponse.data?.data?.content || 'Không nhận được phản hồi từ Gemini.';
+      const aiMessage = {
+        id: `ai-${Date.now()}`,
+        _id: geminiResponse.data?.data?._id || `ai-${Date.now()}`,
+        idConversation: conversationId,
+        sender: 'ai-gemini', // ID của Gemini AI
+        content: aiMessageContent,
+        type: 'text',
+        createdAt: new Date().toISOString(),
+        status: 'sent',
+        isAI: true
+      };
+      
+      return {
+        success: true,
+        tempMessages: tempMessages,
+        userMessage: userMessageResponse,
+        aiMessage: aiMessage,
+        aiResponse: aiMessageContent
+      };
+    } catch (error) {
+      Logger.error("Error processing @AIGemini message", error);
+      console.error("Error details:", error?.response?.data || error);
+      return {
+        error: true,
+        message: 'Không thể xử lý yêu cầu AI. Vui lòng thử lại sau.'
+      };
     }
   }
 }

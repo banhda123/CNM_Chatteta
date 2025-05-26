@@ -76,6 +76,7 @@ if (process.env.NODE_ENV === 'production') {
 
 import { io } from 'socket.io-client';
 import AuthService from './AuthService';
+import { API_URL as BASE_API_URL, getApiUrl } from "../config/constants";
 
 class SocketService {
   static socket = null;
@@ -98,7 +99,13 @@ class SocketService {
     }
 
     Logger.info('Creating new socket connection');
-    this.socket = io('http://localhost:4000', {
+    
+    // Sử dụng URL từ constants.js
+    // Lấy phần base URL (không có "/api" nếu có)
+    const socketUrl = BASE_API_URL.replace(/\/api$/, '');
+    Logger.info('Using socket URL', { url: socketUrl });
+    
+    this.socket = io(socketUrl, {
       transports: ['websocket'],
       autoConnect: true,
       reconnection: true,
@@ -121,11 +128,48 @@ class SocketService {
     this.socket.on('disconnect', () => {
       Logger.info('Socket disconnected');
       this.isConnected = false;
+      
+      // Thêm logic để thông báo cho người dùng về việc mất kết nối
+      if (this._onDisconnectCallback) {
+        this._onDisconnectCallback();
+      }
     });
 
     this.socket.on('connect_error', (error) => {
       Logger.error('Socket connection error', error);
       this.isConnected = false;
+      
+      // Thêm logic để thử kết nối lại sau một khoảng thời gian
+      if (!this._reconnectTimer) {
+        this._reconnectTimer = setTimeout(() => {
+          Logger.info('Attempting to reconnect after connection error...');
+          this.socket.connect();
+          this._reconnectTimer = null;
+        }, 5000); // Thử kết nối lại sau 5 giây
+      }
+    });
+    
+    this.socket.on('reconnect', (attemptNumber) => {
+      Logger.info(`Socket reconnected after ${attemptNumber} attempts`);
+      
+      // Thông báo cho người dùng về việc đã kết nối lại
+      if (this._onReconnectCallback) {
+        this._onReconnectCallback();
+      }
+      
+      // Tự động tham gia lại các phòng
+      const userData = AuthService.getUserData();
+      if (userData && userData._id) {
+        this.joinUserRoom(userData);
+        
+        // Đồng bộ tin nhắn sau khi kết nối lại
+        if (this._cachedConversations && this._cachedConversations.length > 0) {
+          Logger.info('Auto-syncing conversations after reconnect', { count: this._cachedConversations.length });
+          this.syncAllConversations(this._cachedConversations);
+        } else {
+          Logger.warn('No cached conversations available for sync after reconnect');
+        }
+      }
     });
 
     return this.socket;
@@ -423,8 +467,48 @@ class SocketService {
         id: data.conversation?._id,
         hasNewMessage: !!data.newMessage
       });
+      
+      // Cập nhật cache cuộc trò chuyện nếu có
+      if (data.conversation && data.conversation._id) {
+        this.updateConversationCache(data.conversation);
+      }
+      
       callback(data);
     });
+  }
+  
+  // Thêm phương thức để lưu trữ danh sách cuộc trò chuyện
+  static cacheConversations(conversations) {
+    if (!Array.isArray(conversations)) return;
+    
+    // Khởi tạo cache nếu chưa có
+    if (!this._cachedConversations) {
+      this._cachedConversations = [];
+    }
+    
+    // Lưu trữ danh sách cuộc trò chuyện
+    this._cachedConversations = [...conversations];
+    Logger.debug(`Cached ${this._cachedConversations.length} conversations for sync`);
+  }
+  
+  // Cập nhật một cuộc trò chuyện trong cache
+  static updateConversationCache(conversation) {
+    if (!conversation || !conversation._id) return;
+    
+    // Khởi tạo cache nếu chưa có
+    if (!this._cachedConversations) {
+      this._cachedConversations = [];
+    }
+    
+    // Tìm và cập nhật cuộc trò chuyện trong cache
+    const index = this._cachedConversations.findIndex(c => c._id === conversation._id);
+    if (index >= 0) {
+      this._cachedConversations[index] = conversation;
+      Logger.debug(`Updated conversation ${conversation._id} in cache`);
+    } else {
+      this._cachedConversations.push(conversation);
+      Logger.debug(`Added new conversation ${conversation._id} to cache`);
+    }
   }
   
   // Group chat event listeners
@@ -721,6 +805,18 @@ class SocketService {
       this.socket.removeAllListeners();
     }
   }
+  
+  // Thêm phương thức để đăng ký callback khi mất kết nối
+  static onDisconnect(callback) {
+    this._onDisconnectCallback = callback;
+    return true;
+  }
+  
+  // Thêm phương thức để đăng ký callback khi kết nối lại
+  static onReconnect(callback) {
+    this._onReconnectCallback = callback;
+    return true;
+  }
 
   // Getter để lấy socketId hiện tại
   static getSocketId() {
@@ -845,6 +941,37 @@ class SocketService {
       Logger.info('Received synced messages', { count: data.messages?.length || 0 });
       callback(data);
     });
+  }
+  
+  // Thêm phương thức để đồng bộ tin nhắn cho tất cả các cuộc trò chuyện sau khi kết nối lại
+  static syncAllConversations(conversations) {
+    if (!this.socket || !Array.isArray(conversations) || conversations.length === 0) {
+      return;
+    }
+    
+    Logger.info(`Syncing messages for ${conversations.length} conversations after reconnect`);
+    
+    // Lấy thời gian hiện tại làm mốc để đồng bộ
+    const syncStartTime = new Date();
+    
+    // Đồng bộ từng cuộc trò chuyện
+    conversations.forEach(conversation => {
+      if (!conversation || !conversation._id) return;
+      
+      // Tìm thời gian tin nhắn cuối cùng nếu có
+      let lastMessageTime = null;
+      if (conversation.lastMessage && conversation.lastMessage.createdAt) {
+        lastMessageTime = new Date(conversation.lastMessage.createdAt).toISOString();
+      }
+      
+      // Đồng bộ tin nhắn
+      this.syncMessages(lastMessageTime, conversation._id);
+      
+      // Tham gia lại phòng cuộc trò chuyện
+      this.joinConversation(conversation._id);
+    });
+    
+    return syncStartTime;
   }
 
   // Thông báo chỉ định người nhập trong nhóm

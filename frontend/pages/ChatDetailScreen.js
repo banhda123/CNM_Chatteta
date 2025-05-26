@@ -39,7 +39,8 @@ import {
   Divider,
   Slide,
   useTheme as useMuiTheme,
-  ButtonGroup
+  ButtonGroup,
+  Snackbar
 } from "@mui/material";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
 import {
@@ -91,7 +92,7 @@ import MessageReactions from "../components/MessageReactions";
 import CreateGroupDialog from "../components/CreateGroupDialog";
 import GroupMembersDialog from "../components/GroupMembersDialog";
 import EditGroupDialog from "../components/EditGroupDialog";
-import GifGallery from "../components/GifGallery"; // Import GifGallery component
+import GiphyGallery from "../components/GiphyGallery";
 import GifIcon from '@mui/icons-material/Gif';
 import PinnedMessageBanner from "../components/PinnedMessageBanner";
 import PinnedMessagesDialog from "../components/PinnedMessagesDialog";
@@ -203,12 +204,17 @@ const ChatUI = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredConversations, setFilteredConversations] = useState([]);
   const [messages, setMessages] = useState([]);
-  const [phone, setPhone] = useState("");
-  const [foundUser, setFoundUser] = useState(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingUsers, setTypingUsers] = useState({});
+  const [isProcessingAI, setIsProcessingAI] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [loading, setLoading] = useState({
     conversations: true,
     messages: true,
   });
+  const [showAIMention, setShowAIMention] = useState(false);
+  const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const [user, setUser] = useState({
@@ -258,8 +264,6 @@ const ChatUI = () => {
     return otherUser && otherUser.name === 'Gemini AI';
   };
 
-  const [typingUsers, setTypingUsers] = useState({});
-  const [isTyping, setIsTyping] = useState(false);
   // Thêm state cho danh sách người dùng online
   const [onlineUsers, setOnlineUsers] = useState([]);
   // Thêm state để kiểm soát hiển thị danh sách cuộc trò chuyện trên mobile
@@ -1065,6 +1069,12 @@ const ChatUI = () => {
       
       // Add or update message in the list
       setMessages((prev) => {
+        // Kiểm tra nếu tin nhắn này là GIF và đã được gửi trước đó
+        if (message.type === 'gif' && sentGifIds.current.has(message._id)) {
+          console.log('💯 GIF message already processed, skipping:', message._id);
+          return prev; // Không thêm tin nhắn vào danh sách
+        }
+        
         // Check if this message already exists in our list
         const existingIndex = prev.findIndex(
           (msg) =>
@@ -1100,7 +1110,7 @@ const ChatUI = () => {
                 content: message.content || msg.content      // Keep content
               };
               
-              console.log('📄 Updated message data:', enhancedMessage);
+              console.log('📜 Updated message data:', enhancedMessage);
               return enhancedMessage;
             }
             return msg;
@@ -1134,6 +1144,11 @@ const ChatUI = () => {
             if (!message.fileName && existingIndex !== -1) {
               enhancedMessage.fileName = prev[existingIndex].fileName;
             }
+          }
+          
+          // Nếu là tin nhắn GIF, thêm vào danh sách đã xử lý
+          if (message.type === 'gif' && message._id) {
+            sentGifIds.current.add(message._id);
           }
           
           // If no duplicates, add to list
@@ -1570,6 +1585,72 @@ const ChatUI = () => {
   const handleSendMessage = async () => {
     // Kiểm tra nếu không có tin nhắn hoặc không có cuộc trò chuyện
     if ((!newMessage.trim() && !selectedFile) || !activeConversation?._id) return;
+    
+    // Kiểm tra nếu tin nhắn bắt đầu bằng @AIGemini hoặc @AiGemini
+    if (newMessage.trim().startsWith('@AIGemini') || newMessage.trim().startsWith('@AiGemini')) {
+      try {
+        // Hiển thị trạng thái đang xử lý
+        setIsProcessingAI(true);
+        
+        // Gọi API để xử lý tin nhắn AI
+        const result = await ChatService.processAIGeminiMessage(
+          newMessage.trim(),
+          activeConversation._id,
+          userId
+        );
+        
+        // Xử lý kết quả
+        if (result?.error) {
+          // Hiển thị thông báo lỗi
+          setSnackbarMessage(result.message);
+          setSnackbarOpen(true);
+        } else if (result?.success) {
+          // Hiển thị tin nhắn tạm thời
+          if (result.tempMessages && Array.isArray(result.tempMessages)) {
+            // Thêm tin nhắn tạm thời vào danh sách tin nhắn
+            setMessages(prevMessages => [...prevMessages, ...result.tempMessages]);
+            
+            // Cuộn xuống dưới khi có tin nhắn mới
+            setTimeout(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            }, 100);
+            
+            // Sau khi có kết quả từ AI, cập nhật tin nhắn AI với nội dung thực tế
+            setTimeout(() => {
+              setMessages(prevMessages => {
+                // Tìm và thay thế tin nhắn AI tạm thời bằng tin nhắn thực tế
+                return prevMessages.map(msg => {
+                  // Nếu là tin nhắn AI tạm thời, thay thế bằng tin nhắn thực tế
+                  if (msg.isAI && msg.status === 'sending') {
+                    return result.aiMessage;
+                  }
+                  return msg;
+                });
+              });
+              
+              // Cuộn xuống dưới khi có tin nhắn mới
+              messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            }, 500);
+          }
+        }
+        
+        // Xóa tin nhắn và ẩn trạng thái xử lý
+        setNewMessage("");
+        setIsProcessingAI(false);
+        
+        // Xóa bản nháp tin nhắn khỏi localStorage
+        if (activeConversation?._id) {
+          localStorage.removeItem(`draft-${activeConversation._id}`);
+        }
+        
+        return; // Kết thúc hàm vì tin nhắn đã được xử lý bởi AI
+      } catch (error) {
+        console.error('Lỗi khi xử lý tin nhắn AI:', error);
+        setSnackbarMessage('Không thể xử lý yêu cầu AI. Vui lòng thử lại sau.');
+        setSnackbarOpen(true);
+        setIsProcessingAI(false);
+      }
+    }
 
     // Log thông tin thành viên trước khi gửi tin nhắn
     console.log(`📊 Trước khi gửi tin nhắn - Số thành viên: ${activeConversation.members?.length || 0}`);
@@ -1933,6 +2014,9 @@ const ChatUI = () => {
     inputRef.current?.focus();
   };
 
+  // Lưu trữ ID của tin nhắn GIF đã gửi để tránh hiển thị trùng lặp
+  const sentGifIds = useRef(new Set());
+  
   const handleSendGif = async (gif) => {
     try {
       if (!activeConversation?._id || !userId) return;
@@ -1944,13 +2028,27 @@ const ChatUI = () => {
       
       const caption = newMessage.trim();
       
-      await ChatService.sendGifMessage(
+      Logger.info('Sending GIF message', { gifData: gif });
+      
+      // Tạo ID duy nhất cho tin nhắn tạm thời
+      const tempId = `temp_gif_${Date.now()}`;
+      
+      // Lưu ID vào danh sách đã gửi
+      sentGifIds.current.add(tempId);
+      
+      // Gửi tin nhắn GIF qua API
+      const response = await ChatService.sendGifMessage(
         activeConversation._id,
         userId,
-        gif.url,
+        gif, // Truyền toàn bộ đối tượng gif từ Giphy API
         token,
         caption
       );
+      
+      // Lưu ID thực tế vào danh sách đã gửi
+      if (response && response._id) {
+        sentGifIds.current.add(response._id);
+      }
       
       if (caption) {
         setNewMessage("");
@@ -1962,7 +2060,9 @@ const ChatUI = () => {
       handleEmojiClose();
     } catch (error) {
       console.error('Error sending GIF:', error);
-      Alert.alert('Error', 'Failed to send GIF');
+      // Sử dụng Dialog thay vì Alert.alert vì đây là ứng dụng web
+      setErrorMessage('Không thể gửi GIF. Vui lòng thử lại.');
+      setErrorDialogOpen(true);
     }
   };
 
@@ -2716,13 +2816,32 @@ const ChatUI = () => {
 
   // Hàm xử lý khi nhập tin nhắn (để gửi trạng thái typing)
   const handleMessageTyping = (e) => {
-    setNewMessage(e.target.value);
+    const input = e.target.value;
+    setNewMessage(input);
     
     // Chỉ gửi sự kiện typing nếu đang trong một cuộc trò chuyện
     if (!activeConversation?._id) return;
     
+    // Kiểm tra nếu người dùng đang gõ @
+    if (input.endsWith('@') || (input.includes('@') && input.lastIndexOf('@') === input.length - 1)) {
+      // Hiển thị gợi ý @AIGemini
+      setShowAIMention(true);
+      
+      // Tính toán vị trí hiển thị gợi ý
+      if (inputRef.current) {
+        const inputRect = inputRef.current.getBoundingClientRect();
+        setMentionPosition({
+          top: inputRect.top - 40, // Hiển thị phía trên input
+          left: inputRect.left
+        });
+      }
+    } else {
+      // Ẩn gợi ý nếu không gõ @
+      setShowAIMention(false);
+    }
+    
     // Thiết lập is typing
-    const isNowTyping = e.target.value.length > 0;
+    const isNowTyping = input.length > 0;
     
     // Sử dụng debounce để giảm số lượng sự kiện gửi đi
     if (typingTimeoutRef.current) {
@@ -2761,8 +2880,8 @@ const ChatUI = () => {
     // Lưu nháp tin nhắn vào localStorage
     if (activeConversation?._id) {
       const key = `draft-${activeConversation._id}`;
-      if (e.target.value.trim()) {
-        localStorage.setItem(key, e.target.value);
+      if (input.trim()) {
+        localStorage.setItem(key, input);
       } else {
         localStorage.removeItem(key);
       }
@@ -5339,24 +5458,43 @@ const ChatUI = () => {
                     <GifIcon />
                   </IconButton>
                   
+                  {/* Popover cho GiphyGallery */}
+                  <Popover
+                    open={showGifGallery}
+                    anchorEl={emojiAnchorEl}
+                    onClose={handleEmojiClose}
+                    anchorOrigin={{
+                      vertical: 'top',
+                      horizontal: 'center',
+                    }}
+                    transformOrigin={{
+                      vertical: 'bottom',
+                      horizontal: 'center',
+                    }}
+                  >
+                    <GiphyGallery onSelectGif={handleSendGif} onClose={handleEmojiClose} />
+                  </Popover>
+                  
                   <TextField
                     fullWidth
-                    placeholder="Type a message..."
+                    placeholder="Nhập tin nhắn hoặc @ để gọi AI..."
                     value={newMessage}
                     onChange={handleMessageTyping}
                     onKeyPress={handleKeyPress}
                     inputRef={inputRef}
                     variant="outlined"
                     size="small"
+                    disabled={isProcessingAI}
                     sx={{ mx: 1 }}
+                    helperText={isProcessingAI ? "Đang xử lý yêu cầu AI..." : "Gõ @ để hiển thị gợi ý AI"}
                   />
                   
                   <IconButton
                     color="primary"
                     onClick={handleSendMessage}
-                    disabled={!newMessage.trim() && !selectedFile}
+                    disabled={(!newMessage.trim() && !selectedFile) || isProcessingAI}
                   >
-                    <SendIcon />
+                    {isProcessingAI ? <CircularProgress size={24} /> : <SendIcon />}
                   </IconButton>
                 </Box>
             </Box>
@@ -5552,6 +5690,66 @@ const ChatUI = () => {
         onClose={handleCloseProfileDialog}
         user={selectedUser}
         currentUser={user}
+      />
+      {/* Component gợi ý @AIGemini */}
+      {showAIMention && (
+        <Paper
+          sx={{
+            position: 'fixed',
+            top: mentionPosition.top,
+            left: mentionPosition.left,
+            zIndex: 1300,
+            width: 'auto',
+            p: 1,
+            boxShadow: 3,
+            borderRadius: 1
+          }}
+        >
+          <MenuItem 
+            onClick={() => {
+              // Lấy vị trí của ký tự @ trong chuỗi
+              const atIndex = newMessage.lastIndexOf('@');
+              if (atIndex !== -1) {
+                // Thay thế @ bằng @AIGemini
+                const updatedMessage = 
+                  newMessage.substring(0, atIndex) + 
+                  '@AIGemini ' + 
+                  newMessage.substring(atIndex + 1);
+                setNewMessage(updatedMessage);
+                // Ẩn gợi ý
+                setShowAIMention(false);
+                // Focus vào input
+                inputRef.current?.focus();
+              }
+            }}
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              gap: 1,
+              p: 1
+            }}
+          >
+            <SmartToyIcon color="primary" fontSize="small" />
+            <Typography>AIGemini</Typography>
+          </MenuItem>
+        </Paper>
+      )}
+      
+      {/* Snackbar để hiển thị thông báo */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={() => setSnackbarOpen(false)}
+        message={snackbarMessage}
+        action={
+          <IconButton
+            size="small"
+            color="inherit"
+            onClick={() => setSnackbarOpen(false)}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        }
       />
     </Box>
   );

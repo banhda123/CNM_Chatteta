@@ -1,5 +1,46 @@
 // API URLs
-export const API_URL = "http://localhost:4000";
+// Sử dụng giá trị từ localStorage hoặc biến môi trường hoặc giá trị mặc định
+const getDefaultApiUrl = () => {
+  // Đầu tiên, thử lấy từ localStorage
+  const savedUrl = localStorage.getItem('API_URL');
+  if (savedUrl) return savedUrl;
+  
+  // Nếu không có trong localStorage, sử dụng biến môi trường
+  if (process.env.REACT_APP_API_URL) return process.env.REACT_APP_API_URL;
+  
+  // Nếu không có biến môi trường, sử dụng giá trị mặc định
+  return "http://192.168.100.163:4000";
+};
+
+// Khởi tạo API_URL với giá trị mặc định
+export const API_URL = getDefaultApiUrl();
+
+// Hàm để cập nhật API URL động
+export const updateApiUrl = async (newUrl) => {
+  try {
+    // Lưu URL mới vào localStorage
+    localStorage.setItem('API_URL', newUrl);
+    console.log('API URL updated to:', newUrl);
+    
+    // Reload trang để áp dụng URL mới
+    window.location.reload();
+    return true;
+  } catch (error) {
+    console.error('Error updating API URL:', error);
+    return false;
+  }
+};
+
+// Hàm để lấy API URL từ localStorage
+export const getApiUrl = async () => {
+  try {
+    const savedUrl = localStorage.getItem('API_URL');
+    return savedUrl || API_URL;
+  } catch (error) {
+    console.error('Error getting API URL:', error);
+    return API_URL;
+  }
+};
 
 // Other constants
 export const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB

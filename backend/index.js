@@ -8,6 +8,8 @@ import { ConnectSocket } from "./config/Socket.js";
 import cloudinary from "./config/Cloudinary.js";
 import ChatRouter from "./routers/ChatRouter.js";
 import uploadRouter from "./routers/uploadrouter.js";
+import GiphyRouter from "./routers/GiphyRouter.js";
+import GeminiRouter from "./routers/GeminiRouter.js";
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -15,14 +17,17 @@ dotenv.config();
 
 const app = express();
 const server = createServer(app);
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 
 ConnectSocket(server);
 ConnectToDB();
 
 app.use(
   cors({
-    origin: "http://localhost:8081", // Your React dev server
+    origin: function(origin, callback) {
+      // Cho phép kết nối từ bất kỳ nguồn nào
+      callback(null, true);
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -39,7 +44,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use("/user", UserRouter);
 app.use("/chat", ChatRouter);
 app.use("/", uploadRouter);
+app.use("/giphy", GiphyRouter);
+app.use("/chat/gemini", GeminiRouter);
 
-server.listen(PORT, () => {
-  console.log(`app run on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on all network interfaces at port ${PORT}`);
+  console.log(`Access locally via: http://localhost:${PORT}`);
+  console.log(`For other devices on the network, use your machine's IP address`);
 });

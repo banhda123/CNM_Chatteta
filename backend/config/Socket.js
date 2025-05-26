@@ -302,13 +302,23 @@ export const ConnectSocket = (server) => {
         // Kiểm tra nếu tin nhắn không được lưu thành công
         if (!newMessage) {
           console.error("Failed to save message");
+          socket.emit("message_error", {
+            error: "Không thể lưu tin nhắn",
+            type: "save_error",
+            timestamp: new Date()
+          });
           return;
         }
         
-        await updateLastMesssage({
-          idConversation: newMessage.idConversation,
-          message: newMessage._id,
-        });
+        try {
+          await updateLastMesssage({
+            idConversation: newMessage.idConversation,
+            message: newMessage._id,
+          });
+        } catch (updateError) {
+          console.error("Error updating last message:", updateError);
+          // Tiếp tục xử lý vì tin nhắn đã được lưu thành công
+        }
 
         // Chỉ gửi dữ liệu cần thiết của tin nhắn để giảm tải mạng
         const messageData = {
@@ -382,17 +392,46 @@ export const ConnectSocket = (server) => {
       try {
         const { messageId, conversationId, userId } = data;
         
+        // Kiểm tra dữ liệu đầu vào
+        if (!messageId || !conversationId || !userId) {
+          socket.emit("revoke_message_error", {
+            error: "Thiếu thông tin cần thiết",
+            code: "MISSING_DATA"
+          });
+          return;
+        }
+        
         // Tìm tin nhắn
         const message = await MessageModel.findById(messageId);
         
         if (!message) {
-          socket.emit("revoke_message_error", { error: "Không tìm thấy tin nhắn" });
+          socket.emit("revoke_message_error", {
+            error: "Không tìm thấy tin nhắn",
+            code: "MESSAGE_NOT_FOUND"
+          });
           return;
         }
         
         // Kiểm tra người thu hồi tin nhắn có phải là người gửi không
         if (message.sender.toString() !== userId) {
-          socket.emit("revoke_message_error", { error: "Bạn chỉ có thể thu hồi tin nhắn của chính mình" });
+          socket.emit("revoke_message_error", {
+            error: "Bạn chỉ có thể thu hồi tin nhắn của chính mình",
+            code: "UNAUTHORIZED"
+          });
+          return;
+        }
+        
+        // Kiểm tra thời gian - chỉ cho phép thu hồi tin nhắn trong vòng 24 giờ
+        const messageTime = new Date(message.createdAt).getTime();
+        const currentTime = new Date().getTime();
+        const timeDiff = currentTime - messageTime;
+        const hoursDiff = timeDiff / (1000 * 60 * 60);
+        
+        if (hoursDiff > 24) {
+          socket.emit("revoke_message_error", {
+            error: "Chỉ có thể thu hồi tin nhắn trong vòng 24 giờ",
+            code: "TIME_LIMIT_EXCEEDED"
+          });
           return;
         }
         
@@ -403,18 +442,32 @@ export const ConnectSocket = (server) => {
         
         // Cập nhật tình trạng thu hồi tin nhắn
         message.isRevoked = true;
+        message.revokedAt = new Date();
         await message.save();
         
         // Thông báo cho tất cả người dùng trong cuộc trò chuyện
-        io.to(conversationId).emit("message_revoked", { 
-          messageId, 
+        io.to(conversationId).emit("message_revoked", {
+          messageId,
           conversationId,
           type: messageType, // Gửi đúng loại tin nhắn cho client
-          hasFile: hasFile // Thêm thông tin có phải là file hay không
+          hasFile: hasFile, // Thêm thông tin có phải là file hay không
+          revokedAt: message.revokedAt,
+          revokedBy: userId
         });
+        
+        // Gửi xác nhận thành công cho người thu hồi
+        socket.emit("revoke_message_success", {
+          messageId,
+          conversationId
+        });
+        
       } catch (error) {
         console.error("Error revoking message via socket:", error);
-        socket.emit("revoke_message_error", { error: "Không thể thu hồi tin nhắn" });
+        socket.emit("revoke_message_error", {
+          error: "Không thể thu hồi tin nhắn",
+          details: error.message,
+          code: "SERVER_ERROR"
+        });
       }
     });
     
@@ -457,11 +510,45 @@ export const ConnectSocket = (server) => {
     socket.on("create_conversation", async (data) => {
       try {
         const { userFrom, userTo } = data;
+        
+        if (!userFrom || !userTo) {
+          socket.emit("conversation_error", {
+            message: "Thiếu thông tin người dùng",
+            code: "MISSING_USER_INFO"
+          });
+          return;
+        }
+        
         const newConversation = await createConversation(userFrom, userTo);
+        
+        if (!newConversation) {
+          socket.emit("conversation_error", {
+            message: "Không thể tạo cuộc trò chuyện",
+            code: "CREATION_FAILED"
+          });
+          return;
+        }
+        
         io.to(userFrom).to(userTo).emit("new_conversation", newConversation);
+        
+        // Thông báo cập nhật danh sách cuộc trò chuyện
+        io.to(userFrom).emit("update_conversation_list", {
+          conversation: newConversation,
+          isNew: true
+        });
+        
+        io.to(userTo).emit("update_conversation_list", {
+          conversation: newConversation,
+          isNew: true
+        });
+        
       } catch (error) {
         console.error("Error creating conversation:", error);
-        socket.emit("conversation_error", { message: "Không thể tạo cuộc trò chuyện" });
+        socket.emit("conversation_error", {
+          message: "Không thể tạo cuộc trò chuyện",
+          error: error.message,
+          code: "SERVER_ERROR"
+        });
       }
     });
 

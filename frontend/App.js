@@ -14,6 +14,7 @@ import AuthService from './services/AuthService';
 import { Box, CircularProgress } from '@mui/material';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { useTheme } from './contexts/ThemeContext';
+import { LanguageProvider } from './contexts/LanguageContext';
 import LoadingAnimation from './components/LoadingAnimation';
 import PageTransition from './components/PageTransition';
 import SocketService from './services/SocketService';
@@ -190,9 +191,11 @@ const AppContent = () => {
 export default function App() {
   return (
     <ThemeProvider>
-      <PageTransition>
-        <AppContent />
-      </PageTransition>
+      <LanguageProvider>
+        <PageTransition>
+          <AppContent />
+        </PageTransition>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }

@@ -678,6 +678,7 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
         </Box>
       );
     
+    // Phần xử lý hiển thị tin nhắn GIF từ Giphy API
     case 'gif':
       return (
         <Box
@@ -727,7 +728,7 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
             />
             
             {/* Ghi chú nếu có */}
-            {false && message.content && message.content.trim() !== '' && (
+            {message.content && message.content.trim() !== '' && (
               <Box sx={{ 
                 p: 1.5, 
                 borderTop: '1px solid rgba(0, 0, 0, 0.08)',
@@ -745,7 +746,7 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
                 size="small" 
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleOpenFile(message.fileUrl, message.fileName || 'animation.gif', message.fileType);
+                  window.open(message.fileUrl, '_blank');
                 }}
                 sx={{ 
                   position: 'absolute',
@@ -785,20 +786,6 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
             >
               <CircularProgress size={24} color="inherit" />
             </Box>
-          )}
-          
-          {/* Hiển thị caption nếu có */}
-          {false && message.content && !message.content.trim() && (
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                mt: 0.5, 
-                color: 'text.secondary',
-                fontSize: '0.85rem'
-              }}
-            >
-              {message.content}
-            </Typography>
           )}
         </Box>
       );

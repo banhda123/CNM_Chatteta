@@ -50,16 +50,21 @@ const fetchGeminiResponse = async (message) => {
 export const processGeminiMessage = async (req, res) => {
   try {
     // Support both formats: messageId/conversationId or direct content/conversationId
-    const { messageId, conversationId, content } = req.body;
+    const { messageId, conversationId, content, sender } = req.body;
     
     // Validate input
     if (!content && !messageId) {
       return res.status(400).json({ error: 'Either messageId or content must be provided' });
     }
     
+    if (!conversationId) {
+      return res.status(400).json({ error: 'conversationId is required' });
+    }
+    
     let messageContent;
     let conversation = null;
     let geminiUser = null;
+    let userSender = null;
     
     // Get message content
     if (messageId) {
@@ -74,72 +79,111 @@ export const processGeminiMessage = async (req, res) => {
       messageContent = content;
     }
     
-    // Try to find conversation and Gemini user if conversationId is provided
-    if (conversationId && conversationId !== 'temp-conversation') {
-      try {
-        conversation = await ConversationModel.findById(conversationId)
-          .populate('members.idUser');
+    // Extract query from message if it starts with @AIGemini or @AiGemini
+    let query = messageContent;
+    const aiPrefixes = ['@AIGemini', '@AiGemini'];
+    for (const prefix of aiPrefixes) {
+      if (messageContent.trim().startsWith(prefix)) {
+        query = messageContent.substring(prefix.length).trim();
+        break;
+      }
+    }
+    
+    // Try to find conversation and Gemini user
+    try {
+      conversation = await ConversationModel.findById(conversationId)
+        .populate('members.idUser');
+      
+      if (!conversation) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+      
+      // Tìm Gemini user trong cuộc trò chuyện
+      geminiUser = conversation.members.find(member => 
+        member.idUser && member.idUser.isAI
+      )?.idUser;
+      
+      // Nếu không tìm thấy Gemini user, tạo một user mới
+      if (!geminiUser) {
+        // Tìm Gemini user trong database
+        geminiUser = await UsersModel.findOne({ isAI: true });
         
-        if (conversation) {
-          geminiUser = conversation.members.find(member => member.idUser.isAI)?.idUser;
+        if (!geminiUser) {
+          // Tạo một Gemini user mới
+          geminiUser = new UsersModel({
+            name: 'Gemini AI',
+            email: 'gemini@ai.assistant',
+            phone: 'gemini-ai',
+            password: 'gemini_secure_password_' + Date.now(),
+            avatar: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/gemini_1.width-1000.format-webp.webp',
+            status: 'online',
+            about: 'Tôi là trợ lý AI Gemini, luôn sẵn sàng giúp đỡ bạn!',
+            isAI: true
+          });
+          
+          await geminiUser.save();
+          console.log('Created new Gemini AI user');
         }
-      } catch (error) {
-        console.warn('Could not find conversation:', error.message);
-        // Continue without conversation - we'll return direct response
-      }
-    }
-    
-    // Generate Gemini response regardless of conversation
-    const geminiResponse = await fetchGeminiResponse(messageContent);
-    
-    // If we have a valid conversation and Gemini user, save the message
-    if (conversation && geminiUser) {
-      // Create a new message from Gemini
-      const newMessage = new MessageModel({
-        idConversation: conversationId,
-        sender: geminiUser._id,
-        content: geminiResponse,
-        type: 'text',
-        status: 'sent'
-      });
-      
-      // Save the message
-      await newMessage.save();
-      
-      // Update conversation's last message
-      conversation.lastMessage = {
-        sender: geminiUser._id,
-        content: geminiResponse,
-        createdAt: new Date()
-      };
-      
-      await conversation.save();
-      
-      // Emit socket event for new message if socket service is available
-      if (req.app.get('io')) {
-        const io = req.app.get('io');
-        io.to(conversationId).emit('new_message', {
-          ...newMessage.toObject(),
-          sender: geminiUser
+        
+        // Thêm Gemini user vào cuộc trò chuyện
+        conversation.members.push({
+          idUser: geminiUser._id,
+          role: 'member'
         });
+        
+        await conversation.save();
+        console.log('Added Gemini AI to conversation');
       }
       
-      return res.status(200).json({
-        success: true,
-        message: 'Gemini response processed successfully',
-        data: newMessage
-      });
-    } else {
-      // Direct response without saving to database
-      return res.status(200).json({
-        success: true,
-        message: 'Gemini response generated',
-        data: {
-          content: geminiResponse,
-          createdAt: new Date()
-        }
+      // Lấy thông tin người gửi
+      if (sender) {
+        userSender = await UsersModel.findById(sender);
+      }
+      
+    } catch (error) {
+      console.error('Error finding conversation or Gemini user:', error);
+      return res.status(500).json({ error: 'Failed to process conversation data' });
+    }
+    
+    // Generate Gemini response
+    const geminiResponse = await fetchGeminiResponse(query);
+    
+    // Create a new message from Gemini
+    const newMessage = new MessageModel({
+      idConversation: conversationId,
+      sender: geminiUser._id,
+      content: geminiResponse,
+      type: 'text',
+      status: 'sent'
+    });
+    
+    // Save the message
+    await newMessage.save();
+    
+    // Update conversation's last message with the ID of the new message
+    // Theo schema, lastMessage là một ObjectId tham chiếu đến Message model
+    try {
+      conversation.lastMessage = newMessage._id;
+      await conversation.save();
+    } catch (error) {
+      console.error('Error saving conversation:', error);
+      // Tiếp tục xử lý mà không throw lỗi
+    }
+    
+    // Emit socket event for new message if socket service is available
+    if (req.app.get('io')) {
+      const io = req.app.get('io');
+      io.to(conversationId).emit('new_message', {
+        ...newMessage.toObject(),
+        sender: geminiUser
       });
     }
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Gemini response processed successfully',
+      data: newMessage
+    });
     
   } catch (error) {
     console.error('Error processing Gemini message:', error);

@@ -2,123 +2,96 @@ import React, { useState, useEffect } from 'react';
 import { Box, Typography, Grid, CircularProgress, TextField, IconButton, Tabs, Tab, useTheme } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import axios from 'axios';
+import { API_URL } from '../config/constants';
 
-// Pre-loaded GIFs collection - Ami Cat stickers
-const AMI_CAT_GIFS = [
-  {
-    id: 'ami1',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251558/Ami_Fat_Cat_so_Cute_te4a7y.gif',
-    label: 'Ami Hi'
-  },
-  {
-    id: 'ami2',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251245/Ami_Fat_Cat_1_hi5l9i.gif',
-    label: 'Ami Sleepy'
-  },
-  {
-    id: 'ami3',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251242/Ami_Fat_Cat_el9rjj.gif',
-    label: 'Ami OK'
-  },
-  {
-    id: 'ami4',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251241/t%E1%BA%A3i_xu%E1%BB%91ng_y14wn9.gif',
-    label: 'Ami Cool'
-  },
-  {
-    id: 'ami5',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251241/t%E1%BA%A3i_xu%E1%BB%91ng_1_ggdnzw.gif',
-    label: 'Ami Love'
-  },
-  {
-    id: 'ami6',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251241/t%E1%BA%A3i_xu%E1%BB%91ng_2_s269uh.gif',
-    label: 'Ami Cry'
-  },
-  {
-    id: 'ami7',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251559/GIF_Maker___Tenor_acnmlj.gif',
-    label: 'Ami Happy'
-  },
-  {
-    id: 'ami8',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251560/t%E1%BA%A3i_xu%E1%BB%91ng_3_vpn4ei.gif',
-    label: 'Ami Laugh'
-  },
-  // Additional cat stickers for a fuller grid
-  {
-    id: 'ami9',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251558/Ami_Fat_Cat_so_Cute_te4a7y.gif',
-    label: 'Ami Wave'
-  },
-  {
-    id: 'ami10',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251245/Ami_Fat_Cat_1_hi5l9i.gif',
-    label: 'Ami Tired'
-  },
-  {
-    id: 'ami11',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251242/Ami_Fat_Cat_el9rjj.gif',
-    label: 'Ami Thumbs Up'
-  },
-  {
-    id: 'ami12',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251241/t%E1%BA%A3i_xu%E1%BB%91ng_2_s269uh.gif',
-    label: 'Ami Sad'
+// Lưu trữ GIF đã sử dụng gần đây trong localStorage
+const getRecentGifs = () => {
+  try {
+    const recentGifs = localStorage.getItem('recentGifs');
+    return recentGifs ? JSON.parse(recentGifs) : [];
+  } catch (error) {
+    console.error('Lỗi khi đọc GIF gần đây từ localStorage:', error);
+    return [];
   }
-];
+};
 
-const RECENT_GIFS = [
-  {
-    id: 'recent1',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251558/Ami_Fat_Cat_so_Cute_te4a7y.gif',
-    label: 'Recent 1'
-  },
-  {
-    id: 'recent2',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251245/Ami_Fat_Cat_1_hi5l9i.gif',
-    label: 'Recent 2'
-  },
-  {
-    id: 'recent3',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251242/Ami_Fat_Cat_el9rjj.gif',
-    label: 'Recent 3'
-  },
-  {
-    id: 'recent4',
-    url: 'https://res.cloudinary.com/daclejcpu/image/upload/v1745251241/t%E1%BA%A3i_xu%E1%BB%91ng_y14wn9.gif',
-    label: 'Recent 4'
+// Lưu GIF đã sử dụng vào localStorage
+const saveRecentGif = (gif) => {
+  try {
+    const recentGifs = getRecentGifs();
+    // Kiểm tra nếu GIF đã tồn tại trong danh sách
+    const existingIndex = recentGifs.findIndex(item => item.id === gif.id);
+    
+    if (existingIndex !== -1) {
+      // Nếu đã tồn tại, xóa và thêm lại vào đầu danh sách
+      recentGifs.splice(existingIndex, 1);
+    }
+    
+    // Thêm GIF mới vào đầu danh sách
+    recentGifs.unshift(gif);
+    
+    // Giới hạn số lượng GIF gần đây
+    const limitedRecentGifs = recentGifs.slice(0, 12);
+    
+    localStorage.setItem('recentGifs', JSON.stringify(limitedRecentGifs));
+  } catch (error) {
+    console.error('Lỗi khi lưu GIF gần đây vào localStorage:', error);
   }
-];
+};
 
-const GifGallery = ({ onSelectGif, onClose }) => {
+const GiphyGallery = ({ onSelectGif, onClose }) => {
   const theme = useTheme();
-  const [gifs, setGifs] = useState(AMI_CAT_GIFS);
+  const [gifs, setGifs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [tabValue, setTabValue] = useState(0);
   
-  // Function to load GIFs from Cloudinary (for future implementation)
-  const loadGifsFromCloudinary = async () => {
+  // Tải GIF từ Giphy API
+  const loadGifsFromGiphy = async (endpoint, params = {}) => {
     try {
       setLoading(true);
-      // This would be replaced with actual Cloudinary API call
-      // For now, we'll just use the default GIFs
-      setGifs(tabValue === 0 ? RECENT_GIFS : AMI_CAT_GIFS);
+      
+      const response = await axios.get(`${API_URL}/giphy/${endpoint}`, { params });
+      
+      if (response.data && response.data.data) {
+        const formattedGifs = response.data.data.map(item => ({
+          id: item.id,
+          url: item.images.fixed_height.url,
+          preview: item.images.fixed_height_small.url,
+          original: item.images.original.url,
+          title: item.title
+        }));
+        
+        setGifs(formattedGifs);
+      }
     } catch (error) {
-      console.error('Error loading GIFs:', error);
+      console.error(`Lỗi khi tải GIF từ Giphy API (${endpoint}):`, error);
+      setGifs([]);
     } finally {
       setLoading(false);
     }
   };
   
-  useEffect(() => {
-    loadGifsFromCloudinary();
-  }, [tabValue]);
+  // Xử lý khi tab thay đổi
+  const handleTabChange = (event, newValue) => {
+    setTabValue(newValue);
+    setSearchTerm('');
+    
+    if (newValue === 0) {
+      // Tab "Gần đây"
+      setGifs(getRecentGifs());
+    } else if (newValue === 1) {
+      // Tab "Trending"
+      loadGifsFromGiphy('trending');
+    }
+  };
   
+  // Xử lý khi chọn GIF
   const handleSelectGif = (gif) => {
     if (onSelectGif) {
+      saveRecentGif(gif);
       onSelectGif(gif);
     }
     if (onClose) {
@@ -126,37 +99,48 @@ const GifGallery = ({ onSelectGif, onClose }) => {
     }
   };
   
+  // Xử lý tìm kiếm GIF
   const handleSearch = () => {
     if (!searchTerm.trim()) {
-      setGifs(tabValue === 0 ? RECENT_GIFS : AMI_CAT_GIFS);
+      // Nếu không có từ khóa tìm kiếm, hiển thị GIF trending
+      loadGifsFromGiphy('trending');
       return;
     }
     
-    // Simple client-side filtering
-    const sourceGifs = tabValue === 0 ? RECENT_GIFS : AMI_CAT_GIFS;
-    const filteredGifs = sourceGifs.filter(gif => 
-      gif.label.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    setGifs(filteredGifs);
+    loadGifsFromGiphy('search', { q: searchTerm });
   };
-
-  const handleTabChange = (event, newValue) => {
-    setTabValue(newValue);
-  };
+  
+  // Tải GIF khi component được tạo
+  useEffect(() => {
+    if (tabValue === 0) {
+      // Tab "Gần đây"
+      setGifs(getRecentGifs());
+      setLoading(false);
+    } else if (tabValue === 1) {
+      // Tab "Trending"
+      loadGifsFromGiphy('trending');
+    }
+  }, [tabValue]);
   
   return (
     <Box sx={{ 
       width: 320, 
-      maxHeight: 400, 
-      bgcolor: '#1e1e1e', 
+      bgcolor: '#1e1e1e',
       color: 'white',
       borderRadius: 1,
-      overflow: 'hidden'
+      overflow: 'hidden',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
     }}>
-      {/* Header with collection name */}
-      <Box sx={{ p: 1.5, borderBottom: '1px solid #333', display: 'flex', alignItems: 'center' }}>
+      {/* Header */}
+      <Box sx={{ 
+        p: 1.5, 
+        borderBottom: '1px solid #333',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
-          {tabValue === 0 ? "Gần đây" : "Ami Bụng Bự"}
+          Thư viện GIF
         </Typography>
       </Box>
       
@@ -185,7 +169,9 @@ const GifGallery = ({ onSelectGif, onClose }) => {
           sx={{ fontSize: '0.75rem', textTransform: 'none' }}
         />
         <Tab 
-          label="Ami Bụng Bự" 
+          icon={<TrendingUpIcon />}
+          label="Xu hướng" 
+          iconPosition="start"
           sx={{ fontSize: '0.75rem', textTransform: 'none' }}
         />
       </Tabs>
@@ -264,14 +250,31 @@ const GifGallery = ({ onSelectGif, onClose }) => {
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
             <CircularProgress size={24} sx={{ color: 'white' }} />
           </Box>
+        ) : gifs.length === 0 ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column' }}>
+            {tabValue === 0 ? (
+              <>
+                <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 1 }}>
+                  Bạn chưa sử dụng GIF nào gần đây
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)' }}>
+                  Hãy chuyển sang tab Xu hướng để tìm GIF
+                </Typography>
+              </>
+            ) : (
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                Không tìm thấy GIF nào
+              </Typography>
+            )}
+          </Box>
         ) : (
           <Grid container spacing={1}>
             {gifs.map((gif) => (
               <Grid item xs={3} key={gif.id}>
                 <Box
                   component="img"
-                  src={gif.url}
-                  alt={gif.label}
+                  src={gif.preview || gif.url}
+                  alt={gif.title || "GIF"}
                   sx={{
                     width: '100%',
                     height: 68,
@@ -285,7 +288,7 @@ const GifGallery = ({ onSelectGif, onClose }) => {
                     }
                   }}
                   onClick={() => handleSelectGif(gif)}
-                  title={gif.label}
+                  title={gif.title}
                 />
               </Grid>
             ))}
@@ -296,4 +299,4 @@ const GifGallery = ({ onSelectGif, onClose }) => {
   );
 };
 
-export default GifGallery; 
+export default GiphyGallery;
