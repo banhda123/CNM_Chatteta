@@ -745,8 +745,16 @@ const [showImageMention, setShowImageMention] = useState(false);
       
       Logger.info(`Loaded ${filteredMsgs.length} messages for display`);
       
-      // Cập nhật state
-      setMessages(filteredMsgs);
+      // Cập nhật state (lọc unique theo _id)
+      const uniqueMsgs = [];
+      const seenIds = new Set();
+      for (const msg of filteredMsgs) {
+        if (msg._id && !seenIds.has(msg._id)) {
+          uniqueMsgs.push(msg);
+          seenIds.add(msg._id);
+        }
+      }
+      setMessages(uniqueMsgs);
       
       // Cập nhật trạng thái lazy loading
       setHasMoreMessages(result.hasMore || false);
@@ -4740,6 +4748,11 @@ const [showImageMention, setShowImageMention] = useState(false);
   // 1. Thêm state quản lý tin nhắn đang trả lời
   const [replyMessage, setReplyMessage] = useState(null);
 
+  useEffect(() => {
+    // Rebuild sentGifIds mỗi khi messages thay đổi
+    sentGifIds.current = new Set(messages.filter(m => m.type === 'gif' && m._id).map(m => m._id));
+  }, [messages]);
+
   if (showProfile) {
     return <ProfileScreen onBack={() => setShowProfile(false)} />;
   }
@@ -5115,15 +5128,17 @@ const [showImageMention, setShowImageMention] = useState(false);
                     </Tooltip>
                     </>
                   )}
-                  {!activeConversation.type === 'group' && (
-                    <IconButton
-                      onClick={handleMenuOpen}
-                      aria-label="more"
-                      aria-controls="long-menu"
-                      aria-haspopup="true"
-                    >
-                      <MoreVert />
-                    </IconButton>
+                  {activeConversation.type !== 'group' && (
+                    <Tooltip title="Xem media, file, link">
+                      <IconButton
+                        onClick={handleGroupControlOpen}
+                        aria-label="Xem media, file, link"
+                        color="primary"
+                        sx={{ ml: 1 }}
+                      >
+                        <MoreVert />
+                      </IconButton>
+                    </Tooltip>
                   )}
 
                 {/* Sử dụng component GroupControlDrawer */}
@@ -6006,7 +6021,7 @@ const [showImageMention, setShowImageMention] = useState(false);
         currentUser={user}
       />
       {/* Component gợi ý @AIGemini */}
-      {showAIMention && activeConversation && activeConversation.type === 'group' && (
+      {showAIMention && activeConversation && (
         <Paper
           sx={{
             position: 'fixed',
@@ -6017,43 +6032,49 @@ const [showImageMention, setShowImageMention] = useState(false);
             p: 1,
             boxShadow: 3,
             borderRadius: 1,
-            maxHeight: 200,         // Giới hạn chiều cao tối đa
+            maxHeight: 200,
             overflowY: 'auto',
           }}
         >
-          {/* Gợi ý thành viên nhóm */}
-          {activeConversation.members
-            .filter(member => {
-              const memberId = member.idUser?._id ? member.idUser._id.toString() : member.idUser?.toString();
-              return memberId && memberId !== userId?.toString();
-            })
-            .map(member => (
-              <MenuItem
-                key={member.idUser._id || member.idUser}
-                onClick={() => {
-                  const atIndex = newMessage.lastIndexOf('@');
-                  if (atIndex !== -1) {
-                    // Chèn tag dạng @Tên (có thể mở rộng thành @userId|Tên nếu muốn lưu userId)
-                    const updatedMessage =
-                      newMessage.substring(0, atIndex) +
-                      `@${member.idUser.name} ` +
-                      newMessage.substring(atIndex + 1);
-                    setNewMessage(updatedMessage);
-                    setShowAIMention(false);
-                    inputRef.current?.focus();
-                  }
-                }}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  p: 1
-                }}
-              >
-                <Avatar src={member.idUser.avatar} sx={{ width: 24, height: 24 }} />
-                <Typography>{member.idUser.name}</Typography>
-              </MenuItem>
-            ))}
+          {/* Nếu là nhóm thì gợi ý thành viên, nếu là chat đơn thì không */}
+          {activeConversation.type === 'group' && (() => {
+            const aiNames = ['Gemini AI', 'AIGemini', 'AiGemini'];
+            const seenNames = new Set();
+            return activeConversation.members
+              .filter(member => {
+                const name = member.idUser?.name;
+                const memberId = member.idUser?._id ? member.idUser._id.toString() : member.idUser?.toString();
+                if (!name || aiNames.includes(name) || memberId === userId?.toString() || seenNames.has(name)) return false;
+                seenNames.add(name);
+                return true;
+              })
+              .map(member => (
+                <MenuItem
+                  key={member.idUser._id || member.idUser}
+                  onClick={() => {
+                    const atIndex = newMessage.lastIndexOf('@');
+                    if (atIndex !== -1) {
+                      const updatedMessage =
+                        newMessage.substring(0, atIndex) +
+                        `@${member.idUser.name} ` +
+                        newMessage.substring(atIndex + 1);
+                      setNewMessage(updatedMessage);
+                      setShowAIMention(false);
+                      inputRef.current?.focus();
+                    }
+                  }}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    p: 1
+                  }}
+                >
+                  <Avatar src={member.idUser.avatar} sx={{ width: 24, height: 24 }} />
+                  <Typography>{member.idUser.name}</Typography>
+                </MenuItem>
+              ));
+          })()}
           {/* Gợi ý AI như cũ */}
           <MenuItem 
             onClick={() => {

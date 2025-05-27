@@ -12,7 +12,7 @@ const MessageSchema = new Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Conversation",
     },
-    sender: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    sender: { type: mongoose.Schema.Types.Mixed, required: true },
     content: String,
     type: {
       type: String,

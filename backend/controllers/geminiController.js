@@ -3,6 +3,7 @@ import { MessageModel } from '../models/MessageModel.js';
 import { ConversationModel } from '../models/ConversationModel.js';
 import { UsersModel } from '../models/UserModel.js';
 import mongoose from 'mongoose';
+import UserAIModel from '../models/UserAIModel.js';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
@@ -111,41 +112,17 @@ export const processGeminiMessage = async (req, res) => {
         return res.status(404).json({ error: 'Conversation not found' });
       }
       
-      // Tìm Gemini user trong cuộc trò chuyện
-      geminiUser = conversation.members.find(member => 
-        member.idUser && member.idUser.isAI
-      )?.idUser;
-      
-      // Nếu không tìm thấy Gemini user, tạo một user mới
+      // Lấy Gemini AI từ UserAIModel (không phải là thành viên nhóm)
+      let geminiUser = await UserAIModel.findOne({ email: 'gemini@ai.assistant' });
       if (!geminiUser) {
-        // Tìm Gemini user trong database
-        geminiUser = await UsersModel.findOne({ isAI: true });
-        
-        if (!geminiUser) {
-          // Tạo một Gemini user mới
-          geminiUser = new UsersModel({
-            name: 'Gemini AI',
-            email: 'gemini@ai.assistant',
-            phone: 'gemini-ai',
-            password: 'gemini_secure_password_' + Date.now(),
-            avatar: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/gemini_1.width-1000.format-webp.webp',
-            status: 'online',
-            about: 'Tôi là trợ lý AI Gemini, luôn sẵn sàng giúp đỡ bạn!',
-            isAI: true
-          });
-          
-          await geminiUser.save();
-          console.log('Created new Gemini AI user');
-        }
-        
-        // Thêm Gemini user vào cuộc trò chuyện
-        conversation.members.push({
-          idUser: geminiUser._id,
-          role: 'member'
+        geminiUser = new UserAIModel({
+          name: 'Gemini AI',
+          email: 'gemini@ai.assistant',
+          avatar: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/gemini_1.width-1000.format-webp.webp',
+          status: 'online',
+          about: 'Tôi là trợ lý AI Gemini, luôn sẵn sàng giúp đỡ bạn!'
         });
-        
-        await conversation.save();
-        console.log('Added Gemini AI to conversation');
+        await geminiUser.save();
       }
       
       // Lấy thông tin người gửi
@@ -164,10 +141,11 @@ export const processGeminiMessage = async (req, res) => {
     // Create a new message from Gemini
     const newMessage = new MessageModel({
       idConversation: conversationId,
-      sender: geminiUser._id,
+      sender: 'ai-gemini',
       content: geminiResponse,
       type: 'text',
-      status: 'sent'
+      status: 'sent',
+      isAIGenerated: true
     });
     
     // Save the message

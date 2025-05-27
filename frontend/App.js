@@ -166,6 +166,7 @@ const AppContent = () => {
                   </Layout>
                 )}
               </Stack.Screen>
+
             </>
           ) : (
             // Unauthenticated routes

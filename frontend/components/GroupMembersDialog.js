@@ -235,27 +235,35 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
     
     // Set members with correct roles
     if (conversation.members) {
-      const updatedMembers = conversation.members.map(member => {
-        console.log('Processing member:', member);
-        
-        // Get the actual user ID (handle both direct ID and nested idUser._id)
-        const memberId = member.idUser?._id || member.idUser || member._id;
-        console.log('Member ID:', memberId);
-        
-        // Set role based on admin/admin2 status
-        let role = "member";
-        
-        if (adminId && memberId === adminId) {
-          role = "admin";
-        }
-        
-        if (admin2Id && memberId === admin2Id) {
-          role = "admin2";
-        }
-        
-        console.log('Setting role to', role, 'for member:', memberId);
-        return { ...member, role };
-      });
+      // Lọc bỏ AI Gemini khỏi danh sách thành viên nhóm
+      const updatedMembers = conversation.members
+        .filter(member => {
+          // Lọc theo email hoặc tên đặc biệt
+          const email = member.idUser?.email || '';
+          const name = member.idUser?.name || '';
+          return email !== 'gemini@ai.assistant' && name !== 'Gemini AI';
+        })
+        .map(member => {
+          console.log('Processing member:', member);
+          
+          // Get the actual user ID (handle both direct ID and nested idUser._id)
+          const memberId = member.idUser?._id || member.idUser || member._id;
+          console.log('Member ID:', memberId);
+          
+          // Set role based on admin/admin2 status
+          let role = "member";
+          
+          if (adminId && memberId === adminId) {
+            role = "admin";
+          }
+          
+          if (admin2Id && memberId === admin2Id) {
+            role = "admin2";
+          }
+          
+          console.log('Setting role to', role, 'for member:', memberId);
+          return { ...member, role };
+        });
       
       console.log('=== Final Members ===');
       console.log('Updated members:', updatedMembers);

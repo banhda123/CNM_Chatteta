@@ -32,16 +32,7 @@ import ChatService from '../services/ChatService';
 import AuthService from '../services/AuthService';
 
 // Hard-coded sample images that are guaranteed to work
-const SAMPLE_IMAGES = [
-  'https://images.unsplash.com/photo-1617634667039-8e4cb277ab46?w=500&q=80',
-  'https://images.unsplash.com/photo-1682686581580-d99b0230064e?w=500&q=80',
-  'https://images.unsplash.com/photo-1501183007986-d0d080b94f41?w=500&q=80',
-  'https://images.unsplash.com/photo-1682687982501-1e58ab814714?w=500&q=80',
-  'https://images.unsplash.com/photo-1470252649378-9c29740c9fa8?w=500&q=80', 
-  'https://images.unsplash.com/photo-1504198266287-1659872e6590?w=500&q=80',
-  'https://images.unsplash.com/photo-1518495973542-4542c06a5843?w=500&q=80',
-  'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=500&q=80'
-];
+
 
 const GroupControlDrawer = ({ 
   open, 
@@ -60,6 +51,7 @@ const GroupControlDrawer = ({
   const [links, setLinks] = useState([]);
   const [loadingMedia, setLoadingMedia] = useState(false);
   const [usingSampleImages, setUsingSampleImages] = useState(false);
+  const [showAllMedia, setShowAllMedia] = useState(false);
   
   // Fetch media, files, and links when the drawer opens
   useEffect(() => {
@@ -123,7 +115,7 @@ const GroupControlDrawer = ({
   };
 
   const handleViewAllMedia = () => {
-    console.log('Xem tất cả media');
+    setShowAllMedia(true);
   };
 
   const handleDeleteChatHistory = () => {
@@ -134,8 +126,9 @@ const GroupControlDrawer = ({
   const SimpleMediaGrid = ({ images = [] }) => {
     const imagesToShow = usingSampleImages ? SAMPLE_IMAGES : 
                         (images.length > 0 ? images.map(item => item.fileUrl) : []);
+    const displayImages = showAllMedia ? imagesToShow : imagesToShow.slice(0, 8);
     
-    if (imagesToShow.length === 0) {
+    if (displayImages.length === 0) {
       return (
         <Box sx={{ p: 2, textAlign: 'center' }}>
           <Typography color="text.secondary">
@@ -161,7 +154,7 @@ const GroupControlDrawer = ({
           gap: '8px',
           width: '100%'
         }}>
-          {imagesToShow.slice(0, 8).map((url, index) => (
+          {displayImages.map((url, index) => (
             <div key={`img-${index}`} style={{ 
               position: 'relative',
               paddingBottom: '100%', /* Creates a square */
@@ -169,29 +162,48 @@ const GroupControlDrawer = ({
               borderRadius: '4px',
               border: '1px solid #e0e0e0'
             }}>
-              <img 
-                src={url}
-                alt={`Media ${index+1}`}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  cursor: 'pointer'
-                }}
-                onClick={() => window.open(url, '_blank')}
-                onError={(e) => {
-                  console.warn(`Failed to load image: ${url}`);
-                  e.target.src = 'https://via.placeholder.com/150?text=Error';
-                }}
-              />
+              {url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+  <img
+    src={url}
+    alt={`Media ${index+1}`}
+    style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      cursor: 'pointer'
+    }}
+    onClick={() => window.open(url, '_blank')}
+    onError={(e) => {
+      e.target.src = '/error-image.png';
+    }}
+  />
+) : url.match(/\.(mp4|mov|avi|webm)$/i) ? (
+  <video
+    src={url}
+    controls
+    style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      cursor: 'pointer'
+    }}
+    onClick={e => { e.stopPropagation(); window.open(url, '_blank'); }}
+    autoPlay={false}
+    muted
+    playsInline
+  />
+) : null}
             </div>
           ))}
         </div>
         
-        {imagesToShow.length > 8 && (
+        {imagesToShow.length > 8 && !showAllMedia && (
           <Box sx={{ 
             p: 1, 
             textAlign: 'center', 
@@ -211,6 +223,8 @@ const GroupControlDrawer = ({
       </div>
     );
   };
+
+  const isGroup = conversation?.type === 'group';
 
   return (
     <Drawer
@@ -250,13 +264,15 @@ const GroupControlDrawer = ({
               src={conversation.avatar || ""} 
               sx={{ width: 50, height: 50, mr: 2 }}
             >
-              {!conversation.avatar && conversation.name?.[0]}
+              {!conversation.avatar && (conversation.name?.[0] || conversation?.members?.[0]?.idUser?.name?.[0])}
             </Avatar>
             <Box>
-              <Typography variant="h6">{conversation.name || "Nhóm chat"}</Typography>
-              <Typography variant="body2" color="text.secondary">
-                {conversation.members?.length || 0} thành viên
-              </Typography>
+              <Typography variant="h6">{conversation.name || conversation?.members?.[0]?.idUser?.name || "Chat cá nhân"}</Typography>
+              {isGroup && (
+                <Typography variant="body2" color="text.secondary">
+                  {conversation.members?.length || 0} thành viên
+                </Typography>
+              )}
             </Box>
             <IconButton 
               sx={{ ml: 'auto' }} 
@@ -275,57 +291,38 @@ const GroupControlDrawer = ({
           }}>
             {/* Control menu */}
             <List sx={{ width: '100%', py: 0 }}>
-              <ListItem 
-                sx={{ 
-                  borderBottom: '1px solid', 
-                  borderColor: 'divider',
-                  py: 1.5
-                }}
-                button 
-                component="div"
-                onClick={() => {
-                  onClose();
-                  onViewPinnedMessages();
-                }}
-              >
-                <ListItemIcon>
-                  <PushPinIcon />
-                </ListItemIcon>
-                <ListItemText primary="Xem tin nhắn đã ghim" />
-              </ListItem>
-
-              <ListItem 
-                sx={{ 
-                  borderBottom: '1px solid', 
-                  borderColor: 'divider',
-                  py: 1.5
-                }}
-                button 
-                component="div"
-                onClick={() => {
-                  onClose();
-                  onOpenGroupMembers();
-                }}
-              >
-                <ListItemIcon>
-                  <PeopleIcon />
-                </ListItemIcon>
-                <ListItemText primary="Thành viên nhóm" />
-              </ListItem>
-
-              {isAdmin && (
+              {isGroup && (
                 <ListItem 
-                  sx={{ 
-                    borderBottom: '1px solid', 
-                    borderColor: 'divider',
-                    py: 1.5
-                  }}
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.5 }}
                   button 
                   component="div"
-                  onClick={() => {
-                    onClose();
-                    onEditGroup();
-                  }}
+                  onClick={() => { onClose(); onViewPinnedMessages(); }}
+                >
+                  <ListItemIcon>
+                    <PushPinIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="Xem tin nhắn đã ghim" />
+                </ListItem>
+              )}
+              {isGroup && (
+                <ListItem 
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.5 }}
+                  button 
+                  component="div"
+                  onClick={() => { onClose(); onOpenGroupMembers(); }}
+                >
+                  <ListItemIcon>
+                    <PeopleIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="Thành viên nhóm" />
+                </ListItem>
+              )}
+              {isGroup && isAdmin && (
+                <ListItem 
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.5 }}
+                  button 
+                  component="div"
+                  onClick={() => { onClose(); onEditGroup(); }}
                 >
                   <ListItemIcon>
                     <EditIcon />
@@ -497,7 +494,7 @@ const GroupControlDrawer = ({
             </Accordion>
           </Box>
 
-          {/* Footer with delete and leave buttons */}
+          {/* Footer với các nút chỉ dành cho nhóm */}
           <Box sx={{ 
             p: 2, 
             borderTop: '1px solid', 
@@ -511,26 +508,26 @@ const GroupControlDrawer = ({
               fullWidth
               startIcon={<DeleteSweepIcon />}
               onClick={handleDeleteChatHistory}
-              sx={{ mb: 2 }}
+              sx={{ mb: isGroup ? 2 : 0 }}
             >
               Xóa lịch sử trò chuyện
             </Button>
-            
-            <Button
-              variant="outlined"
-              color="error"
-              fullWidth
-              startIcon={<ExitToAppIcon />}
-              onClick={() => {
-                onClose();
-                onLeaveGroup();
-              }}
-              sx={{ mb: isAdmin ? 2 : 0 }}
-            >
-              Rời nhóm
-            </Button>
-            
-            {isAdmin && (
+            {isGroup && (
+              <Button
+                variant="outlined"
+                color="error"
+                fullWidth
+                startIcon={<ExitToAppIcon />}
+                onClick={() => {
+                  onClose();
+                  onLeaveGroup();
+                }}
+                sx={{ mb: isAdmin ? 2 : 0 }}
+              >
+                Rời nhóm
+              </Button>
+            )}
+            {isGroup && isAdmin && (
               <Button
                 variant="contained"
                 color="error"
