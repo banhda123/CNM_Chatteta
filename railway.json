@@ -3,10 +3,6 @@
       {
         "name": "backend",
         "rootDir": "backend"
-      },
-      {
-        "name": "frontend",
-        "rootDir": "frontend"
       }
     ]
   }
