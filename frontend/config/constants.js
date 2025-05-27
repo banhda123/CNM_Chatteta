@@ -9,7 +9,7 @@ const getDefaultApiUrl = () => {
   if (process.env.REACT_APP_API_URL) return process.env.REACT_APP_API_URL;
   
   // Nếu không có biến môi trường, sử dụng giá trị mặc định
-  return "http://192.168.100.163:4000";
+  return "http://192.168.1.13:4000";
 };
 
 // Khởi tạo API_URL với giá trị mặc định

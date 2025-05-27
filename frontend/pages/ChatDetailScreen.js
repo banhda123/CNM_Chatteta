@@ -3065,9 +3065,58 @@ const [showImageMention, setShowImageMention] = useState(false);
     };
   }, []);
 
-  // Thêm event listeners cho thu hồi và xoá tin nhắn
+  // Thêm event listeners cho thu hồi, xoá tin nhắn và cảm xúc
   useEffect(() => {
-    // ... existing socket event bindings ...
+    // Socket event bindings for message events
+    
+    const handleMessageReaction = (data) => {
+      console.log('😀 Nhận sự kiện cảm xúc tin nhắn:', data);
+      const { messageId, emoji, userId: reactorId, action } = data;
+      
+      // Chỉ xử lý nếu messageId hợp lệ
+      if (!messageId || !emoji || !reactorId) {
+        console.error('Thiếu thông tin cần thiết trong sự kiện message_reaction');
+        return;
+      }
+      
+      // Cập nhật tin nhắn trong danh sách
+      setMessages(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg._id === messageId) {
+            // Tạo bản sao của reactions hoặc object mới nếu chưa có
+            const updatedReactions = { ...(msg.reactions || {}) };
+            
+            if (action === 'add') {
+              // Thêm cảm xúc
+              if (!updatedReactions[emoji]) {
+                updatedReactions[emoji] = [];
+              }
+              
+              // Chỉ thêm userId nếu chưa có trong danh sách
+              if (!updatedReactions[emoji].includes(reactorId)) {
+                updatedReactions[emoji] = [...updatedReactions[emoji], reactorId];
+              }
+            } else if (action === 'remove') {
+              // Xóa cảm xúc
+              if (updatedReactions[emoji]) {
+                updatedReactions[emoji] = updatedReactions[emoji].filter(id => id !== reactorId);
+                
+                // Nếu không còn ai thả emoji này, xóa khỏi danh sách
+                if (updatedReactions[emoji].length === 0) {
+                  delete updatedReactions[emoji];
+                }
+              }
+            }
+            
+            return {
+              ...msg,
+              reactions: updatedReactions
+            };
+          }
+          return msg;
+        })
+      );
+    };
     
     const handleMessageRevoked = (data) => {
       console.log('📝 Tin nhắn đã bị thu hồi:', data);
@@ -3110,14 +3159,16 @@ const [showImageMention, setShowImageMention] = useState(false);
       }
     };
     
-    // Đăng ký lắng nghe sự kiện thu hồi và xoá tin nhắn
+    // Đăng ký lắng nghe sự kiện thu hồi, xoá tin nhắn và cảm xúc
     SocketService.onMessageRevoked(handleMessageRevoked);
     SocketService.onMessageDeleted(handleMessageDeleted);
+    SocketService.onMessageReaction(handleMessageReaction);
     
     return () => {
-      // ... existing cleanup ...
+      // Cleanup all socket listeners
       SocketService.removeListener('message_revoked');
       SocketService.removeListener('message_deleted');
+      SocketService.removeListener('message_reaction');
     };
   }, [activeConversation]);
   
