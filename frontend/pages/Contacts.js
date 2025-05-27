@@ -177,31 +177,23 @@ const Contacts = () => {
       try {
         const userData = await AuthService.getCurrentUser();
         setUserId(userData._id);
-        
         // Load friends
         const friendsData = await UserService.getAllFriends(userData._id);
         setFriends(friendsData);
-        
         // Load friend requests
         const requestsData = await UserService.getAllFriendRequests(userData._id);
         setFriendRequests(requestsData);
-        
         // Load deferred requests
         const token = AuthService.getAccessToken();
         if (token) {
           const deferredData = await UserService.getDeferredFriendRequests(userData._id, token);
           setDeferredRequests(deferredData || []);
         }
-        
         // Load sent requests
         const sentData = await UserService.getAllSentFriendRequests(userData._id);
         setSentRequests(sentData || []);
-        
         // Thiết lập lắng nghe sự kiện socket
         setupSocketListeners(userData._id);
-        
-        // Thiết lập polling thông minh
-        setupSmartPolling(userData._id);
       } catch (error) {
         console.error('Error loading contact data:', error);
         showNotification('Failed to load contact data', 'error');
@@ -209,96 +201,28 @@ const Contacts = () => {
         setIsLoading(false);
       }
     };
-
     loadUserData();
-    
-    // Hủy lắng nghe sự kiện và stop polling khi component unmount
+    // Hủy lắng nghe sự kiện khi component unmount
     return () => {
       SocketService.removeListener('new_friend_request');
       SocketService.removeListener('friend_request_accepted');
       SocketService.removeListener('friend_request_rejected');
       SocketService.removeListener('friend_request_deferred');
-      
-      // Dừng quét liên tục
-      stopPolling();
     };
   }, []);
-  
-  // Theo dõi thay đổi tab để tải dữ liệu phù hợp và quản lý polling
+
+  // Theo dõi thay đổi tab để tải dữ liệu phù hợp (KHÔNG cần polling nữa)
   useEffect(() => {
     // Lưu giá trị tab trước đó
     const prevTabIndex = prevTabIndexRef.current;
     prevTabIndexRef.current = tabIndex;
-    
     // Nếu chuyển sang tab lời mời, tải dữ liệu ngay lập tức
     if (tabIndex === 1) {
-      console.log('Switched to Friend Requests tab, loading data immediately');
       loadFriendRequests();
-      startPolling();
-    } 
-    // Nếu chuyển sang tab đã gửi, tải dữ liệu ngay lập tức
-    else if (tabIndex === 2) {
-      console.log('Switched to Sent Requests tab, loading data immediately');
+    } else if (tabIndex === 2) {
       loadSentRequests();
-      startPolling();
     }
-    // Nếu chuyển từ tab lời mời hoặc đã gửi sang tab khác, dừng polling
-    else if (prevTabIndex === 1 || prevTabIndex === 2) {
-      stopPolling();
-    }
-    
   }, [tabIndex, userId]);
-  
-  // Thiết lập polling thông minh
-  const setupSmartPolling = (userId) => {
-    // Dừng polling hiện tại nếu có
-    stopPolling();
-    
-    // Chỉ bắt đầu polling nếu đang ở tab lời mời hoặc socket không kết nối
-    if (tabIndex === 1 || tabIndex === 2 || !SocketService.isConnected) {
-      startPolling();
-    }
-    
-    // Thiết lập kiểm tra định kỳ trạng thái socket mỗi 30 giây
-    setInterval(() => {
-      if (!SocketService.isConnected) {
-        console.log('Socket disconnected, starting backup polling');
-        startPolling();
-      }
-    }, 30000);
-  };
-  
-  // Bắt đầu polling với tần suất cao
-  const startPolling = () => {
-    // Tránh tạo nhiều interval
-    stopPolling();
-    
-    // Polling nhanh hơn (3 giây)
-    console.log('Starting intelligent polling for requests');
-    pollingIntervalRef.current = setInterval(() => {
-      if (tabIndex === 1) {
-        console.log('Polling for friend requests on tab 1');
-        loadFriendRequests();
-      } else if (tabIndex === 2) {
-        console.log('Polling for sent requests on tab 2');
-        loadSentRequests();
-      } else if (!SocketService.isConnected) {
-        // Nếu socket mất kết nối, vẫn quét cả hai loại
-        console.log('Socket disconnected - backup polling for all requests');
-        loadFriendRequests();
-        loadSentRequests();
-      }
-    }, 3000);
-  };
-  
-  // Dừng polling
-  const stopPolling = () => {
-    if (pollingIntervalRef.current) {
-      console.log('Stopping request polling');
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-  };
   
   // Thiết lập lắng nghe sự kiện socket
   const setupSocketListeners = (userId) => {

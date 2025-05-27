@@ -2,7 +2,6 @@ import axios from 'axios';
 import { MessageModel } from '../models/MessageModel.js';
 import { ConversationModel } from '../models/ConversationModel.js';
 import { UsersModel } from '../models/UserModel.js';
-import mongoose from 'mongoose';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
@@ -88,18 +87,6 @@ export const processGeminiMessage = async (req, res) => {
         query = messageContent.substring(prefix.length).trim();
         break;
       }
-    }
-    
-    // Nếu conversationId không hợp lệ (ví dụ: temp-conversation), chỉ trả về Gemini response, không lưu DB
-    if (!mongoose.Types.ObjectId.isValid(conversationId)) {
-      const geminiResponse = await fetchGeminiResponse(query);
-      return res.status(200).json({
-        success: true,
-        message: 'Gemini response (no DB)',
-        data: {
-          content: geminiResponse
-        }
-      });
     }
     
     // Try to find conversation and Gemini user

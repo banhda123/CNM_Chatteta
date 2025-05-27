@@ -91,14 +91,16 @@ const GeminiChatBox = () => {
         width: '100%',
         maxWidth: '800px',
         margin: '0 auto',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        bgcolor: theme.palette.background.paper,
+        color: theme.palette.text.primary
       }}
     >
       {/* Header */}
       <Box sx={{ 
         p: 2, 
-        bgcolor: '#1a73e8', 
-        color: 'white',
+        bgcolor: theme.palette.primary.main, 
+        color: theme.palette.primary.contrastText,
         display: 'flex',
         alignItems: 'center'
       }}>
@@ -107,8 +109,8 @@ const GeminiChatBox = () => {
           sx={{ mr: 2 }}
         />
         <Box>
-          <Typography variant="h6">Gemini AI</Typography>
-          <Typography variant="caption">Trợ lý AI thông minh</Typography>
+          <Typography variant="h6" sx={{ color: theme.palette.primary.contrastText }}>Gemini AI</Typography>
+          <Typography variant="caption" sx={{ color: theme.palette.primary.contrastText }}>Trợ lý AI thông minh</Typography>
         </Box>
       </Box>
       
@@ -122,7 +124,7 @@ const GeminiChatBox = () => {
         display: 'flex',
         flexDirection: 'column',
         gap: 2,
-        bgcolor: '#f5f5f5'
+        bgcolor: theme.palette.background.default
       }}>
         {messages.map((message, index) => (
           <Box 
@@ -145,18 +147,22 @@ const GeminiChatBox = () => {
               sx={{
                 p: 2,
                 maxWidth: '70%',
-                bgcolor: message.role === 'user' ? '#1a73e8' : 'white',
-                color: message.role === 'user' ? 'white' : 'inherit',
+                bgcolor: message.role === 'user' 
+                  ? theme.palette.primary.main 
+                  : theme.palette.background.paper,
+                color: message.role === 'user' 
+                  ? theme.palette.primary.contrastText 
+                  : theme.palette.text.primary,
                 borderRadius: 2,
                 wordBreak: 'break-word'
               }}
             >
-              <Typography>{message.content}</Typography>
+              <Typography sx={{ color: 'inherit' }}>{message.content}</Typography>
             </Paper>
             
             {message.role === 'user' && (
               <Avatar 
-                sx={{ ml: 1, bgcolor: '#1a73e8', alignSelf: 'flex-start' }}
+                sx={{ ml: 1, bgcolor: theme.palette.primary.main, color: theme.palette.primary.contrastText, alignSelf: 'flex-start' }}
               />
             )}
           </Box>
@@ -179,7 +185,7 @@ const GeminiChatBox = () => {
       <Divider />
       
       {/* Input */}
-      <Box sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
+      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', bgcolor: theme.palette.background.paper }}>
         <TextField
           fullWidth
           variant="outlined"
@@ -189,13 +195,21 @@ const GeminiChatBox = () => {
           onKeyPress={handleKeyPress}
           multiline
           maxRows={4}
-          sx={{ mr: 1 }}
+          sx={{ mr: 1,
+            '& .MuiInputBase-root': {
+              bgcolor: theme.palette.background.default,
+              color: theme.palette.text.primary
+            },
+            '& .MuiOutlinedInput-notchedOutline': {
+              borderColor: theme.palette.divider
+            }
+          }}
         />
         <IconButton 
           color="primary" 
           onClick={handleSendMessage}
           disabled={!input.trim() || loading}
-          sx={{ bgcolor: '#1a73e8', color: 'white', '&:hover': { bgcolor: '#1565c0' } }}
+          sx={{ bgcolor: theme.palette.primary.main, color: theme.palette.primary.contrastText, '&:hover': { bgcolor: theme.palette.primary.dark } }}
         >
           <SendIcon />
         </IconButton>

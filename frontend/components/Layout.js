@@ -42,6 +42,7 @@ import UserService from '../services/UserService';
 import SocketService from '../services/SocketService';
 import FriendRequestNotification from './FriendRequestNotification';
 import SettingsDialog from './SettingsDialog';
+import defaultAvatar from '../assets/default-avatar.png';
 
 const Layout = ({ children }) => {
   const navigation = useNavigation();
@@ -69,37 +70,18 @@ const Layout = ({ children }) => {
     if (userData) {
       setUser(userData);
     }
-    
-    // Listen for avatar updates (from within the same browser)
-    const handleAvatarUpdated = (event) => {
-      setUser(prevUser => ({
-        ...prevUser,
-        avatar: event.detail.avatar
-      }));
+
+    // Khi có sự kiện avatar update, luôn lấy lại user mới nhất từ AuthService
+    const handleAvatarUpdated = () => {
+      const updatedUser = AuthService.getUserData();
+      setUser(updatedUser);
     };
-    
-    // Listen for socket avatar updates (from other users)
-    const handleSocketAvatarUpdated = (data) => {
-      // Only update if this is about another user (not our own update)
-      const currentUserId = userData?._id;
-      if (currentUserId && data.userId === currentUserId) {
-        return; // Skip if it's our own update (already handled by custom event)
-      }
-      
-      // If it's not about the current user, we don't need to update our avatar
-      // This would only be used in cases where we're displaying other users' avatars in this component
-    };
-    
-    // Add event listener for avatar updates
+
     window.addEventListener('user-avatar-updated', handleAvatarUpdated);
-    
-    // Register socket listener for avatar updates from other users
-    SocketService.onAvatarUpdated(handleSocketAvatarUpdated);
-    
-    // Clean up
+
+    // Không cần lắng nghe socket avatar_updated ở đây cho user hiện tại
     return () => {
       window.removeEventListener('user-avatar-updated', handleAvatarUpdated);
-      SocketService.removeListener('avatar_updated');
     };
   }, []);
 
@@ -166,17 +148,23 @@ const Layout = ({ children }) => {
         width: '100%' // Ensure full width
       }}>
         <Avatar 
-          src={user?.avatar || ''}
+          src={user?.avatar && typeof user.avatar === 'string' && user.avatar.trim() !== '' ? user.avatar : defaultAvatar}
           alt={user?.name || 'User'}
-          sx={{ width: 50, height: 50, mb: 1 }}
+          sx={{ width: 50, height: 50, mb: 1, cursor: 'pointer' }}
+          onClick={() => handleNavigate('Profile')}
         />
-        <Typography variant="caption" sx={{ 
-          textAlign: 'center', 
-          maxWidth: '100%', 
-          overflow: 'hidden', 
-          textOverflow: 'ellipsis', 
-          whiteSpace: 'nowrap' 
-        }}>
+        <Typography 
+          variant="caption" 
+          sx={{ 
+            textAlign: 'center', 
+            maxWidth: '100%', 
+            overflow: 'hidden', 
+            textOverflow: 'ellipsis', 
+            whiteSpace: 'nowrap',
+            cursor: 'pointer'
+          }}
+          onClick={() => handleNavigate('Profile')}
+        >
           {user?.name || 'User'}
         </Typography>
       </Box>

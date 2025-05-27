@@ -34,7 +34,7 @@ const UserRouter = express.Router();
 
 UserRouter.get("/", getUser);
 UserRouter.post("/search", searchUser);
-UserRouter.get("/:id", isAuth, getUserById);
+UserRouter.get("/:id", getUserById);
 UserRouter.post("/login", Login);
 UserRouter.post("/register", Register);
 

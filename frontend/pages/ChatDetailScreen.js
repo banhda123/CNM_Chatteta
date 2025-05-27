@@ -72,7 +72,8 @@ import {
   Delete as DeleteIcon,
   ExitToApp as ExitToAppIcon,
   Close as CloseIcon,
-  PersonAdd as PersonAddIcon
+  PersonAdd as PersonAddIcon,
+  Reply as ReplyIcon
 } from "@mui/icons-material";
 import Button from "@mui/material/Button";
 import AddIcon from "@mui/icons-material/Add";
@@ -94,6 +95,8 @@ import GroupMembersDialog from "../components/GroupMembersDialog";
 import EditGroupDialog from "../components/EditGroupDialog";
 import GiphyGallery from "../components/GiphyGallery";
 import GifIcon from '@mui/icons-material/Gif';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import AIImageButton from '../components/AIImageButton';
 import PinnedMessageBanner from "../components/PinnedMessageBanner";
 import PinnedMessagesDialog from "../components/PinnedMessagesDialog";
 import PinMessageButton from "../components/PinMessageButton";
@@ -214,6 +217,7 @@ const ChatUI = () => {
     messages: true,
   });
   const [showAIMention, setShowAIMention] = useState(false);
+const [showImageMention, setShowImageMention] = useState(false);
   const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -1586,6 +1590,113 @@ const ChatUI = () => {
     // Kiểm tra nếu không có tin nhắn hoặc không có cuộc trò chuyện
     if ((!newMessage.trim() && !selectedFile) || !activeConversation?._id) return;
     
+    // Kiểm tra nếu tin nhắn bắt đầu bằng @Image để tạo hình ảnh AI
+    if (newMessage.trim().startsWith('@Image')) {
+      try {
+        // Hiển thị trạng thái đang xử lý
+        setIsProcessingAI(true);
+        
+        // Lấy prompt từ tin nhắn
+        const prompt = newMessage.trim().substring('@Image'.length).trim();
+        if (!prompt) {
+          setSnackbarMessage('Vui lòng nhập mô tả hình ảnh sau @Image');
+          setSnackbarOpen(true);
+          setIsProcessingAI(false);
+          return;
+        }
+        
+        // Tạo tin nhắn tạm thời của người dùng để hiển thị ngay lập tức
+        const tempUserMessage = {
+          id: `temp-user-${Date.now()}`,
+          _id: `temp-user-${Date.now()}`,
+          idConversation: activeConversation._id,
+          sender: userId,
+          content: newMessage,
+          type: 'text',
+          createdAt: new Date().toISOString(),
+          status: 'sending',
+          originalSender: { 
+            _id: userId,
+            name: user.name,
+            avatar: user.avatar
+          },
+          replyTo: replyMessage?._id || replyMessage?.id || null,
+        };
+        
+        // Tạo tin nhắn tạm thời để hiển thị trạng thái đang xử lý
+        const tempProcessingMessage = {
+          id: `temp-ai-image-${Date.now()}`,
+          _id: `temp-ai-image-${Date.now()}`,
+          idConversation: activeConversation._id,
+          sender: userId,
+          content: 'Đang tạo hình ảnh... Quá trình này có thể mất vài giây.',
+          type: 'text',
+          createdAt: new Date().toISOString(),
+          status: 'sending',
+          originalSender: { 
+            _id: userId,
+            name: user.name,
+            avatar: user.avatar
+          },
+        };
+        
+        // Thêm tin nhắn tạm thời vào danh sách
+        setMessages(prev => [...prev, tempUserMessage, tempProcessingMessage]);
+        
+        // Lấy socket ID hiện tại
+        const socketId = SocketService.getSocketId();
+        
+        // Gửi tin nhắn của người dùng
+        const token = AuthService.getAccessToken();
+        const userMessageData = {
+          idConversation: activeConversation._id,
+          sender: userId,
+          content: newMessage,
+          type: 'text',
+          replyTo: replyMessage?._id || replyMessage?.id || null
+        };
+        
+        await ChatService.sendMessage(userMessageData, token);
+        
+        // Gọi API để tạo hình ảnh
+        await ChatService.generateImage({
+          prompt,
+          conversationId: activeConversation._id,
+          sender: userId,
+          socketId
+        });
+        
+        // Xóa tin nhắn và ẩn trạng thái xử lý
+        setNewMessage("");
+        setIsProcessingAI(false);
+        
+        // Xóa bản nháp tin nhắn khỏi localStorage
+        if (activeConversation?._id) {
+          localStorage.removeItem(`draft-${activeConversation._id}`);
+        }
+        
+        // Force reload messages to show the generated image
+        console.log('Reloading messages after @Image command');
+        setMessages([]); // Clear messages to force a complete reload
+        setLoading(prev => ({ ...prev, messages: true }));
+        await loadMessages(activeConversation._id);
+        
+        // Cuộn xuống dưới khi có tin nhắn mới
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+        
+        setReplyMessage(null); // Reset sau khi gửi
+        
+        return; // Kết thúc hàm vì tin nhắn đã được xử lý
+      } catch (error) {
+        console.error('Lỗi khi tạo hình ảnh AI:', error);
+        setSnackbarMessage('Không thể tạo hình ảnh. Vui lòng thử lại sau.');
+        setSnackbarOpen(true);
+        setIsProcessingAI(false);
+      }
+    }
+    
     // Kiểm tra nếu tin nhắn bắt đầu bằng @AIGemini hoặc @AiGemini
     if (newMessage.trim().startsWith('@AIGemini') || newMessage.trim().startsWith('@AiGemini')) {
       try {
@@ -1715,6 +1826,7 @@ const ChatUI = () => {
       fileUrl: selectedFile && selectedFile.type.startsWith('image/') 
         ? selectedFilePreview 
         : (selectedFile?.tempFileUrl || null), // Sử dụng tempFileUrl nếu không phải hình ảnh
+      replyTo: replyMessage?._id || replyMessage?.id || null,
     };
     
     // Xử lý bổ sung cho tin nhắn ảnh
@@ -1851,6 +1963,7 @@ const ChatUI = () => {
           content: newMessage,
           type: "text",
           sender: userId,
+          replyTo: replyMessage?._id || replyMessage?.id || null
         };
         
         // Đảm bảo socket được kết nối
@@ -2830,8 +2943,17 @@ const ChatUI = () => {
       // Tính toán vị trí hiển thị gợi ý
       if (inputRef.current) {
         const inputRect = inputRef.current.getBoundingClientRect();
+        const popupHeight = 200; // hoặc đúng chiều cao bạn mong muốn
+        let top;
+        if (inputRect.bottom + popupHeight > window.innerHeight) {
+          // Đặt phía trên input
+          top = inputRect.top - popupHeight;
+        } else {
+          // Đặt phía dưới input
+          top = inputRect.bottom;
+        }
         setMentionPosition({
-          top: inputRect.top - 40, // Hiển thị phía trên input
+          top,
           left: inputRect.left
         });
       }
@@ -3017,6 +3139,24 @@ const ChatUI = () => {
     setForwardDialogOpen(false);
     setTargetConversation(null);
     setSelectedMessage(null);
+  };
+  
+  // Xử lý khi người dùng chọn một hình ảnh để biến đổi bằng AI
+  const handleImageSelect = (message) => {
+    // Kiểm tra xem tin nhắn có chứa hình ảnh không
+    if (message && message.fileUrl && (
+        message.type === 'image' || 
+        (message.fileName && message.fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i))
+      )) {
+      console.log('Đã chọn hình ảnh để biến đổi:', message.fileUrl);
+      setSelectedMessage(message);
+      
+      // Hiển thị thông báo cho người dùng
+      setSnackbarMessage('Đã chọn hình ảnh. Bạn có thể sử dụng nút AI Image để biến đổi hình ảnh này.');
+      setSnackbarOpen(true);
+    } else {
+      console.log('Tin nhắn không chứa hình ảnh hợp lệ');
+    }
   };
 
   // Group chat handlers
@@ -4542,6 +4682,64 @@ const ChatUI = () => {
     setGroupControlDrawerOpen(false);
   };
 
+  // Hàm parse tag @Tên thành span có thể click mở profile
+  const renderMessageContent = (content) => {
+    if (!activeConversation?.members || activeConversation.members.length === 0) return content;
+    // Lấy danh sách tên thành viên nhóm, thêm cả các tag AI đặc biệt
+    const aiTags = ['Image', 'AIGemini', 'AiGemini'];
+    const memberNames = [
+      ...activeConversation.members.map(m => m.idUser?.name).filter(Boolean),
+      ...aiTags
+    ].sort((a, b) => b.length - a.length);
+
+    let result = [];
+    let i = 0;
+    while (i < content.length) {
+      let matched = false;
+      for (const name of memberNames) {
+        if (content.startsWith(`@${name}`, i)) {
+          // Tìm user (nếu là tag AI thì member sẽ là undefined)
+          const member = activeConversation.members.find(m => m.idUser?.name === name);
+          // Dấu @ và tên cùng nền xanh
+          result.push(
+            <span
+              key={i + '-tag'}
+              style={{
+                background: '#43a047',
+                color: '#fff',
+                fontWeight: 500,
+                borderRadius: 4,
+                padding: '0 4px',
+                margin: '0 2px',
+                cursor: member ? 'pointer' : 'default',
+                display: 'inline-block',
+              }}
+              onClick={() => {
+                if (member) {
+                  setSelectedUser(member.idUser);
+                  setProfileDialogOpen(true);
+                }
+              }}
+            >
+              @{name}
+            </span>
+          );
+          i += name.length + 1; // +1 cho dấu @
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        result.push(content[i]);
+        i++;
+      }
+    }
+    return result;
+  };
+
+  // 1. Thêm state quản lý tin nhắn đang trả lời
+  const [replyMessage, setReplyMessage] = useState(null);
+
   if (showProfile) {
     return <ProfileScreen onBack={() => setShowProfile(false)} />;
   }
@@ -4995,6 +5193,38 @@ const ChatUI = () => {
                         )}
                       </>
                     )}
+                    <MenuItem onClick={() => {
+                      setReplyMessage(selectedMessage);
+                      handleMessageContextMenuClose();
+                    }}>
+                      <ListItemIcon>
+                        <ReplyIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Trả lời</ListItemText>
+                    </MenuItem>
+                    {/* Chuyển tiếp tin nhắn */}
+                    <MenuItem onClick={handleForwardMessage}>
+                      <ListItemIcon>
+                        <ForwardIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Chuyển tiếp</ListItemText>
+                    </MenuItem>
+                    {/* Thu hồi tin nhắn - chỉ hiển thị với tin nhắn của mình */}
+                    {selectedMessage && isSentByCurrentUser(selectedMessage) && (
+                      <MenuItem onClick={handleRevokeMessage}>
+                        <ListItemIcon>
+                          <UndoIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText>Thu hồi</ListItemText>
+                      </MenuItem>
+                    )}
+                    {/* Xóa tin nhắn */}
+                    <MenuItem onClick={handleDeleteMessage}>
+                      <ListItemIcon>
+                        <DeleteIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Xóa</ListItemText>
+                    </MenuItem>
             </Menu>
                 </Box>
               </Box>
@@ -5219,22 +5449,49 @@ const ChatUI = () => {
                                         transformOrigin: 'bottom left',
                                         zIndex: 0,
                                       } : {},
-                                      // Improve dark mode contrast by adding these styles
                                       '.MuiTypography-root': {
                                         color: isCurrentUser ? 'primary.contrastText' : 'text.primary',
                                       },
-                                      // Dark mode specific styling
                                       '.MuiPaper-root.MuiPaper-elevation': {
                                         borderColor: theme => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                                       }
                                     }}
                                   >
+                                    {/* Nếu là reply, hiển thị đoạn trích dẫn phía trên nội dung */}
+                                    {message.replyTo && (
+                                      <Box sx={{
+                                        bgcolor: 'action.hover',
+                                        borderLeft: '4px solid #43a047',
+                                        borderRadius: 1,
+                                        px: 1,
+                                        py: 0.5,
+                                        mb: 0.5,
+                                        maxWidth: 350
+                                      }}>
+                                        <Typography variant="caption" color="primary" fontWeight={600}>
+                                          {(() => {
+                                            const repliedMsg = messages.find(m => m._id === message.replyTo || m.id === message.replyTo);
+                                            return repliedMsg?.originalSender?.name || 'Người dùng';
+                                          })()}
+                                        </Typography>
+                                        <Typography variant="body2" noWrap maxWidth={300}>
+                                          {(() => {
+                                            const repliedMsg = messages.find(m => m._id === message.replyTo || m.id === message.replyTo);
+                                            if (!repliedMsg) return '[Tin nhắn]';
+                                            if (repliedMsg.type === 'text') return repliedMsg.content;
+                                            if (repliedMsg.type === 'image') return '[Hình ảnh]';
+                                            if (repliedMsg.type === 'file') return '[Tệp đính kèm]';
+                                            return '[Tin nhắn]';
+                                          })()}
+                                        </Typography>
+                                      </Box>
+                                    )}
                                     <Typography 
                                       variant="body1" 
                                       sx={{ 
                                         color: isCurrentUser ? 'inherit' : 'text.primary'
                                       }}
-                                    >{message.content}</Typography>
+                                    >{renderMessageContent(message.content)}</Typography>
                                   </Paper>
                                 ) : (
                                   <RenderFileMessage 
@@ -5447,6 +5704,35 @@ const ChatUI = () => {
                   </Box>
                 )}
                 
+                {/* 3. Hiển thị khung trả lời phía trên input nếu có replyMessage */}
+                {replyMessage && (
+                    <Box sx={{
+                      mb: 1,
+                      p: 1,
+                      bgcolor: 'action.hover',
+                      borderLeft: '4px solid #43a047',
+                      borderRadius: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      maxWidth: 500
+                    }}>
+                      <Box>
+                        <Typography variant="caption" color="primary" fontWeight={600}>
+                          Trả lời {replyMessage.originalSender?.name || 'Người dùng'}
+                        </Typography>
+                        <Typography variant="body2" noWrap maxWidth={400}>
+                          {replyMessage.type === 'text' ? replyMessage.content :
+                            replyMessage.type === 'image' ? '[Hình ảnh]' :
+                            replyMessage.type === 'file' ? '[Tệp đính kèm]' : '[Tin nhắn]'}
+                        </Typography>
+                      </Box>
+                      <IconButton size="small" onClick={() => setReplyMessage(null)}>
+                        <CloseIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  )}
+
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <FileUploadGroup onFileSelect={handleFileSelectFromGroup} />
                   
@@ -5457,6 +5743,24 @@ const ChatUI = () => {
                   <IconButton onClick={(e) => handleTabChange(e)}>
                     <GifIcon />
                   </IconButton>
+                  
+                  {/* AI Image Button */}
+                  <AIImageButton 
+                    conversationId={activeConversation?._id} 
+                    userId={userId}
+                    onImageGenerated={() => {
+                      // Reload messages after image is generated
+                      if (activeConversation) {
+                        console.log('Reloading messages after AI image generation');
+                        // Force a complete reload of messages
+                        setMessages([]);
+                        setLoading(prev => ({ ...prev, messages: true }));
+                        loadMessages(activeConversation._id);
+                      }
+                    }}
+                    selectedImage={selectedMessage?.fileUrl}
+                    socketId={SocketService.getSocketId()}
+                  />
                   
                   {/* Popover cho GiphyGallery */}
                   <Popover
@@ -5475,6 +5779,8 @@ const ChatUI = () => {
                     <GiphyGallery onSelectGif={handleSendGif} onClose={handleEmojiClose} />
                   </Popover>
                   
+                  
+
                   <TextField
                     fullWidth
                     placeholder="Nhập tin nhắn hoặc @ để gọi AI..."
@@ -5564,6 +5870,16 @@ const ChatUI = () => {
           horizontal: 'left',
         }}
       >
+        {/* Thêm nút Trả lời */}
+        <MenuItem onClick={() => {
+          setReplyMessage(selectedMessage);
+          handleMessageContextMenuClose();
+        }}>
+          <ListItemIcon>
+            <ReplyIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Trả lời</ListItemText>
+        </MenuItem>
         {/* Chuyển tiếp tin nhắn */}
         <MenuItem onClick={handleForwardMessage}>
           <ListItemIcon>
@@ -5571,7 +5887,6 @@ const ChatUI = () => {
           </ListItemIcon>
           <ListItemText>Chuyển tiếp</ListItemText>
         </MenuItem>
-
         {/* Thu hồi tin nhắn - chỉ hiển thị với tin nhắn của mình */}
         {selectedMessage && isSentByCurrentUser(selectedMessage) && (
           <MenuItem onClick={handleRevokeMessage}>
@@ -5581,7 +5896,6 @@ const ChatUI = () => {
             <ListItemText>Thu hồi</ListItemText>
           </MenuItem>
         )}
-
         {/* Xóa tin nhắn */}
         <MenuItem onClick={handleDeleteMessage}>
           <ListItemIcon>
@@ -5692,7 +6006,7 @@ const ChatUI = () => {
         currentUser={user}
       />
       {/* Component gợi ý @AIGemini */}
-      {showAIMention && (
+      {showAIMention && activeConversation && activeConversation.type === 'group' && (
         <Paper
           sx={{
             position: 'fixed',
@@ -5702,23 +6016,55 @@ const ChatUI = () => {
             width: 'auto',
             p: 1,
             boxShadow: 3,
-            borderRadius: 1
+            borderRadius: 1,
+            maxHeight: 200,         // Giới hạn chiều cao tối đa
+            overflowY: 'auto',
           }}
         >
+          {/* Gợi ý thành viên nhóm */}
+          {activeConversation.members
+            .filter(member => {
+              const memberId = member.idUser?._id ? member.idUser._id.toString() : member.idUser?.toString();
+              return memberId && memberId !== userId?.toString();
+            })
+            .map(member => (
+              <MenuItem
+                key={member.idUser._id || member.idUser}
+                onClick={() => {
+                  const atIndex = newMessage.lastIndexOf('@');
+                  if (atIndex !== -1) {
+                    // Chèn tag dạng @Tên (có thể mở rộng thành @userId|Tên nếu muốn lưu userId)
+                    const updatedMessage =
+                      newMessage.substring(0, atIndex) +
+                      `@${member.idUser.name} ` +
+                      newMessage.substring(atIndex + 1);
+                    setNewMessage(updatedMessage);
+                    setShowAIMention(false);
+                    inputRef.current?.focus();
+                  }
+                }}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  p: 1
+                }}
+              >
+                <Avatar src={member.idUser.avatar} sx={{ width: 24, height: 24 }} />
+                <Typography>{member.idUser.name}</Typography>
+              </MenuItem>
+            ))}
+          {/* Gợi ý AI như cũ */}
           <MenuItem 
             onClick={() => {
-              // Lấy vị trí của ký tự @ trong chuỗi
               const atIndex = newMessage.lastIndexOf('@');
               if (atIndex !== -1) {
-                // Thay thế @ bằng @AIGemini
                 const updatedMessage = 
                   newMessage.substring(0, atIndex) + 
                   '@AIGemini ' + 
                   newMessage.substring(atIndex + 1);
                 setNewMessage(updatedMessage);
-                // Ẩn gợi ý
                 setShowAIMention(false);
-                // Focus vào input
                 inputRef.current?.focus();
               }
             }}
@@ -5731,6 +6077,29 @@ const ChatUI = () => {
           >
             <SmartToyIcon color="primary" fontSize="small" />
             <Typography>AIGemini</Typography>
+          </MenuItem>
+          <MenuItem 
+            onClick={() => {
+              const atIndex = newMessage.lastIndexOf('@');
+              if (atIndex !== -1) {
+                const updatedMessage = 
+                  newMessage.substring(0, atIndex) + 
+                  '@Image ' + 
+                  newMessage.substring(atIndex + 1);
+                setNewMessage(updatedMessage);
+                setShowAIMention(false);
+                inputRef.current?.focus();
+              }
+            }}
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              gap: 1,
+              p: 1
+            }}
+          >
+            <AutoFixHighIcon color="primary" fontSize="small" />
+            <Typography>Image</Typography>
           </MenuItem>
         </Paper>
       )}
@@ -5751,6 +6120,7 @@ const ChatUI = () => {
           </IconButton>
         }
       />
+      
     </Box>
   );
 };

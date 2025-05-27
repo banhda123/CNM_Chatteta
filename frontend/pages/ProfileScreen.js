@@ -23,6 +23,7 @@ import UserService from "../services/UserService";
 import AuthService from "../services/AuthService";
 import SocketService from "../services/SocketService";
 import { Edit as EditIcon, Save as SaveIcon, PhotoCamera as PhotoCameraIcon } from "@mui/icons-material";
+import defaultAvatar from '../assets/default-avatar.png';
 
 const ProfileScreen = () => {
   const [tabValue, setTabValue] = useState(0);
@@ -320,7 +321,7 @@ const ProfileScreen = () => {
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
               <Box sx={{ position: 'relative' }}>
                 <Avatar 
-                  src={user.avatar} 
+                  src={user.avatar && typeof user.avatar === 'string' && user.avatar.trim() !== '' ? user.avatar : defaultAvatar} 
                   alt={user.name} 
                   sx={{ 
                     width: 120, 

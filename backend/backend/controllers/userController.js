@@ -20,27 +20,11 @@ export const getUserByPhoneNumber = async (req, res) => {
 };
 
 export const getUserById = async (req, res) => {
-  let userId = req.params.id;
-  if (userId === 'me') {
-    // Lấy userId từ token đã xác thực (giả sử middleware đã gán req.user)
-    if (!req.user || !req.user._id) {
-      return res.status(401).send({ message: 'Unauthorized' });
-    }
-    userId = req.user._id;
-  }
-  // Kiểm tra userId có hợp lệ không (24 ký tự hex)
-  if (!userId || typeof userId !== 'string' || !userId.match(/^[a-fA-F0-9]{24}$/)) {
-    return res.status(400).send({ message: 'Invalid user id' });
-  }
-  try {
-    const user = await UsersModel.findById(userId);
-    if (user) {
-      res.send(user);
-    } else {
-      res.status(404).send({ message: "user not found" });
-    }
-  } catch (err) {
-    res.status(500).send({ message: "Server error", error: err.message });
+  const user = await UsersModel.findOne({ _id: req.params.id });
+  if (user) {
+    res.send(user);
+  } else {
+    res.status(403).send({ message: "user not found" });
   }
 };
 

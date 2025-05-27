@@ -1298,6 +1298,141 @@ class ChatService {
       };
     }
   }
+  
+  // Generate an image using AI from text prompt
+  static async generateImage(data) {
+    try {
+      Logger.info('Generating AI image from text', { prompt: data.prompt });
+      
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const baseUrl = await getBaseUrl();
+      const response = await axios.post(`${baseUrl}/image-ai/generate`, data, config);
+      return response;
+    } catch (error) {
+      Logger.error("Error generating AI image", error);
+      throw error;
+    }
+  }
+
+  // Transform an existing image using AI
+  static async transformImage(data) {
+    try {
+      Logger.info('Transforming image with AI', { imageUrl: data.imageUrl });
+      
+      const token = AuthService.getAccessToken();
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const baseUrl = await getBaseUrl();
+      const response = await axios.post(`${baseUrl}/image-ai/transform`, data, config);
+      return response;
+    } catch (error) {
+      Logger.error("Error transforming image with AI", error);
+      throw error;
+    }
+  }
+
+  // Process @Image commands in messages
+  static async processImageAIMessage(message, conversationId, senderId, socketId) {
+    try {
+      Logger.info('Processing @Image message', { conversationId });
+      
+      // Extract the query from the message (remove @Image prefix)
+      if (!message.trim().startsWith('@Image')) {
+        return null; // Not an AI image message
+      }
+      
+      const prompt = message.substring('@Image'.length).trim();
+      if (!prompt) {
+        return {
+          error: true,
+          message: 'Vui lòng nhập mô tả hình ảnh sau @Image'
+        };
+      }
+      
+      // Tạo tin nhắn tạm thời của người dùng để hiển thị ngay lập tức
+      const tempUserMessage = {
+        id: `temp-user-${Date.now()}`,
+        _id: `temp-user-${Date.now()}`,
+        idConversation: conversationId,
+        sender: senderId,
+        content: message,
+        type: 'text',
+        createdAt: new Date().toISOString(),
+        status: 'sending'
+      };
+      
+      // Tạo tin nhắn tạm thời để hiển thị trạng thái đang xử lý
+      const tempProcessingMessage = {
+        id: `temp-ai-image-${Date.now()}`,
+        _id: `temp-ai-image-${Date.now()}`,
+        idConversation: conversationId,
+        sender: senderId,
+        content: 'Đang tạo hình ảnh... Quá trình này có thể mất vài giây.',
+        type: 'text',
+        createdAt: new Date().toISOString(),
+        status: 'sending'
+      };
+      
+      // Trả về tin nhắn tạm thời để hiển thị trước
+      const tempMessages = [tempUserMessage, tempProcessingMessage];
+      
+      // Gọi API để gửi tin nhắn của người dùng
+      const token = AuthService.getAccessToken();
+      const userMessageData = {
+        idConversation: conversationId,
+        sender: senderId,
+        content: message,
+        type: 'text'
+      };
+      
+      // Gửi tin nhắn của người dùng
+      const userMessageResponse = await this.sendMessage(userMessageData, token);
+      
+      // Gọi API để tạo hình ảnh
+      const imageResponse = await this.generateImage({
+        prompt: prompt,
+        conversationId: conversationId,
+        sender: senderId,
+        socketId: socketId
+      });
+      
+      Logger.info('AI image generated', imageResponse.data);
+      
+      return {
+        success: true,
+        tempMessages: tempMessages,
+        userMessage: userMessageResponse,
+        imageMessage: imageResponse.data.data
+      };
+    } catch (error) {
+      Logger.error("Error processing @Image message", error);
+      console.error("Error details:", error?.response?.data || error);
+      return {
+        error: true,
+        message: 'Không thể tạo hình ảnh. Vui lòng thử lại sau.'
+      };
+    }
+  }
 }
 
 export default ChatService;
