@@ -2067,6 +2067,13 @@ const [showImageMention, setShowImageMention] = useState(false);
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 100);
+      // Thêm logic cho mobile: ẩn danh sách khi chọn chat
+      if (window.innerWidth < 900) {
+        setShowConversationList(false);
+      }
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
     } catch (error) {
       Logger.error("Error selecting conversation", error);
       Alert.alert("Error", "Failed to load conversation");
@@ -4865,7 +4872,7 @@ const [showImageMention, setShowImageMention] = useState(false);
             flexShrink: 0 // Ngăn phần header co lại
           }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h6">Cuộc trò chuyện</Typography>
+              <Typography variant="h6" sx={{ ml: { xs: '20px', md: 0 } }}>Cuộc trò chuyện</Typography>
               <Box sx={{ display: 'flex' }}>
                 <Tooltip title="Tạo nhóm mới">
                   <IconButton 
@@ -4874,7 +4881,7 @@ const [showImageMention, setShowImageMention] = useState(false);
                     sx={{ mr: 1 }}
                   >
                     <GroupAddIcon />
-                  </IconButton>
+              </IconButton>
                 </Tooltip>
                 <Tooltip title="Thêm bạn mới">
                   <IconButton 
@@ -4887,21 +4894,21 @@ const [showImageMention, setShowImageMention] = useState(false);
               </Box>
             </Box>
 
-          <TextField
-              variant="outlined"
-              placeholder="Tìm kiếm..."
+              <TextField
+                variant="outlined"
+                placeholder="Tìm kiếm..."
               fullWidth
-              size="small"
-              value={searchQuery}
-              onChange={handleSearchConversation}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon />
-                  </InputAdornment>
-                ),
-                endAdornment: searchQuery ? (
-                  <InputAdornment position="end">
+                size="small"
+                value={searchQuery}
+                onChange={handleSearchConversation}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchQuery ? (
+                    <InputAdornment position="end">
                     <IconButton 
                       size="small" 
                       onClick={() => {
@@ -4909,13 +4916,13 @@ const [showImageMention, setShowImageMention] = useState(false);
                         setFilteredConversations(conversations);
                       }}
                     >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </InputAdornment>
-                ) : null
-              }}
-          />
-          </Box>
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ) : null
+                }}
+              />
+            </Box>
           
           {/* Danh sách cuộc trò chuyện có thể cuộn */}
           <Box sx={{ 
@@ -5083,11 +5090,14 @@ const [showImageMention, setShowImageMention] = useState(false);
                 bgcolor: "background.paper",
               }}
             >
-                <Box sx={{ display: "flex", alignItems: "center" }}>
+                <Box sx={{ display: "flex", alignItems: "center", ml: '20px' }}>
                   {/* Back button for mobile */}
                   <IconButton 
                     sx={{ display: { xs: 'flex', md: 'none' }, mr: 1 }}
-                    onClick={() => setShowConversationList(true)}
+                    onClick={() => {
+                      setShowConversationList(true);
+                      setActiveConversation(null); // Ẩn nội dung chat khi quay lại danh sách
+                    }}
                   >
                     <ArrowBackIcon />
                   </IconButton>

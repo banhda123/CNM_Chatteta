@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "web-build": "expo export:web",
+    "build": "expo export:web"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -37,6 +39,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
+    "@expo/webpack-config": "^19.0.1",
     "eslint": "^9.25.1",
     "eslint-plugin-react": "^7.37.5"
   },

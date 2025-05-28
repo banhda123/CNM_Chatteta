@@ -6,7 +6,7 @@ import {
   TableChart as TableChartIcon,
   Slideshow as SlideshowIcon,
   Videocam as VideocamIcon,
-  AudioTrack as AudiotrackIcon,
+  Audiotrack as AudiotrackIcon,
   InsertDriveFile as InsertDriveFileIcon,
   Gif as GifIcon
 } from '@mui/icons-material';
