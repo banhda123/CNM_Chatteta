@@ -313,7 +313,7 @@ const Layout = ({ children }) => {
         onClick={handleDrawerToggle}
         sx={{ 
           position: 'fixed', 
-          top: 13, 
+          top: 14, 
           left: 10, 
           zIndex: 1200, 
           display: { sm: 'none' },

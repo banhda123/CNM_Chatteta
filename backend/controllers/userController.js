@@ -51,8 +51,21 @@ export const updateRefeshToken = (user, refeshToken) => {
 
 export const Login = async (req, res) => {
   // Kiểm tra thông tin đầy đủ
-  if (!req.body.phone == null || !req.body.password == null) {
+  if (!req.body.phone || !req.body.password) {
     return res.status(400).send({ message: "Vui lòng điền đầy đủ thông tin" });
+  }
+  // Kiểm tra số điện thoại
+  const phoneRegex = /^\d{10}$/;
+  if (!phoneRegex.test(req.body.phone)) {
+    return res.status(400).send({ message: "Số điện thoại phải gồm đúng 10 chữ số." });
+  }
+  // Kiểm tra mật khẩu
+  const password = req.body.password;
+  const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@#$!%*?&^_-]{8,32}$/;
+  if (!passwordRegex.test(password) || /\s/.test(password)) {
+    return res.status(400).send({ 
+      message: "Mật khẩu phải từ 8-32 ký tự, gồm chữ cái, số, ký tự đặc biệt và không chứa khoảng trắng." 
+    });
   }
 
   const user = await UsersModel.findOne({
@@ -79,29 +92,40 @@ export const Login = async (req, res) => {
 };
 
 export const Register = async (req, res) => {
-  console.log(req.body);
-  const userExists = await UsersModel.findOne({ phone: req.body.phone });
-  console.log(userExists);
-  if (userExists) {
-    res.status(400).send({ message: "Số điện thoại này đã đăng kí tài khoản" });
-  } else {
-    const user = new UsersModel({
-      name: req.body.name,
-      phone: req.body.phone,
-      password: req.body.password,
-      avatar:
-        "https://res.cloudinary.com/daclejcpu/image/upload/v1744812771/avatar-mac-dinh-12_i7jnd3.jpg",
+  const { phone, otp, name, password } = req.body;
+  // Kiểm tra số điện thoại
+  const phoneRegex = /^\d{10}$/;
+  if (!phoneRegex.test(phone)) {
+    return res.status(400).send({ message: "Số điện thoại phải gồm đúng 10 chữ số." });
+  }
+  // Kiểm tra mật khẩu
+  const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@#$!%*?&^_-]{8,32}$/;
+  if (!passwordRegex.test(password) || /\s/.test(password)) {
+    return res.status(400).send({ 
+      message: "Mật khẩu phải từ 8-32 ký tự, gồm chữ cái, số, ký tự đặc biệt và không chứa khoảng trắng." 
     });
+  }
+  // Kiểm tra user đã gửi OTP chưa
+  const user = await UsersModel.findOne({ phone });
+  if (!user) {
+    return res.status(400).send({ message: "Bạn cần gửi OTP trước khi đăng ký." });
+  }
+  // Kiểm tra OTP
+  if (!user.otp || user.otp !== otp) {
+    return res.status(400).send({ message: "OTP không đúng hoặc đã hết hạn." });
+  }
+  // Cập nhật thông tin user
+  user.name = name;
+  user.password = password;
+  user.otp = "";
+  user.avatar = "https://res.cloudinary.com/daclejcpu/image/upload/v1744812771/avatar-mac-dinh-12_i7jnd3.jpg";
     await user.save();
-
-    res.status(200).send({
+  return res.status(200).send({
       _id: user._id,
       name: user.name,
-      password: user.password,
       phone: user.phone,
       otp: "",
     });
-  }
 };
 
 export const getNewToken = async (req, res) => {
@@ -766,5 +790,35 @@ export const removeFriend = async (req, res) => {
       message: "Lỗi server khi huỷ kết bạn",
       error: error.message 
     });
+  }
+};
+
+export const sendMailRegister = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    const phoneRegex = /^\d{10}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).send({ message: "Số điện thoại phải gồm đúng 10 chữ số." });
+    }
+    // Kiểm tra số điện thoại đã tồn tại
+    const userExists = await UsersModel.findOne({ phone });
+    if (userExists && userExists.name) {
+      return res.status(400).send({ message: "Số điện thoại này đã đăng ký" });
+    }
+    // Sinh OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    let user;
+    if (!userExists) {
+      user = new UsersModel({ phone, otp });
+    } else {
+      user = userExists;
+      user.otp = otp;
+    }
+    await user.save();
+    await sendSMS(phone, otp);
+    return res.status(200).send({ message: "Đã gửi OTP về số điện thoại của bạn" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Không gửi được mã OTP" });
   }
 };

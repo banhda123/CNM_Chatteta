@@ -4811,6 +4811,34 @@ const [showImageMention, setShowImageMention] = useState(false);
     sentGifIds.current = new Set(messages.filter(m => m.type === 'gif' && m._id).map(m => m._id));
   }, [messages]);
 
+  useEffect(() => {
+    if (!SocketService.socket) return;
+
+    console.log('📩 Thiết lập listener cho tin nhắn mới (new_message)');
+
+    const handleNewMessage = (message) => {
+      console.log('📩 Nhận socket new_message:', message);
+      if (activeConversation && message.idConversation === activeConversation._id) {
+        setMessages(prev => {
+          // Xóa message tạm thời nếu cùng content và sender
+          const filtered = prev.filter(m => !(m.id && m.id.startsWith('temp-') && m.content === message.content && m.sender === message.sender));
+          // Tránh thêm trùng tin nhắn
+          if (filtered.some(m => m._id === message._id || m.id === message._id)) return filtered;
+          return [...filtered, message];
+        });
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }
+    };
+
+    SocketService.onNewMessage(handleNewMessage);
+
+    return () => {
+      SocketService.removeListener('new_message');
+    };
+  }, [activeConversation, messages]);
+
   if (showProfile) {
     return <ProfileScreen onBack={() => setShowProfile(false)} />;
   }
@@ -4872,7 +4900,7 @@ const [showImageMention, setShowImageMention] = useState(false);
             flexShrink: 0 // Ngăn phần header co lại
           }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h6" sx={{ ml: { xs: '20px', md: 0 } }}>Cuộc trò chuyện</Typography>
+              <Typography variant="h6" sx={{ ml: { xs: '30px', md: 0 } }}>Cuộc trò chuyện</Typography>
               <Box sx={{ display: 'flex' }}>
                 <Tooltip title="Tạo nhóm mới">
                   <IconButton 
@@ -5894,7 +5922,7 @@ const [showImageMention, setShowImageMention] = useState(false);
             }}
           >
               <img 
-                src="http://localhost:4000/uploads/logo.webp" 
+                src="https://res.cloudinary.com/daclejcpu/image/upload/v1748507236/logo_nbs3z3.webp" 
                 alt="Select a conversation" 
                 style={{ 
                   width: '200px', 
@@ -5904,6 +5932,7 @@ const [showImageMention, setShowImageMention] = useState(false);
                   objectFit: 'contain'
                 }}
               />
+
               <Typography variant="h5" color="text.primary" gutterBottom>
                 Chào mừng đến với Chattera
               </Typography>
@@ -6085,16 +6114,19 @@ const [showImageMention, setShowImageMention] = useState(false);
       {showAIMention && activeConversation && (
         <Paper
           sx={{
-            position: 'fixed',
-            top: mentionPosition.top,
-            left: mentionPosition.left,
+            position: { xs: 'fixed', md: 'fixed' },
+            left: { xs: 0, md: mentionPosition.left },
+            right: { xs: 0, md: 'auto' },
+            bottom: { xs: '56px', md: 'auto' }, // 56px là chiều cao input trên mobile
+            top: { xs: 'auto', md: mentionPosition.top },
             zIndex: 1300,
-            width: 'auto',
+            width: { xs: '100%', md: 'auto' },
             p: 1,
             boxShadow: 3,
             borderRadius: 1,
             maxHeight: 200,
             overflowY: 'auto',
+            margin: { xs: '0 auto', md: 0 },
           }}
         >
           {/* Nếu là nhóm thì gợi ý thành viên, nếu là chat đơn thì không */}

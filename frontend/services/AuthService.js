@@ -182,30 +182,21 @@ const AuthService = {
   },
 
   // Register method
-  register: async (name, phone, password) => {
+  register: async (name, phone, password, otp) => {
     try {
       Logger.info('Attempting registration', { phone });
-      
-      // Đảm bảo lấy URL mới nhất trước khi gọi API
       await updateServiceApiUrl();
-      
-      // Sử dụng API URL hiện tại
       const currentApiUrl = `${API_URL}/register`;
       Logger.info('Using API URL', { url: currentApiUrl });
-      
-      // In ra URL để debug
       console.log('Register URL:', currentApiUrl);
-      
       const response = await axios.post(currentApiUrl, {
         name,
         phone,
         password,
+        otp,
       });
-      
       if (response.data && response.data.token) {
         Logger.info('Registration successful');
-        
-        // Store tokens in localStorage
         localStorage.setItem("accessToken", response.data.token);
         localStorage.setItem("refreshToken", response.data.refreshToken);
         localStorage.setItem(
@@ -216,11 +207,8 @@ const AuthService = {
             phone: response.data.phone,
           })
         );
-        
-        // Thiết lập hẹn giờ refresh token
         AuthService.setupTokenRefresh(response.data.token);
       }
-      
       return { success: true, data: response.data };
     } catch (error) {
       Logger.error('Registration failed', error);
@@ -234,18 +222,11 @@ const AuthService = {
   // Send OTP method
   sendOTP: async (phone) => {
     try {
-      // Đảm bảo lấy URL mới nhất trước khi gọi API
       await updateServiceApiUrl();
-      
-      // Sử dụng API URL hiện tại
-      const currentApiUrl = `${API_URL}/sendOTP`;
+      const currentApiUrl = `${API_URL}/sendmail-register`;
       Logger.info('Using API URL for OTP', { url: currentApiUrl });
-      
-      // In ra URL để debug
       console.log('Send OTP URL:', currentApiUrl);
-      
       const response = await axios.post(currentApiUrl, { phone });
-      
       return { success: true, data: response.data };
     } catch (error) {
       console.error("Send OTP error:", error);
@@ -259,21 +240,14 @@ const AuthService = {
   // Verify OTP method
   verifyOTP: async (phone, otp) => {
     try {
-      // Đảm bảo lấy URL mới nhất trước khi gọi API
       await updateServiceApiUrl();
-      
-      // Sử dụng API URL hiện tại
-      const currentApiUrl = `${API_URL}/verifyOTP`;
+      const currentApiUrl = `${API_URL}/checkotp`;
       Logger.info('Using API URL for OTP verification', { url: currentApiUrl });
-      
-      // In ra URL để debug
       console.log('Verify OTP URL:', currentApiUrl);
-      
       const response = await axios.post(currentApiUrl, {
         phone,
         otp,
       });
-      
       return { success: true, data: response.data };
     } catch (error) {
       console.error("Verify OTP error:", error);

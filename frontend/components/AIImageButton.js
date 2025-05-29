@@ -3,6 +3,7 @@ import { IconButton, Menu, MenuItem, Tooltip, Dialog, DialogTitle, DialogContent
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ChatService from '../services/ChatService';
 import AuthService from '../services/AuthService';
+import { getBaseUrl } from '../config/constants'; 
 
 const AIImageButton = ({ conversationId, userId, onImageGenerated, selectedImage, socketId }) => {
   const [anchorEl, setAnchorEl] = useState(null);
@@ -51,8 +52,8 @@ const AIImageButton = ({ conversationId, userId, onImageGenerated, selectedImage
         setLoadingMessages(false);
         return;
       }
-      
-      const response = await fetch(`http://localhost:4000/chat/allmessage/${conversationId}`, {
+      const baseUrl = await getBaseUrl();
+      const response = await fetch(`${baseUrl}/chat/allmessage/${conversationId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -337,7 +338,6 @@ const AIImageButton = ({ conversationId, userId, onImageGenerated, selectedImage
       >
         <MenuItem onClick={handleGenerateImage}>Tạo hình ảnh mới</MenuItem>
         <MenuItem onClick={handleTransformImage}>Biến đổi hình ảnh</MenuItem>
-        <MenuItem onClick={handleSelectImage}>Chọn hình ảnh từ tin nhắn</MenuItem>
       </Menu>
       
       {/* Dialog for entering text prompt to generate new image */}

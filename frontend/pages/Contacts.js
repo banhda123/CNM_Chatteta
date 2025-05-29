@@ -637,7 +637,7 @@ const Contacts = () => {
       
       if (result.success) {
         // Update the friends list
-        setFriends(prev => prev.filter(f => f.idUser._id !== friend.idUser._id));
+        setFriends(prev => prev.filter(f => f?.idUser?._id !== friend?.idUser?._id));
         showNotification(`Đã huỷ kết bạn với ${friend.idUser.name}`, 'success');
       } else {
         showNotification(result.message || 'Không thể huỷ kết bạn', 'error');

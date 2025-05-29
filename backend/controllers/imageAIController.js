@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { emitNewMessage } from '../config/Socket.js';
 
 // Get current directory
 const __filename = fileURLToPath(import.meta.url);
@@ -89,6 +90,23 @@ export const generateImageFromText = async (req, res) => {
 
     console.log(`Generating image for prompt: "${prompt}"`);
 
+    // 1. Lưu message gốc (câu hỏi của user)
+    const userMessage = new MessageModel({
+      idConversation: conversationId,
+      sender: sender,
+      content: req.body.content || `@Image ${prompt}`,
+      type: 'text',
+      status: 'sent',
+      isAIGenerated: false
+    });
+    await userMessage.save();
+    // Emit socket cho câu hỏi của user
+    try {
+      await emitNewMessage(userMessage, socketId);
+    } catch (e) {
+      console.error('Error emitting ImageAI user question via socket:', e);
+    }
+
     // Call Replicate API to generate image
     // Using Stable Diffusion model
     console.log('Calling Replicate API for image generation...');
@@ -152,22 +170,23 @@ export const generateImageFromText = async (req, res) => {
       isAIGenerated: true
     });
 
-    // Save the message
-    const savedMessage = await newMessage.save();
+    // Save the user question message
+    await newMessage.save();
+    // Emit socket cho câu hỏi của user
+    try {
+      await emitNewMessage(newMessage, socketId);
+    } catch (e) {
+      console.error('Error emitting ImageAI user question via socket:', e);
+    }
 
     // Update conversation's last message
-    conversation.lastMessage = savedMessage._id;
+    conversation.lastMessage = newMessage._id;
     await conversation.save();
 
     // Emit socket event for new message if socket service is available
-    const { emitNewMessage, getIO } = await import('../config/Socket.js');
+    const { getIO } = await import('../config/Socket.js');
     
-    if (emitNewMessage) {
-      await emitNewMessage(savedMessage, socketId);
-    }
-    
-    // Update conversation list for all members
-    try {
+    if (getIO) {
       const io = getIO();
       if (io) {
         const updatedConversation = await ConversationModel.findById(conversationId)
@@ -182,20 +201,18 @@ export const generateImageFromText = async (req, res) => {
             if (member.idUser && member.idUser._id) {
               io.to(member.idUser._id.toString()).emit("update_conversation_list", {
                 conversation: updatedConversation,
-                newMessage: savedMessage
+                newMessage: newMessage
               });
             }
           });
         }
       }
-    } catch (socketError) {
-      console.error("Error sending socket updates:", socketError);
     }
 
     return res.status(200).json({
       success: true,
       message: 'Image generated successfully',
-      data: savedMessage
+      data: newMessage
     });
 
   } catch (error) {
@@ -226,6 +243,23 @@ export const transformImage = async (req, res) => {
     }
 
     console.log(`Transforming image: ${imageUrl}`);
+
+    // 1. Lưu message gốc (câu hỏi của user)
+    const userMessage = new MessageModel({
+      idConversation: conversationId,
+      sender: sender,
+      content: req.body.content || `@Image ${prompt}`,
+      type: 'text',
+      status: 'sent',
+      isAIGenerated: false
+    });
+    await userMessage.save();
+    // Emit socket cho câu hỏi của user
+    try {
+      await emitNewMessage(userMessage, socketId);
+    } catch (e) {
+      console.error('Error emitting ImageAI user question via socket:', e);
+    }
 
     // Call Replicate API to transform image
     // Using a style transfer model
@@ -304,22 +338,23 @@ export const transformImage = async (req, res) => {
       isAIGenerated: true
     });
 
-    // Save the message
-    const savedMessage = await newMessage.save();
+    // Save the user question message
+    await newMessage.save();
+    // Emit socket cho câu hỏi của user
+    try {
+      await emitNewMessage(newMessage, socketId);
+    } catch (e) {
+      console.error('Error emitting ImageAI user question via socket:', e);
+    }
 
     // Update conversation's last message
-    conversation.lastMessage = savedMessage._id;
+    conversation.lastMessage = newMessage._id;
     await conversation.save();
 
     // Emit socket event for new message if socket service is available
-    const { emitNewMessage, getIO } = await import('../config/Socket.js');
+    const { getIO } = await import('../config/Socket.js');
     
-    if (emitNewMessage) {
-      await emitNewMessage(savedMessage, socketId);
-    }
-    
-    // Update conversation list for all members
-    try {
+    if (getIO) {
       const io = getIO();
       if (io) {
         const updatedConversation = await ConversationModel.findById(conversationId)
@@ -334,20 +369,18 @@ export const transformImage = async (req, res) => {
             if (member.idUser && member.idUser._id) {
               io.to(member.idUser._id.toString()).emit("update_conversation_list", {
                 conversation: updatedConversation,
-                newMessage: savedMessage
+                newMessage: newMessage
               });
             }
           });
         }
       }
-    } catch (socketError) {
-      console.error("Error sending socket updates:", socketError);
     }
 
     return res.status(200).json({
       success: true,
       message: 'Image transformed successfully',
-      data: savedMessage
+      data: newMessage
     });
 
   } catch (error) {

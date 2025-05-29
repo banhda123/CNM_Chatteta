@@ -33,26 +33,20 @@ const Register = () => {
 
     try {
       if (activeStep === 0) {
-        // Đăng ký tài khoản
-        const registerResult = await AuthService.register(name, phone, password);
-        if (registerResult.success) {
           // Gửi OTP
-          const otpResult = await AuthService.sendOTP(phone);
-          if (otpResult.success) {
-            setActiveStep(1);
-          } else {
-            throw new Error(otpResult.error || 'Không thể gửi mã OTP');
-          }
+        const otpResult = await AuthService.sendOTP(phone);
+        if (otpResult.success) {
+          setActiveStep(1);
         } else {
-          throw new Error(registerResult.error || 'Đăng ký thất bại');
+          throw new Error(otpResult.error || 'Không thể gửi mã OTP');
         }
       } else if (activeStep === 1) {
-        // Xác thực OTP
-        const verifyResult = await AuthService.verifyOTP(phone, otp);
-        if (verifyResult.success) {
+        // Đăng ký tài khoản với OTP
+        const registerResult = await AuthService.register(name, phone, password, otp);
+        if (registerResult.success) {
           setActiveStep(2);
         } else {
-          throw new Error(verifyResult.error || 'Mã OTP không đúng');
+          throw new Error(registerResult.error || 'Đăng ký thất bại');
         }
       } else if (activeStep === 2) {
         navigation.navigate('Login');
