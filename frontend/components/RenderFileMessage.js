@@ -10,6 +10,7 @@ import {
   InsertDriveFile as InsertDriveFileIcon,
   Gif as GifIcon
 } from '@mui/icons-material';
+import { API_URL } from '../config/constants';
 
 const RenderFileMessage = ({ message, handleOpenFile }) => {
   // Đảm bảo có tin nhắn file
@@ -97,7 +98,7 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
               onClick={() => message.fileUrl && !message.isPreview && !isSending && 
                 window.open(message.fileUrl.startsWith('http')
                   ? message.fileUrl 
-                  : `http://localhost:4000${message.fileUrl.startsWith('/') ? '' : '/'}${message.fileUrl}`, '_blank')}
+                  : `${API_URL}${message.fileUrl.startsWith('/') ? '' : '/'}${message.fileUrl}`, '_blank')}
               onError={(e) => {
                 console.error('🚫 Image failed to load:', message.fileUrl);
                 e.target.src = 'https://via.placeholder.com/150?text=Image+Error';
@@ -492,7 +493,7 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
                 <source 
                   src={message.fileUrl.startsWith('http') 
                     ? message.fileUrl 
-                    : `http://localhost:4000${message.fileUrl.startsWith('/') ? '' : '/'}${message.fileUrl}`
+                    : `${API_URL}${message.fileUrl.startsWith('/') ? '' : '/'}${message.fileUrl}`
                   } 
                   type={message.fileType || "video/mp4"} 
                 />
@@ -600,7 +601,7 @@ const RenderFileMessage = ({ message, handleOpenFile }) => {
                 <source 
                   src={message.fileUrl.startsWith('http') 
                     ? message.fileUrl 
-                    : `http://localhost:4000${message.fileUrl.startsWith('/') ? '' : '/'}${message.fileUrl}`
+                    : `${API_URL}${message.fileUrl.startsWith('/') ? '' : '/'}${message.fileUrl}`
                   } 
                   type={message.fileType || "audio/mpeg"} 
                 />

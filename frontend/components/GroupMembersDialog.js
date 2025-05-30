@@ -987,18 +987,6 @@ const GroupMembersDialog = ({ open, onClose, conversation, onMemberRemoved, onGr
               }
               label="Cho phép xóa thành viên"
             />
-            <FormControlLabel
-              control={
-                <Switch
-                  defaultChecked={conversation?.permissions?.deleteGroup}
-                  onChange={(e) => handleUpdatePermissions({
-                    ...conversation.permissions,
-                    deleteGroup: e.target.checked
-                  })}
-                />
-              }
-              label="Cho phép xóa nhóm"
-            />
           </Box>
         </DialogContent>
         <DialogActions>

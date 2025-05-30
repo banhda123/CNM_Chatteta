@@ -26,6 +26,7 @@ import { vi } from 'date-fns/locale';
 import ChatService from '../services/ChatService';
 import AuthService from '../services/AuthService';
 import SocketService from '../services/SocketService';
+import { useTheme } from '@mui/material/styles';
 
 const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) => {
   const [pinnedMessages, setPinnedMessages] = useState([]);
@@ -39,6 +40,8 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
     (conversation.admin._id === currentUser?._id || conversation.admin === currentUser?._id);
   const isAdmin2 = conversation?.admin2 && 
     (conversation.admin2._id === currentUser?._id || conversation.admin2 === currentUser?._id);
+  
+  const theme = useTheme();
   
   useEffect(() => {
     console.log('PinnedMessageBanner - conversation:', conversation?._id);
@@ -201,8 +204,9 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
           p: 0, 
           mb: 0, 
           borderRadius: 0,
-          backgroundColor: '#f0f7ff',
-          borderBottom: '1px solid #c2e0ff',
+          backgroundColor: theme => theme.palette.mode === 'dark' ? 'rgba(30,40,60,0.95)' : '#f0f7ff',
+          color: theme => theme.palette.text.primary,
+          borderBottom: theme => theme.palette.mode === 'dark' ? '1px solid #394867' : '1px solid #c2e0ff',
           width: '100%',
           overflow: 'hidden',
           transition: 'all 0.3s ease'
@@ -243,7 +247,7 @@ const PinnedMessageBanner = ({ conversation, onViewAllPinned, onUnpinMessage }) 
             <Typography 
               variant="body2" 
               noWrap
-              sx={{ fontWeight: 500 }}
+              sx={{ fontWeight: 500, color: theme => theme.palette.text.primary }}
             >
               {currentMessage?.content || 'Nội dung tin nhắn'}
             </Typography>

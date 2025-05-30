@@ -31,9 +31,6 @@ import {
 import ChatService from '../services/ChatService';
 import AuthService from '../services/AuthService';
 
-// Hard-coded sample images that are guaranteed to work
-
-
 const GroupControlDrawer = ({ 
   open, 
   onClose, 
@@ -44,13 +41,12 @@ const GroupControlDrawer = ({
   onOpenGroupMembers,
   onEditGroup,
   onLeaveGroup,
-  onDeleteGroup
+  onDeleteGroup,
 }) => {
   const [mediaItems, setMediaItems] = useState([]);
   const [files, setFiles] = useState([]);
   const [links, setLinks] = useState([]);
   const [loadingMedia, setLoadingMedia] = useState(false);
-  const [usingSampleImages, setUsingSampleImages] = useState(false);
   const [showAllMedia, setShowAllMedia] = useState(false);
   
   // Fetch media, files, and links when the drawer opens
@@ -110,22 +106,13 @@ const GroupControlDrawer = ({
     }
   };
 
-  const useSampleImages = () => {
-    setUsingSampleImages(true);
-  };
-
   const handleViewAllMedia = () => {
     setShowAllMedia(true);
   };
 
-  const handleDeleteChatHistory = () => {
-    console.log('Xóa lịch sử trò chuyện');
-  };
-  
   // Simple Media Grid Component using plain HTML/CSS for reliability
   const SimpleMediaGrid = ({ images = [] }) => {
-    const imagesToShow = usingSampleImages ? SAMPLE_IMAGES : 
-                        (images.length > 0 ? images.map(item => item.fileUrl) : []);
+    const imagesToShow = images.length > 0 ? images.map(item => item.fileUrl) : [];
     const displayImages = showAllMedia ? imagesToShow : imagesToShow.slice(0, 8);
     
     if (displayImages.length === 0) {
@@ -134,14 +121,6 @@ const GroupControlDrawer = ({
           <Typography color="text.secondary">
             Chưa có ảnh/video được chia sẻ trong hội thoại này
           </Typography>
-          <Button 
-            variant="contained"
-            color="primary"
-            onClick={useSampleImages}
-            sx={{ mt: 2 }}
-          >
-            Hiển thị ảnh mẫu
-          </Button>
         </Box>
       );
     }
@@ -163,42 +142,42 @@ const GroupControlDrawer = ({
               border: '1px solid #e0e0e0'
             }}>
               {url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-  <img
-    src={url}
-    alt={`Media ${index+1}`}
-    style={{
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      width: '100%',
-      height: '100%',
-      objectFit: 'cover',
-      cursor: 'pointer'
-    }}
-    onClick={() => window.open(url, '_blank')}
-    onError={(e) => {
-      e.target.src = '/error-image.png';
-    }}
-  />
-) : url.match(/\.(mp4|mov|avi|webm)$/i) ? (
-  <video
-    src={url}
-    controls
-    style={{
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      width: '100%',
-      height: '100%',
-      objectFit: 'cover',
-      cursor: 'pointer'
-    }}
-    onClick={e => { e.stopPropagation(); window.open(url, '_blank'); }}
-    autoPlay={false}
-    muted
-    playsInline
-  />
-) : null}
+                <img
+                  src={url}
+                  alt={`Media ${index+1}`}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => window.open(url, '_blank')}
+                  onError={(e) => {
+                    e.target.src = '/error-image.png';
+                  }}
+                />
+              ) : url.match(/\.(mp4|mov|avi|webm)$/i) ? (
+                <video
+                  src={url}
+                  controls
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    cursor: 'pointer'
+                  }}
+                  onClick={e => { e.stopPropagation(); window.open(url, '_blank'); }}
+                  autoPlay={false}
+                  muted
+                  playsInline
+                />
+              ) : null}
             </div>
           ))}
         </div>
@@ -348,7 +327,7 @@ const GroupControlDrawer = ({
                 <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                   <ImageIcon sx={{ mr: 2 }} />
                   <Typography>
-                    Ảnh/Video {usingSampleImages ? '(Mẫu)' : ''}
+                    Ảnh/Video
                   </Typography>
                 </Box>
               </AccordionSummary>
@@ -502,16 +481,6 @@ const GroupControlDrawer = ({
             maxWidth: '100%',
             overflowX: 'hidden'
           }}>
-            <Button
-              variant="outlined"
-              color="error"
-              fullWidth
-              startIcon={<DeleteSweepIcon />}
-              onClick={handleDeleteChatHistory}
-              sx={{ mb: isGroup ? 2 : 0 }}
-            >
-              Xóa lịch sử trò chuyện
-            </Button>
             {isGroup && (
               <Button
                 variant="outlined"

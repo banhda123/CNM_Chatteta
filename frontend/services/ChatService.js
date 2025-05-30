@@ -1433,6 +1433,30 @@ class ChatService {
       };
     }
   }
+
+  // Xóa lịch sử trò chuyện chỉ cho bản thân user
+  static async clearChatHistoryForUser(conversationId, token) {
+    try {
+      if (!token) {
+        throw new Error('No token provided');
+      }
+      const cleanToken = token.replace('Bearer ', '');
+      const config = {
+        headers: {
+          'Authorization': `Bearer ${cleanToken}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      const response = await axios.delete(
+        `${API_URL}/conversation/${conversationId}/history`,
+        config
+      );
+      return response.data;
+    } catch (error) {
+      Logger.error('Error clearing chat history for user', error);
+      throw error;
+    }
+  }
 }
 
 export default ChatService;
